@@ -1,0 +1,12 @@
+# Intellij
+.idea
+
+# Gradle
+.gradle
+
+# macOS
+.DS_Store
+
+# example files
+ignore*
+example*
