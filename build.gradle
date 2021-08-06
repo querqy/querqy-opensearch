@@ -49,6 +49,7 @@ dependencies {
 test {
     useJUnit()
     finalizedBy jacocoTestReport
+    include "**/*Test.class"
     systemProperties 'java.security.policy': file("$projectDir/plugin-security.policy").absolutePath
 }
 
