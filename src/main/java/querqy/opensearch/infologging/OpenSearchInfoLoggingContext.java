@@ -4,11 +4,11 @@ import querqy.infologging.InfoLogging;
 import querqy.infologging.InfoLoggingContext;
 import querqy.rewrite.SearchEngineRequestAdapter;
 
-public class ESInfoLoggingContext extends InfoLoggingContext {
+public class OpenSearchInfoLoggingContext extends InfoLoggingContext {
 
 
-    public ESInfoLoggingContext(final InfoLogging infoLogging,
-                                final SearchEngineRequestAdapter searchEngineRequestAdapter) {
+    public OpenSearchInfoLoggingContext(final InfoLogging infoLogging,
+                                        final SearchEngineRequestAdapter searchEngineRequestAdapter) {
         super(infoLogging, searchEngineRequestAdapter);
     }
 

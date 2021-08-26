@@ -13,7 +13,7 @@ import org.opensearch.common.xcontent.XContentParser;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.index.query.QueryShardContext;
-import querqy.opensearch.infologging.ESInfoLoggingContext;
+import querqy.opensearch.infologging.OpenSearchInfoLoggingContext;
 import querqy.opensearch.infologging.InfoLoggingSpecProvider;
 import querqy.opensearch.query.BoostingQueries;
 import querqy.opensearch.query.Generated;
@@ -24,7 +24,6 @@ import querqy.opensearch.query.QueryBuilderRawQuery;
 import querqy.opensearch.query.Rewriter;
 import querqy.opensearch.query.RewrittenQueries;
 import querqy.infologging.InfoLogging;
-import querqy.infologging.InfoLoggingContext;
 import querqy.lucene.LuceneSearchEngineRequestAdapter;
 import querqy.lucene.PhraseBoosting.PhraseBoostFieldParams;
 import querqy.lucene.QuerySimilarityScoring;
@@ -56,7 +55,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
 
     private final RewriteChain rewriteChain;
     private final QueryShardContext shardContext;
-    final ESInfoLoggingContext infoLoggingContext;
+    final OpenSearchInfoLoggingContext infoLoggingContext;
     private final QuerqyQueryBuilder queryBuilder;
     private final Map<String, Object> context = new HashMap<>();
 
@@ -67,7 +66,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
         this.shardContext = shardContext;
         this.rewriteChain = rewriteChain;
         this.queryBuilder = queryBuilder;
-        this.infoLoggingContext = (infoLogging != null) ? new ESInfoLoggingContext(infoLogging, this) : null;
+        this.infoLoggingContext = (infoLogging != null) ? new OpenSearchInfoLoggingContext(infoLogging, this) : null;
     }
 
     /**
@@ -520,7 +519,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
      * @return the InfoLoggingContext object
      */
     @Override
-    public Optional<InfoLoggingContext> getInfoLoggingContext() {
+    public Optional<querqy.infologging.InfoLoggingContext> getInfoLoggingContext() {
         return Optional.ofNullable(infoLoggingContext);
     }
 
