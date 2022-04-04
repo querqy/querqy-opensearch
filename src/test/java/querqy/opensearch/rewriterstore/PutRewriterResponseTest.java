@@ -28,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 
 import org.opensearch.Version;
 import org.opensearch.action.index.IndexResponse;
@@ -71,7 +72,7 @@ public class PutRewriterResponseTest {
     @Test
     public void testToJson() throws IOException {
 
-        final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1),  ".querqy", "id1", 11,
+        final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1),  QUERQY_INDEX_NAME, "id1", 11,
                 2L, 8L, true);
 
         final DiscoveryNode node1 = new DiscoveryNode("name1", "d1", new TransportAddress(META_ADDRESS, 0),

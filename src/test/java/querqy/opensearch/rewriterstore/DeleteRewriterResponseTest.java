@@ -27,6 +27,7 @@ import static org.opensearch.common.transport.TransportAddress.META_ADDRESS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 
 import org.opensearch.Version;
 import org.opensearch.action.delete.DeleteResponse;
@@ -75,7 +76,7 @@ public class DeleteRewriterResponseTest {
         final DiscoveryNode node2 = new DiscoveryNode("name2", "d2", new TransportAddress(META_ADDRESS, 0),
                 Collections.emptyMap(), Collections.emptySet(), Version.CURRENT);
 
-        final DeleteResponse deleteResponse1 = new DeleteResponse(new ShardId("idx1", "shard1", 1), ".querqy", "id1",
+        final DeleteResponse deleteResponse1 = new DeleteResponse(new ShardId("idx1", "shard1", 1), QUERQY_INDEX_NAME, "id1",
                 11, 2L, 8L, true);
         deleteResponse1.setShardInfo(new ReplicationResponse.ShardInfo(2, 1));
 
@@ -113,7 +114,7 @@ public class DeleteRewriterResponseTest {
         final DiscoveryNode node2 = new DiscoveryNode("name2", "d2", new TransportAddress(META_ADDRESS, 0),
                 Collections.emptyMap(), Collections.emptySet(), Version.CURRENT);
 
-        final DeleteResponse deleteResponse = new DeleteResponse(new ShardId("idx1", "shard1", 1), ".querqy", "id1", 11,
+        final DeleteResponse deleteResponse = new DeleteResponse(new ShardId("idx1", "shard1", 1), QUERQY_INDEX_NAME, "id1", 11,
                 2L, 8L, true);
         final NodesClearRewriterCacheResponse clearRewriterCacheResponse = new NodesClearRewriterCacheResponse
                 (new ClusterName("cluster27"),

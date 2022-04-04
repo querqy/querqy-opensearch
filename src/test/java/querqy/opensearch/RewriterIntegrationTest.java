@@ -46,6 +46,8 @@ import querqy.opensearch.rewriterstore.PutRewriterAction;
 import querqy.opensearch.rewriterstore.PutRewriterRequest;
 import querqy.opensearch.rewriterstore.PutRewriterResponse;
 
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
+
 public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
 
     private final String INDEX_NAME = "test_index";
@@ -226,7 +228,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
 
     @After
     public void deleteRewriterIndex() {
-        client().admin().indices().prepareDelete(".querqy").get();
+        client().admin().indices().prepareDelete(QUERQY_INDEX_NAME).get();
     }
 
 

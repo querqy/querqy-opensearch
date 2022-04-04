@@ -45,6 +45,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
+
 public class RewriterShardContext {
 
 
@@ -119,7 +121,7 @@ public class RewriterShardContext {
             final GetResponse response;
 
             try {
-                response = client.prepareGet(".querqy", null, rewriterId).execute().get();
+                response = client.prepareGet(QUERQY_INDEX_NAME, null, rewriterId).execute().get();
             } catch (InterruptedException | ExecutionException e) {
                 throw new OpenSearchException("Could not load rewriter " + rewriterId, e);
             }

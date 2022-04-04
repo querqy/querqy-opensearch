@@ -39,6 +39,7 @@ import java.util.Random;
 
 import static org.opensearch.test.OpenSearchIntegTestCase.Scope.SUITE;
 import static org.hamcrest.Matchers.greaterThan;
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
 
 @OpenSearchIntegTestCase.ClusterScope(scope = SUITE, numClientNodes = 1, minNumDataNodes = 4, maxNumDataNodes = 6)
@@ -126,11 +127,11 @@ public class RewriterStoreIntegrationTest extends OpenSearchIntegTestCase {
 
         client().execute(PutRewriterAction.INSTANCE, new PutRewriterRequest("r1", payload1)).get();
 
-        final GetSettingsResponse idxSettings = client().admin().indices().prepareGetSettings(".querqy").get();
+        final GetSettingsResponse idxSettings = client().admin().indices().prepareGetSettings(QUERQY_INDEX_NAME).get();
 
         assertNotNull(idxSettings);
         assertEquals(NUM_DOT_QUERY_REPLICAS,
-                Integer.parseInt(idxSettings.getIndexToSettings().get(".querqy").get("index.number_of_replicas")));
+                Integer.parseInt(idxSettings.getIndexToSettings().get(QUERQY_INDEX_NAME).get("index.number_of_replicas")));
     }
 
 

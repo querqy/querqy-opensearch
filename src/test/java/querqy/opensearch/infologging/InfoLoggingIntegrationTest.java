@@ -99,7 +99,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
     @After
     public void deleteRewriterIndex() {
         try {
-            client().admin().indices().prepareDelete(".querqy").get();
+            client().admin().indices().prepareDelete().get();
         } catch (final IndexNotFoundException e) {
             // Ignore
         }
