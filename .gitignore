@@ -1,5 +1,6 @@
 # Intellij
 .idea
+bin/
 
 # Gradle
 .gradle
@@ -11,3 +12,4 @@ build
 # example files
 ignore*
 example*
+
