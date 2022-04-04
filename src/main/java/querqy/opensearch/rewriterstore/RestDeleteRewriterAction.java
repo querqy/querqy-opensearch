@@ -29,6 +29,8 @@ import org.opensearch.rest.action.RestStatusToXContentListener;
 import java.util.Collections;
 import java.util.List;
 
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_REWRITER_BASE_ROUTE;
+
 
 public class RestDeleteRewriterAction extends BaseRestHandler {
 
@@ -41,7 +43,7 @@ public class RestDeleteRewriterAction extends BaseRestHandler {
 
     @Override
     public List<Route> routes() {
-        return Collections.singletonList(new Route(RestRequest.Method.DELETE, "/_querqy/rewriter/{rewriterId}"));
+        return Collections.singletonList(new Route(RestRequest.Method.DELETE, QUERQY_REWRITER_BASE_ROUTE+ "/{rewriterId}"));
     }
 
     @Override

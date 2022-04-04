@@ -54,6 +54,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
+
 public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
 
     private final String INDEX_NAME = "test_index";
@@ -99,7 +101,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
     @After
     public void deleteRewriterIndex() {
         try {
-            client().admin().indices().prepareDelete().get();
+            client().admin().indices().prepareDelete(QUERQY_INDEX_NAME).get();
         } catch (final IndexNotFoundException e) {
             // Ignore
         }

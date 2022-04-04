@@ -48,13 +48,27 @@ buildscript {
     }
 }
 
+ext {
+    projectSubstitutions = [:]
+    licenseFile = rootProject.file('LICENSE.txt')
+    noticeFile = rootProject.file('NOTICE.txt')
+    isSnapshot = "true" == System.getProperty("build.snapshot", "true")
+}
+
 repositories {
     mavenLocal()
 }
 
-configurations.all {
-    resolutionStrategy {
-        force 'com.fasterxml.jackson.core:jackson-databind:2.12.6'
+allprojects {
+    group = "org.opensearch"
+
+    version = "${opensearch_version}" - "-SNAPSHOT" + ".0"
+    if (isSnapshot) {
+        version += "-SNAPSHOT"
+    }
+
+    plugins.withId('java') {
+        sourceCompatibility = targetCompatibility = "1.8"
     }
 }
 
@@ -87,7 +101,10 @@ jacocoTestReport {
 
 configurations.all {
     resolutionStrategy.force 'junit:junit:4.13.2'
+    resolutionStrategy.force'com.fasterxml.jackson.core:jackson-databind:2.12.6'
 }
+
+
 
 forbiddenApisTest.enabled = false
 // checkstyleTest.enabled = false
