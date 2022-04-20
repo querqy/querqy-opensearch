@@ -54,7 +54,7 @@ public class QuerqyMappingsUpdate1To3IntegrationTest extends OpenSearchSingleNod
     @After
     public void deleteRewriterIndex() {
         try {
-            client().admin().indices().prepareDelete(".querqy").get();
+            client().admin().indices().prepareDelete(QUERQY_INDEX_NAME).get();
         } catch (final IndexNotFoundException e) {
             // Ignore
         }
@@ -96,7 +96,7 @@ public class QuerqyMappingsUpdate1To3IntegrationTest extends OpenSearchSingleNod
 
         client().execute(PutRewriterAction.INSTANCE, new PutRewriterRequest("common_rules", content)).get();
 
-        final GetMappingsRequest getMappingsRequest = new GetMappingsRequest().indices(".querqy");
+        final GetMappingsRequest getMappingsRequest = new GetMappingsRequest().indices(QUERQY_INDEX_NAME);
         final ImmutableOpenMap<String, ImmutableOpenMap<String, MappingMetadata>> mappings = indicesClient
                 .getMappings(getMappingsRequest).get().getMappings();
         final Map<String, Object> properties = (Map<String, Object>) mappings.get(QUERQY_INDEX_NAME)

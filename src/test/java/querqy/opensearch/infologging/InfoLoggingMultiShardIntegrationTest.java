@@ -20,6 +20,7 @@
 package querqy.opensearch.infologging;
 
 import static org.opensearch.test.OpenSearchIntegTestCase.Scope.SUITE;
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
 
 import org.apache.logging.log4j.Level;
@@ -118,7 +119,7 @@ public class InfoLoggingMultiShardIntegrationTest extends OpenSearchIntegTestCas
     @After
     public void deleteRewriterIndex() {
         try {
-            client().admin().indices().prepareDelete(".querqy").get();
+            client().admin().indices().prepareDelete(QUERQY_INDEX_NAME).get();
         } catch (final IndexNotFoundException e) {
             // Ignore
         }

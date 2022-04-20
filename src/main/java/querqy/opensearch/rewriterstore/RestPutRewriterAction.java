@@ -32,6 +32,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_REWRITER_BASE_ROUTE;
+
 public class RestPutRewriterAction extends BaseRestHandler {
 
     public static final String PARAM_REWRITER_ID = "rewriterId";
@@ -43,7 +45,7 @@ public class RestPutRewriterAction extends BaseRestHandler {
 
     @Override
     public List<Route> routes() {
-        return Collections.singletonList(new Route(RestRequest.Method.PUT, "/_querqy/rewriter/{rewriterId}"));
+        return Collections.singletonList(new Route(RestRequest.Method.PUT, QUERQY_REWRITER_BASE_ROUTE+ "/{rewriterId}"));
     }
 
     @Override

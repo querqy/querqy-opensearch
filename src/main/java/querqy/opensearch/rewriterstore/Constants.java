@@ -22,7 +22,9 @@ package querqy.opensearch.rewriterstore;
 public interface Constants {
 
     // TODO: configurable?
-    String QUERQY_INDEX_NAME = ".querqy";
+    String QUERQY_INDEX_NAME = ".opensearch-querqy";
+
+    String QUERQY_REWRITER_BASE_ROUTE = "/_plugins/_querqy/rewriter";
 
     String SETTINGS_QUERQY_INDEX_NUM_REPLICAS = "querqy.store.replicas";
 

@@ -20,6 +20,7 @@
 package querqy.opensearch;
 
 import static org.opensearch.test.OpenSearchIntegTestCase.Scope.SUITE;
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
 
 import org.opensearch.ResourceNotFoundException;
@@ -106,7 +107,7 @@ public class RewriterShardContextsTest extends OpenSearchIntegTestCase {
         assertEquals(0, response2.getFailedShards()); // rewriter probably reloaded
 
         // delete rewriter config from .query index - this should never be done directly (use a delete rewriter action)
-        final DeleteResponse deleteResponse = client().prepareDelete(".querqy", null, "r2").execute().get();
+        final DeleteResponse deleteResponse = client().prepareDelete(QUERQY_INDEX_NAME, null, "r2").execute().get();
         assertEquals(DocWriteResponse.Result.DELETED, deleteResponse.getResult());
 
         // query again - the rewriter should still be cached
