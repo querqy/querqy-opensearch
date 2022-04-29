@@ -8,7 +8,9 @@ Querqy is a query rewriting plugin that helps to solve relevance issues making s
 ├── data 
 │   ├── icecat-products-w_price-19k-20201127.json
 │   └── index_chorus_data.py
+│   └── index_session_data.py
 └── slides
+    └── OpenSearch - Ecommerce Search & Discovery Platform.pdf
 ```
 
 ## Additional resources
