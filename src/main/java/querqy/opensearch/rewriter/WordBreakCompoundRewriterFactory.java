@@ -21,9 +21,9 @@ package querqy.opensearch.rewriter;
 
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.spell.WordBreakSpellChecker;
-import org.opensearch.index.engine.Engine;
 import org.opensearch.index.shard.IndexShard;
 import querqy.opensearch.ConfigUtils;
+import querqy.opensearch.DismaxSearchEngineRequestAdapter;
 import querqy.opensearch.OpenSearchRewriterFactory;
 import querqy.lucene.contrib.rewrite.wordbreak.MorphologicalWordBreaker;
 import querqy.lucene.contrib.rewrite.wordbreak.Morphology;
@@ -157,7 +157,7 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
                                                 final SearchEngineRequestAdapter searchEngineRequestAdapter) {
 
 
-                return new WordBreakCompoundRewriter(wordBreaker, compounder, getShardIndexReader(indexShard),
+                return new WordBreakCompoundRewriter(wordBreaker, compounder, getShardIndexReader((DismaxSearchEngineRequestAdapter) searchEngineRequestAdapter),
                         lowerCaseInput, alwaysAddReverseCompounds, reverseCompoundTriggerWords, maxDecompoundExpansions,
                         verifyDecompoundCollation, protectedWords);
 
@@ -204,11 +204,8 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         return verifyDecompoundCollation;
     }
 
-    private IndexReader getShardIndexReader(final IndexShard indexShard) {
-
-        try (Engine.Searcher searcher = indexShard.acquireSearcher("WordBreakCompoundRewriter")) {
-            return searcher.getTopReaderContext().reader();
-        }
+    private IndexReader getShardIndexReader(final DismaxSearchEngineRequestAdapter searchEngineRequestAdapter) {
+        return searchEngineRequestAdapter.getSearchExecutionContext().searcher().getTopReaderContext().reader();
     }
 
     public SpellCheckerCompounder getCompounder() {
