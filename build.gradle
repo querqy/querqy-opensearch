@@ -33,7 +33,7 @@ opensearchplugin {
 buildscript {
 
     ext {
-        opensearch_version = System.getProperty("opensearch.version", "1.3.1")
+        opensearch_version = System.getProperty("opensearch.version", "2.0.0")
     }
 
     repositories {
@@ -68,18 +68,20 @@ allprojects {
     }
 
     plugins.withId('java') {
-        sourceCompatibility = targetCompatibility = "1.8"
+        sourceCompatibility = targetCompatibility = "11"
     }
 }
 
 dependencies {
-    compile('org.querqy:querqy-lucene:5.1.lucene810.0') {
+    implementation('org.querqy:querqy-lucene:5.4.lucene900.1') {
         exclude group: 'com.fasterxml.jackson.core', module: 'jackson-databind'
     }
 
-    compile('com.fasterxml.jackson.core:jackson-databind')
-    compile('com.jayway.jsonpath:json-path:2.4.0')
+    implementation('com.fasterxml.jackson.core:jackson-databind')
+    implementation('com.jayway.jsonpath:json-path:2.4.0')
 
+    testImplementation('junit:junit:4.13')
+    testImplementation('org.mockito:mockito-core:4.3.1')
     testImplementation('org.apache.logging.log4j:log4j-core:2.17.1')
     testImplementation('org.assertj:assertj-core:3.15.0')
 }
@@ -101,19 +103,19 @@ jacocoTestReport {
 
 configurations.all {
     resolutionStrategy.force 'junit:junit:4.13.2'
-    resolutionStrategy.force'com.fasterxml.jackson.core:jackson-databind:2.12.6'
+    resolutionStrategy.force'com.fasterxml.jackson.core:jackson-databind:2.13.2'
 }
 
 
-
-forbiddenApisTest.enabled = false
-// checkstyleTest.enabled = false
-
-dependencyLicenses.enabled = false
-licenseHeaders.enabled = false
-thirdPartyAudit.enabled = false
-
-loggerUsageCheck.enabled = false
-testingConventions.enabled = false
+licenseHeaders.enabled = true
+// no need to validate pom, as we do not upload to maven/sonatype
 validateNebulaPom.enabled = false
-
+dependencyLicenses.enabled = false
+thirdPartyAudit.enabled = false
+// Allow @Test to be used in test classes not inherited from LuceneTestCase.
+// see https://github.com/elastic/elasticsearch/blob/26c3dd6857d047054b2108f85bc2b040a9c81fe4/build-tools-internal/src/main/resources/forbidden/es-test-signatures.txt
+forbiddenApis.ignoreFailures = true
+// Allow test cases to be named Tests without having to be inherited from LuceneTestCase.
+// see https://github.com/elastic/elasticsearch/blob/323f312bbc829a63056a79ebe45adced5099f6e6/buildSrc/src/main/java/org/elasticsearch/gradle/precommit/TestingConventionsTasks.java
+testingConventions.enabled = false
+loggerUsageCheck.enabled = false
