@@ -121,7 +121,7 @@ public class RewriterShardContext {
             final GetResponse response;
 
             try {
-                response = client.prepareGet(QUERQY_INDEX_NAME, null, rewriterId).execute().get();
+                response = client.prepareGet(QUERQY_INDEX_NAME, rewriterId).execute().get();
             } catch (InterruptedException | ExecutionException e) {
                 throw new OpenSearchException("Could not load rewriter " + rewriterId, e);
             }
