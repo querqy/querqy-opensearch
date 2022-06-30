@@ -45,7 +45,7 @@ import org.opensearch.rest.RestStatus;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -72,7 +72,7 @@ public class PutRewriterResponseTest {
     @Test
     public void testToJson() throws IOException {
 
-        final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1),  QUERQY_INDEX_NAME, "id1", 11,
+        final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1), "id1", 11,
                 2L, 8L, true);
 
         final DiscoveryNode node1 = new DiscoveryNode("name1", "d1", new TransportAddress(META_ADDRESS, 0),
@@ -109,7 +109,7 @@ public class PutRewriterResponseTest {
     @Test
     public void testStreamSerialization() throws IOException {
 
-        final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1),  "atype", "id1", 11, 2L,
+        final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1), "id1", 11, 2L,
                 8L, true);
 
         indexResponse.setShardInfo(new ReplicationResponse.ShardInfo(4, 4));
