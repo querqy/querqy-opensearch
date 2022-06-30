@@ -54,11 +54,6 @@ public class RewriterStoreIntegrationTest extends OpenSearchIntegTestCase {
     }
 
     @Override
-    protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-        return Collections.singleton(QuerqyPlugin.class);
-    }
-
-    @Override
     protected Settings nodeSettings(final int nodeOrdinal) {
 
         return Settings.builder().put(super.nodeSettings(nodeOrdinal))
@@ -138,10 +133,10 @@ public class RewriterStoreIntegrationTest extends OpenSearchIntegTestCase {
     public void index() {
         final String indexName = "idx";
         client().admin().indices().prepareCreate(indexName).get();
-        client().prepareIndex(indexName, null)
+        client().prepareIndex(indexName)
                 .setSource("field1", "a b", "field2", "a c")
                 .get();
-        client().prepareIndex(indexName, null)
+        client().prepareIndex(indexName)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .setSource("field1", "b c")
                 .get();

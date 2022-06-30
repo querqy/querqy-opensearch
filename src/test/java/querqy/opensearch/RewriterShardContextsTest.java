@@ -50,7 +50,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 @OpenSearchIntegTestCase.ClusterScope(scope = SUITE, supportsDedicatedMasters = false, numClientNodes = 1, minNumDataNodes = 4,
-        maxNumDataNodes = 6, transportClientRatio = 1.0)
+        maxNumDataNodes = 6)
 public class RewriterShardContextsTest extends OpenSearchIntegTestCase {
 
     private static final int NUM_DOT_QUERY_REPLICAS = 1;
@@ -61,10 +61,6 @@ public class RewriterShardContextsTest extends OpenSearchIntegTestCase {
         return Collections.singleton(QuerqyPlugin.class);
     }
 
-    @Override
-    protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-        return Collections.singleton(QuerqyPlugin.class);
-    }
 
     @Override
     protected Settings nodeSettings(final int nodeOrdinal) {
@@ -107,7 +103,7 @@ public class RewriterShardContextsTest extends OpenSearchIntegTestCase {
         assertEquals(0, response2.getFailedShards()); // rewriter probably reloaded
 
         // delete rewriter config from .query index - this should never be done directly (use a delete rewriter action)
-        final DeleteResponse deleteResponse = client().prepareDelete(QUERQY_INDEX_NAME, null, "r2").execute().get();
+        final DeleteResponse deleteResponse = client().prepareDelete(QUERQY_INDEX_NAME, "r2").execute().get();
         assertEquals(DocWriteResponse.Result.DELETED, deleteResponse.getResult());
 
         // query again - the rewriter should still be cached
@@ -145,10 +141,10 @@ public class RewriterShardContextsTest extends OpenSearchIntegTestCase {
         client().admin().indices().prepareCreate(indexName).setSettings(Settings.builder()
                 .put("index.number_of_shards", 1)
                 .put("index.number_of_replicas", 0)).get();
-        client().prepareIndex(indexName, null)
+        client().prepareIndex(indexName)
                 .setSource("field1", "a b", "field2", "a c")
                 .get();
-        client().prepareIndex(indexName, null)
+        client().prepareIndex(indexName)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .setSource("field1", "b c")
                 .get();
