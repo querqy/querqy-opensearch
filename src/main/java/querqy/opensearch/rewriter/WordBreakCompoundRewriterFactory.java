@@ -21,14 +21,11 @@ package querqy.opensearch.rewriter;
 
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.spell.WordBreakSpellChecker;
-import org.opensearch.index.shard.IndexShard;
-import querqy.opensearch.ConfigUtils;
 import querqy.opensearch.DismaxSearchEngineRequestAdapter;
+import org.opensearch.index.shard.IndexShard;
+import querqy.lucene.contrib.rewrite.wordbreak.*;
+import querqy.opensearch.ConfigUtils;
 import querqy.opensearch.OpenSearchRewriterFactory;
-import querqy.lucene.contrib.rewrite.wordbreak.MorphologicalWordBreaker;
-import querqy.lucene.contrib.rewrite.wordbreak.Morphology;
-import querqy.lucene.contrib.rewrite.wordbreak.SpellCheckerCompounder;
-import querqy.lucene.contrib.rewrite.wordbreak.WordBreakCompoundRewriter;
 import querqy.model.ExpandedQuery;
 import querqy.model.Term;
 import querqy.rewrite.QueryRewriter;
@@ -79,10 +76,13 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     private TrieMap<Boolean> protectedWords;
     private int maxDecompoundExpansions = DEFAULT_MAX_DECOMPOUND_EXPANSIONS;
     private boolean verifyDecompoundCollation = DEFAULT_VERIFY_DECOMPOUND_COLLATION;
+    private final MorphologyProvider morphologyProvider;
+
 
 
     public WordBreakCompoundRewriterFactory(final String rewriterId) {
         super(rewriterId);
+        morphologyProvider = new MorphologyProvider();
     }
 
     @Override
@@ -108,9 +108,7 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         spellChecker.setMaxEvaluations(100);
         compounder = new SpellCheckerCompounder(spellChecker, dictionaryField, lowerCaseInput);
 
-        final Morphology morphology = ConfigUtils.getEnumArg(config, "morphology", Morphology.class)
-                .orElse(Morphology.DEFAULT);
-
+        final Morphology morphology = morphologyProvider.get(ConfigUtils.getStringArg(config, "morphology").orElse("default")).get();
         wordBreaker = new MorphologicalWordBreaker(morphology, dictionaryField, lowerCaseInput, minSuggestionFreq,
                 minBreakLength, MAX_EVALUATIONS);
 
@@ -125,7 +123,6 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
                 DEFAULT_MAX_DECOMPOUND_EXPANSIONS);
         verifyDecompoundCollation =  ConfigUtils.getArg(decompoundConf, "verifyCollation",
                 DEFAULT_VERIFY_DECOMPOUND_COLLATION);
-
     }
 
     @Override
@@ -139,7 +136,7 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         }
 
         ConfigUtils.getStringArg(config, "morphology").ifPresent(morphologyName -> {
-            if (Arrays.stream(Morphology.values()).map(Enum::name).noneMatch(name -> name.equals(morphologyName))) {
+            if (!morphologyProvider.exists(morphologyName)) {
                 errors.add("Unknown morphology: " + morphologyName);
             }
         });
@@ -157,7 +154,9 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
                                                 final SearchEngineRequestAdapter searchEngineRequestAdapter) {
 
 
-                return new WordBreakCompoundRewriter(wordBreaker, compounder, getShardIndexReader((DismaxSearchEngineRequestAdapter) searchEngineRequestAdapter),
+
+                return new WordBreakCompoundRewriter(wordBreaker, compounder,
+                        getShardIndexReader((DismaxSearchEngineRequestAdapter) searchEngineRequestAdapter),
                         lowerCaseInput, alwaysAddReverseCompounds, reverseCompoundTriggerWords, maxDecompoundExpansions,
                         verifyDecompoundCollation, protectedWords);
 

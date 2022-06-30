@@ -222,6 +222,11 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
         return queryBuilder.getTieBreaker();
     }
 
+    @Override
+    public Optional<Float> getMultiMatchTiebreaker() {
+        return Optional.empty();
+    }
+
     /**
      * <p>Apply the 'minimum should match' setting of the request.</p>
      * <p>It will be the responsibility of the LuceneSearchEngineRequestAdapter implementation to derive the
