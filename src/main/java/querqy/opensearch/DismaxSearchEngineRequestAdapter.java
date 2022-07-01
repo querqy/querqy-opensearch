@@ -222,6 +222,11 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
         return queryBuilder.getTieBreaker();
     }
 
+    @Override
+    public Optional<Float> getMultiMatchTiebreaker() {
+        return Optional.empty();
+    }
+
     /**
      * <p>Apply the 'minimum should match' setting of the request.</p>
      * <p>It will be the responsibility of the LuceneSearchEngineRequestAdapter implementation to derive the
@@ -311,7 +316,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
 
             }
         }
-        return null;
+        return Collections.emptyList();
     }
 
     /**
@@ -326,7 +331,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
      */
     @Override
     public List<Query> getMultiplicativeBoosts(final QuerqyQuery<?> userQuery) throws SyntaxException {
-        return null;
+        return Collections.emptyList();
     }
 
     @Override

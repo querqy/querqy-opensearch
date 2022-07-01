@@ -73,10 +73,9 @@ public class LuceneQueryBuildingIntegrationTest extends OpenSearchSingleNodeTest
     public void index() {
         createIndex(INDEX_NAME,
             client().admin().indices().prepareCreate(INDEX_NAME)
-                .addMapping("test_type", readUtf8Resource("lucene-query-it-mapping.json"), XContentType.JSON));
+                    .setMapping(readUtf8Resource("lucene-query-it-mapping.json")));
 
-
-        client().prepareIndex(INDEX_NAME, null)
+        client().prepareIndex(INDEX_NAME)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .setSource("field0", "abc. def", "field1", "abc. def")
                 .get();
