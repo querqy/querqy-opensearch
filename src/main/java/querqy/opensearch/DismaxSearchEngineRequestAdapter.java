@@ -316,7 +316,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
 
             }
         }
-        return null;
+        return Collections.emptyList();
     }
 
     /**
@@ -331,7 +331,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
      */
     @Override
     public List<Query> getMultiplicativeBoosts(final QuerqyQuery<?> userQuery) throws SyntaxException {
-        return null;
+        return Collections.emptyList();
     }
 
     @Override
