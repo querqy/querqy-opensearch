@@ -125,12 +125,10 @@ public class RewriterShardContextsTest extends OpenSearchIntegTestCase {
         } catch (final ExecutionException e) {
 
             final Throwable cause1 = e.getCause();
-            assertTrue(cause1 instanceof RemoteTransportException);
+            assertTrue(cause1 instanceof SearchPhaseExecutionException);
             final Throwable cause2 = cause1.getCause();
-            assertTrue(cause2 instanceof SearchPhaseExecutionException);
-            final Throwable cause3 = cause2.getCause();
-            assertTrue(cause3 instanceof ResourceNotFoundException);
-            assertEquals("Rewriter not found: r2", cause3.getMessage());
+            assertTrue(cause2 instanceof ResourceNotFoundException);
+            assertEquals("Rewriter not found: r2", cause2.getMessage());
 
         }
 
