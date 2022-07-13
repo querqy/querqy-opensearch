@@ -37,7 +37,6 @@ import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAUL
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_VERIFY_DECOMPOUND_COLLATION;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.MAX_CHANGES;
 
-import java.io.Closeable;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collections;
@@ -48,9 +47,10 @@ import java.util.Map;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.search.QueryCachingPolicy;
 import org.apache.lucene.search.spell.WordBreakSpellChecker;
-import org.opensearch.index.engine.Engine;
+import org.apache.lucene.search.IndexSearcher;
+import org.opensearch.index.query.QueryShardContext;
+import querqy.opensearch.DismaxSearchEngineRequestAdapter;
 import org.opensearch.index.shard.IndexShard;
 import org.hamcrest.Matchers;
 import org.junit.Test;
@@ -240,34 +240,27 @@ public class WordBreakCompoundRewriterFactoryTest {
 
     @Test
     public void testCreateRewriter() throws Exception {
-
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(Collections.singletonMap("dictionaryField", "f1"));
         final IndexShard indexShard = mock(IndexShard.class);
         final IndexReader indexReader = mock(IndexReader.class);
-        final Closeable closeable = mock(Closeable.class);
-        final QueryCachingPolicy queryCachingPolicy = mock(QueryCachingPolicy.class);
         final IndexReaderContext topReaderContext = mock(IndexReaderContext.class);
-
-        when(indexReader.getContext()).thenReturn(topReaderContext);
         when(topReaderContext.reader()).thenReturn(indexReader);
-
         // This is horrible, but there seems to be no way to mock top level IndexReaderContext
         final Field field = IndexReaderContext.class.getDeclaredField("isTopLevel");
         field.setAccessible(true);
         field.setBoolean(topReaderContext, true);
-        field.setAccessible(false);
+        field.setAccessible(false);field.setAccessible(false);
 
-        final Engine.Searcher searcher = new Engine.Searcher("source", indexReader, null, null, queryCachingPolicy,
-                closeable);
-
-        when(indexShard.acquireSearcher("WordBreakCompoundRewriter")).thenReturn(searcher);
-
+        final QueryShardContext searchExecutionContext = mock(QueryShardContext.class);
+        final IndexSearcher searcher = mock(IndexSearcher.class);
+        when(searchExecutionContext.searcher()).thenReturn(searcher);
+        when(searcher.getTopReaderContext()).thenReturn(topReaderContext);
+        final DismaxSearchEngineRequestAdapter searchEngineRequestAdapter =
+                mock(DismaxSearchEngineRequestAdapter.class);
+        when(searchEngineRequestAdapter.getSearchExecutionContext()).thenReturn(searchExecutionContext);
         final RewriterFactory rewriterFactory = factory.createRewriterFactory(indexShard);
-
-        assertTrue(rewriterFactory.createRewriter(null, null) instanceof WordBreakCompoundRewriter);
-
+        assertTrue(rewriterFactory.createRewriter(null, searchEngineRequestAdapter) instanceof
+                WordBreakCompoundRewriter);
     }
-
-
 }
