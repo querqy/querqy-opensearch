@@ -42,7 +42,8 @@ import static org.hamcrest.Matchers.greaterThan;
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
 
-@OpenSearchIntegTestCase.ClusterScope(scope = SUITE, numClientNodes = 1, minNumDataNodes = 4, maxNumDataNodes = 6)
+@OpenSearchIntegTestCase.ClusterScope(scope = SUITE, numClientNodes = 1, minNumDataNodes = 4, maxNumDataNodes = 6,
+        supportsDedicatedMasters = false)
 public class RewriterStoreIntegrationTest extends OpenSearchIntegTestCase {
 
     private static final int NUM_DOT_QUERY_REPLICAS = 2 + new Random().nextInt(4);
