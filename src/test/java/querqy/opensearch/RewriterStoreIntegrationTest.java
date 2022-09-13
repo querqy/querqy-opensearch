@@ -42,7 +42,8 @@ import static org.hamcrest.Matchers.greaterThan;
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
 
-@OpenSearchIntegTestCase.ClusterScope(scope = SUITE, numClientNodes = 1, minNumDataNodes = 4, maxNumDataNodes = 6)
+@OpenSearchIntegTestCase.ClusterScope(scope = SUITE, numClientNodes = 1, minNumDataNodes = 4, maxNumDataNodes = 6,
+        supportsDedicatedMasters = false)
 public class RewriterStoreIntegrationTest extends OpenSearchIntegTestCase {
 
     private static final int NUM_DOT_QUERY_REPLICAS = 2 + new Random().nextInt(4);
@@ -50,11 +51,6 @@ public class RewriterStoreIntegrationTest extends OpenSearchIntegTestCase {
 
     @Override
     protected Collection<Class<? extends Plugin>> nodePlugins() {
-        return Collections.singleton(QuerqyPlugin.class);
-    }
-
-    @Override
-    protected Collection<Class<? extends Plugin>> transportClientPlugins() {
         return Collections.singleton(QuerqyPlugin.class);
     }
 
@@ -138,10 +134,10 @@ public class RewriterStoreIntegrationTest extends OpenSearchIntegTestCase {
     public void index() {
         final String indexName = "idx";
         client().admin().indices().prepareCreate(indexName).get();
-        client().prepareIndex(indexName, null)
+        client().prepareIndex(indexName)
                 .setSource("field1", "a b", "field2", "a c")
                 .get();
-        client().prepareIndex(indexName, null)
+        client().prepareIndex(indexName)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .setSource("field1", "b c")
                 .get();
