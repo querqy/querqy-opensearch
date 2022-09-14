@@ -23,11 +23,11 @@ This document chooses the best of both worlds and defines a way to ensure the co
 
 ### 1.2 Release Tags
 
-* The release tag names are a combination of OpenSearch Querqy plugin version and the suported OpenSearch version: `querqy-opensearch-<major.minor>.os2.3.0-patch1`. 
+* The release tag names are a combination of OpenSearch Querqy plugin version and the suported OpenSearch version: `querqy-opensearch-<major.minor>.os2.3.0`. 
   For example, plugin built for `OpenSearch 2.3.0` and plugin version being `1.0`, will have the tag name: `querqy-opensearch-1.0.os2.3.0`
 * Keeping tag names this way, help us to see the plugin's compatibility with OpenSearch and any plugin specific changes.
 * Release tags contain, assets for source-codes and pre-built zip artifacts. 
-* Hotfixes and security patches will have a patch suffix at the end of the release tag example: `querqy-opensearch-5.4.l900.1.os2.3.0-patch1`
+* Hotfixes and security patches will have a patch suffix at the end of the release tag example: `querqy-opensearch-1.0.os2.3.0-patch1`
 
 ## 2. Releases
 
