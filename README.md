@@ -8,13 +8,20 @@ Many rewriters are provided out-of-the-box, such as the CommonRulesRewriter, the
 ReplaceRewriter or the NumberUnitRewriter. Additionally, Querqy is considered as a pluggable framework to facilitate 
 integrating custom rewriting logic.
 
-## Developer Installation
+## Installation with released zip-packages
+* Released zip-pacakges can be found here: [release tags](https://github.com/querqy/querqy-opensearch/tags)
+* Querqy can be installed like all other OpenSearch plugins, e.g. using
+
+  `bin/opensearch-plugin install file:///path/to/file/opensearch-querqy.zip`
+
+## Installation with local build
 * First, you need to build the plugin by running `./gradlew build`.
 * You find the build at `build/distributions/opensearch-querqy.zip`
 * Querqy can be installed like all other OpenSearch plugins, e.g. using 
 
   `bin/opensearch-plugin install file:///path/to/file/opensearch-querqy.zip`
-* NOTE: In the above command, please make sure to use the `file://` protocol as the path prefix.
+ 
+**Installation note**: In the above command, please make sure to use the `file://` protocol as the path prefix.
 
 ## Additional resources
 A comprehensive documentation can be found here: [Querqy documentation](https://docs.querqy.org/querqy/index.html)
@@ -34,6 +41,5 @@ Querqy for OpenSearch can be used in the same way as Querqy for Elasticsearch, w
   }
   ```
   
-* Getting started with Querqy OpenSearch [plugin APIs](docs/opensearch_querqy_design.md#51-sample-usage-with-synonym-rules)
-* More details, on [querqy opensearch plugin design](docs/opensearch_querqy_design.md)
+* Developer documentation can be found [here](docs/opensearch_dev_documentation.md)
 * Developer channel: Join #querqy-dev on the [E-commerce search Slack space](https://ecom-search.slack.com)

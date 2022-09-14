@@ -16,15 +16,16 @@ This document chooses the best of both worlds and defines a way to ensure the co
   * `2.2`: contains the previous released code, i.e. 2.2.0. No further feature updates are done to this branch. 
   * `2.3`: The current release, currently 2.3.0. In between minor releases, only hotfixes (e.g. security) are backported to 2.3. 
     The next release out of this branch will be 2.3.1.
+  * `dev/feature_branch`: Any feature which is not part of the immediate next release/needs longer timeframe of implementation with multiple PRs can be part of separate feature branches.
     
 * __Note__: OpenSearch follows [semver](https://semver.org/) for versioning the releases. Querqy OpenSearch plugin follows the same.
 
 
 ### 1.2 Release Tags
 
-* The release tag names are a combination of Querqy-lucene version and the suported OpenSearch version. 
-  For example, plugin built for `OpenSearch 2.3.0` with `Querqy-Lucene 5.4.lucene900.1`, will have the tag name: `querqy-opensearch-5.4.l900.1.os2.3.0`
-* Keeping tag names this way, help us to see the plugin's compatibility with OpenSearch and Querqy-Lucene project.
+* The release tag names are a combination of OpenSearch Querqy plugin version and the suported OpenSearch version: `querqy-opensearch-<major.minor>.os2.3.0-patch1`. 
+  For example, plugin built for `OpenSearch 2.3.0` and plugin version being `1.0`, will have the tag name: `querqy-opensearch-1.0.os2.3.0`
+* Keeping tag names this way, help us to see the plugin's compatibility with OpenSearch and any plugin specific changes.
 * Release tags contain, assets for source-codes and pre-built zip artifacts. 
 * Hotfixes and security patches will have a patch suffix at the end of the release tag example: `querqy-opensearch-5.4.l900.1.os2.3.0-patch1`
 
