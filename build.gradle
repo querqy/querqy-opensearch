@@ -81,7 +81,7 @@ dependencies {
     api('com.jayway.jsonpath:json-path:2.4.0')
     implementation("commons-io:commons-io:2.11.0")
     implementation("org.querqy:querqy-core:3.14.1")
-    implementation("net.minidev:json-smart:2.3")
+    implementation("net.minidev:json-smart:2.4.8")
     implementation("net.minidev:accessors-smart:1.2")
     implementation("org.ow2.asm:asm:5.0.4")
     implementation("org.slf4j:slf4j-api:1.7.25")
