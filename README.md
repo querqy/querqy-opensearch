@@ -9,7 +9,7 @@ ReplaceRewriter or the NumberUnitRewriter. Additionally, Querqy is considered as
 integrating custom rewriting logic.
 
 ## Installation with released zip-packages
-* Released zip-pacakges can be found here: [release tags](https://github.com/querqy/querqy-opensearch/tags)
+* Released zip-packages can be found here: [release tags](https://github.com/querqy/querqy-opensearch/tags)
 * Querqy can be installed like all other OpenSearch plugins, e.g. using
 
   `bin/opensearch-plugin install file:///path/to/file/opensearch-querqy.zip`
