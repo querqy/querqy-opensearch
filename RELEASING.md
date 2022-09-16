@@ -68,6 +68,19 @@ This document chooses the best of both worlds and defines a way to ensure the co
   This plugin would follow a similar route with artifact id `querqy-opensearch`.
 * Today publishing to Maven is a manual process, we will automate this soon.
 
+Maven deployments require access to Sonatype. Credentials are provided via env variables:
+```shell
+signingKey=`cat "/path/to/gpg-keychain.asc"`
+export "ORG_GRADLE_PROJECT_signingKey=$signingKey"
+export "ORG_GRADLE_PROJECT_signingPassword=${SIGNING_PASSWORD}"
+export "ORG_GRADLE_PROJECT_sonatypeUsername=${SONATYPE_USER}"
+export "ORG_GRADLE_PROJECT_sonatypePassword=${SONATYPE_PASSWORD}"
+./gradlew publish -Dbuild.snapshot=false
+```
+
+Detailed instructions about the publishing process can be found here: https://central.sonatype.org/publish/publish-guide/
+
+
 ## 3. CVE fixes
 
 * The CVE fixes are only forward patched. For example if, a CVE vulnerability is found in version 2.1, 2.2 and 2.3 (latest release), only version 2.3 is patched. 
