@@ -21,6 +21,9 @@ apply plugin: 'java'
 apply plugin: 'jacoco'
 apply plugin: 'idea'
 apply plugin: 'opensearch.opensearchplugin'
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
+
 
 opensearchplugin {
     name 'opensearch-querqy'
@@ -70,8 +73,11 @@ allprojects {
     plugins.withId('java') {
         sourceCompatibility = targetCompatibility = "11"
     }
-}
 
+    tasks.withType(Jar) {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+}
 
 dependencies {
     api('org.querqy:querqy-lucene:5.4.lucene900.1')
@@ -113,14 +119,20 @@ configurations.all {
     resolutionStrategy.force'com.fasterxml.jackson.core:jackson-databind:2.13.3'
 }
 
-jar { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
-sourcesJar { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }
-
-
-
 licenseHeaders.enabled = true
+
 // no need to validate pom, as we do not upload to maven/sonatype
 validateNebulaPom.enabled = false
+generatePomFileForNebulaPublication.enabled = false
+generateMetadataFileForNebulaPublication.enabled = false
+publishNebulaPublicationToMavenLocal.enabled = false
+// TODO: find better way to exclude publishNebulaPublicationToSonatypeRepository
+tasks.whenTaskAdded {task ->
+    if(task.name.contains("publishNebulaPublicationToSonatypeRepository")) {
+        task.enabled = false
+    }
+}
+
 dependencyLicenses.enabled = false
 thirdPartyAudit.enabled = false
 // Allow @Test to be used in test classes not inherited from LuceneTestCase.
@@ -130,3 +142,67 @@ forbiddenApis.ignoreFailures = true
 // see https://github.com/elastic/elasticsearch/blob/323f312bbc829a63056a79ebe45adced5099f6e6/buildSrc/src/main/java/org/elasticsearch/gradle/precommit/TestingConventionsTasks.java
 testingConventions.enabled = false
 loggerUsageCheck.enabled = false
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId = 'org.querqy'
+            artifactId = 'querqy-opensearch'
+            version = "$version"
+
+            from components.java
+
+            versionMapping {
+                usage('java-api') {
+                    fromResolutionOf('runtimeClasspath')
+                }
+                usage('java-runtime') {
+                    fromResolutionResult()
+                }
+            }
+
+            pom {
+                name = 'Querqy Opensearch'
+                description = 'This is the Opensearch plugin version of Querqy - a query preprocessing framework for Java-based search engines.'
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'jope'
+                        name = 'Johannes Peter'
+                        email = 'johannesdaniel.peter@gmx.de'
+                        url = 'https://github.com/querqy/querqy-opensearch'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            def releasesRepoUrl = 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
+            def snapshotsRepoUrl = 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+
+            name = 'sonatype'
+            url = version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+            credentials(PasswordCredentials)
+        }
+    }
+}
+
+signing {
+    def signingKey = findProperty("signingKey")
+    def signingPassword = findProperty("signingPassword")
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign publishing.publications.mavenJava
+}
+
+javadoc {
+    if(JavaVersion.current().isJava9Compatible()) {
+        options.addBooleanOption('html5', true)
+    }
+}
