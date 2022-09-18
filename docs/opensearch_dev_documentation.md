@@ -81,6 +81,9 @@ Search User:  searches with querqy, not to view the rules but use it. [Only Read
     * Only the users having write permissions on the Querqy index, can add/configure/delete rules to the plugin.
     * For users not having the access, we straight away deny request with `403` error response.
 
+**LIMITATION**: The current implementation of the plugin follows OpenSearch FGAC over search indices. 
+The Querqy Index needs FGAC permissions for editing and viewing rules. But, the plugin maintains a global cache across users, for processed rules.
+
 More discussion about the issue here: https://github.com/querqy/querqy-opensearch/issues/14
 
 ## 2. References:
