@@ -86,12 +86,15 @@ The Querqy Index needs FGAC permissions for editing and viewing rules. But, the 
 
 More discussion about the issue here: https://github.com/querqy/querqy-opensearch/issues/14
 
+
 ## 2. References:
 
-1. Querqy project docs: https://querqy.org/
-2. Querqy project github: https://github.com/querqy
-3. Querqy ElasticSearch Plugin Details: https://github.com/querqy/querqy-elasticsearch
-5. Querqy 5: https://opensourceconnections.com/blog/2021/03/05/whats-new-in-querqy-the-query-preprocessor-for-solr-and-elasticsearch/
+1. Contributing to the project: https://github.com/querqy/querqy-opensearch/blob/main/CONTRIBUTING.md
+2. Release documentation: https://github.com/querqy/querqy-opensearch/blob/main/RELEASING.md
+3. Querqy project docs: https://querqy.org/
+4. Querqy project github: https://github.com/querqy
+5. Querqy ElasticSearch Plugin Details: https://github.com/querqy/querqy-elasticsearch
+6. Querqy 5: https://opensourceconnections.com/blog/2021/03/05/whats-new-in-querqy-the-query-preprocessor-for-solr-and-elasticsearch/
 
 
 
