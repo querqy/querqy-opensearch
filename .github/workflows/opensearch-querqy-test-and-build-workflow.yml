@@ -3,6 +3,7 @@ name: Test and Build OpenSearch Querqy Plugin
 on: [pull_request, push]
 
 env:
+  PLUGIN_RELEASE_VERSION: '1.0'
   OPENSEARCH_VERSION: '2.3.0'
 
 jobs:
@@ -35,5 +36,5 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v1
         with:
-          name: opensearch-querqy
+          name: opensearch-querqy-${{ env.PLUGIN_RELEASE_VERSION }}.os${{ env.OPENSEARCH_VERSION }}
           path: opensearch-querqy-builds
