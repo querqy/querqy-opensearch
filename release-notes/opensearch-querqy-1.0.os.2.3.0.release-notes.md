@@ -12,6 +12,7 @@ Compatible with OpenSearch and OpenSearch Dashboards Version 2.3.0
 ### Documentation
 * Documentation update ([#23](https://github.com/querqy/querqy-opensearch/pull/23))
 * 2.3-pre-release upgrades ([#41](https://github.com/querqy/querqy-opensearch/pull/41))
+* Adding release notes/doc updates for 1.0.os.2.3.0 ([#43](https://github.com/querqy/querqy-opensearch/pull/43))
 
 ### Maintenance
 * Updating plugin to support OpenSearch 1.3 ([#12](https://github.com/querqy/querqy-opensearch/pull/12))
