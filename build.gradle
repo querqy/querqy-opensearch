@@ -23,6 +23,7 @@ apply plugin: 'idea'
 apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'maven-publish'
 apply plugin: 'signing'
+apply plugin: 'distribution'
 
 
 opensearchplugin {
@@ -65,7 +66,7 @@ repositories {
 allprojects {
     group = "org.opensearch"
 
-    version = "${opensearch_version}" - "-SNAPSHOT" + ".0"
+    version = "1.0.os2.3.0"
     if (isSnapshot) {
         version += "-SNAPSHOT"
     }
@@ -146,8 +147,10 @@ loggerUsageCheck.enabled = false
 publishing {
     publications {
         mavenJava(MavenPublication) {
+            artifact distZip
+
             groupId = 'org.querqy'
-            artifactId = 'querqy-opensearch'
+            artifactId = 'opensearch-querqy'
             version = "$version"
 
             from components.java
