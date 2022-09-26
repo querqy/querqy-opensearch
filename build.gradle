@@ -91,7 +91,7 @@ dependencies {
     implementation("net.minidev:json-smart:2.4.8")
     implementation("net.minidev:accessors-smart:2.4.8")
     implementation("org.ow2.asm:asm:9.3")
-    implementation("org.slf4j:slf4j-api:2.0.1")
+    implementation("org.slf4j:slf4j-api:2.0.2")
 
 
     testImplementation('junit:junit:4.13.2')
