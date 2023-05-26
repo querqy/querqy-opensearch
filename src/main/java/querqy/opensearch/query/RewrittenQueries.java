@@ -22,13 +22,13 @@ package querqy.opensearch.query;
 import static querqy.opensearch.query.RequestUtils.paramToQuerySimilarityScoring;
 import static querqy.opensearch.query.RequestUtils.querySimilarityScoringToString;
 
-import org.opensearch.common.ParseField;
+import org.opensearch.core.ParseField;
 import org.opensearch.common.io.stream.NamedWriteable;
 import org.opensearch.common.io.stream.StreamInput;
 import org.opensearch.common.io.stream.StreamOutput;
-import org.opensearch.common.xcontent.ObjectParser;
-import org.opensearch.common.xcontent.ToXContent;
-import org.opensearch.common.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.ObjectParser;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 import querqy.lucene.QuerySimilarityScoring;
 
 import java.io.IOException;

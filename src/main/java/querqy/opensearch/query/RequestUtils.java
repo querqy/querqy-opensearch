@@ -21,7 +21,7 @@ package querqy.opensearch.query;
 
 import static org.opensearch.index.query.AbstractQueryBuilder.DEFAULT_BOOST;
 
-import org.opensearch.common.ParseField;
+import org.opensearch.core.ParseField;
 import querqy.lucene.QuerySimilarityScoring;
 import querqy.lucene.rewrite.SearchFieldsAndBoosting.FieldBoostModel;
 
