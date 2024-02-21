@@ -27,7 +27,7 @@ import static org.opensearch.common.xcontent.XContentType.JSON;
 import static org.junit.Assert.assertEquals;
 
 import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.opensearch.common.xcontent.XContentParser;
+import org.opensearch.core.xcontent.XContentParser;
 import org.junit.Test;
 
 import java.io.IOException;

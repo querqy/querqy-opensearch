@@ -38,11 +38,11 @@ import org.apache.lucene.search.TermQuery;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.junit.MockitoJUnitRunner;
-import org.opensearch.common.collect.List;
 import querqy.lucene.LuceneQueries;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 @RunWith(MockitoJUnitRunner.class)
 public class QuerqyProcessorTest {

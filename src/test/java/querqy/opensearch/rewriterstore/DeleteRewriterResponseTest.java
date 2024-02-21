@@ -27,7 +27,6 @@ import static org.opensearch.common.transport.TransportAddress.META_ADDRESS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 
 import org.opensearch.Version;
 import org.opensearch.action.delete.DeleteResponse;
