@@ -43,7 +43,6 @@ import org.opensearch.client.Client;
 import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
-import org.opensearch.common.collect.ImmutableOpenMap;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
@@ -87,7 +86,7 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
             @Override
             @SuppressWarnings("unchecked")
             public void onResponse(final GetMappingsResponse getMappingsResponse) {
-                final ImmutableOpenMap<String, MappingMetadata> mappings = getMappingsResponse.getMappings();
+                final Map<String, MappingMetadata> mappings = getMappingsResponse.getMappings();
 
                 if (!mappingsVersionChecked) {
 
