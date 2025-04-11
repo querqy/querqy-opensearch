@@ -23,7 +23,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.opensearch.common.transport.TransportAddress.META_ADDRESS;
+import static org.opensearch.core.common.transport.TransportAddress.META_ADDRESS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -34,12 +34,12 @@ import org.opensearch.action.support.replication.ReplicationResponse;
 import org.opensearch.cluster.ClusterName;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.opensearch.common.transport.TransportAddress;
+import org.opensearch.core.common.transport.TransportAddress;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
-import org.opensearch.index.shard.ShardId;
-import org.opensearch.rest.RestStatus;
+import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.core.rest.RestStatus;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -124,7 +124,7 @@ public class DeleteRewriterResponseTest {
 
         final Map<String, Object> parsed;
         try (InputStream stream = XContentHelper.toXContent(response, XContentType.JSON, true).streamInput()) {
-            parsed = XContentHelper.convertToMap(XContentFactory.xContent(XContentType.JSON), stream, false);
+            parsed = XContentHelper.convertToMap(XContentType.JSON.xContent(), stream, false);
         }
 
         assertEquals(2, parsed.size());

@@ -25,7 +25,7 @@ import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.DelegatingAnalyzerWrapper;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Query;
-import org.opensearch.common.bytes.BytesArray;
+import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.common.lucene.search.Queries;
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
@@ -347,7 +347,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
      * @throws SyntaxException @throws SyntaxException if the raw query query could not be parsed
      */
     @Override
-    public Query parseRawQuery(final RawQuery rawQuery) throws SyntaxException {
+    public Query rawQueryToQuery(final RawQuery rawQuery) throws SyntaxException {
 
         try {
             if (rawQuery instanceof QueryBuilderRawQuery) {

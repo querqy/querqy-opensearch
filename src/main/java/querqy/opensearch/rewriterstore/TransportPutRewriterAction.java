@@ -19,7 +19,7 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.opensearch.action.ActionListener.wrap;
+import static org.opensearch.core.action.ActionListener.wrap;
 import static querqy.opensearch.rewriterstore.Constants.DEFAULT_QUERQY_INDEX_NUM_REPLICAS;
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
@@ -27,7 +27,7 @@ import static querqy.opensearch.rewriterstore.PutRewriterAction.NAME;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.action.ActionListener;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.opensearch.action.admin.indices.create.CreateIndexResponse;
@@ -43,7 +43,7 @@ import org.opensearch.client.Client;
 import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
-import org.opensearch.common.collect.ImmutableOpenMap;
+import java.util.Map;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
@@ -87,7 +87,7 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
             @Override
             @SuppressWarnings("unchecked")
             public void onResponse(final GetMappingsResponse getMappingsResponse) {
-                final ImmutableOpenMap<String, MappingMetadata> mappings = getMappingsResponse.getMappings();
+                final Map<String, MappingMetadata> mappings = getMappingsResponse.getMappings();
 
                 if (!mappingsVersionChecked) {
 
