@@ -25,9 +25,9 @@ import org.opensearch.action.support.nodes.BaseNodeResponse;
 import org.opensearch.action.support.nodes.BaseNodesResponse;
 import org.opensearch.cluster.ClusterName;
 import org.opensearch.cluster.node.DiscoveryNode;
-import org.opensearch.common.Strings;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
+import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.ToXContentObject;
@@ -116,7 +116,7 @@ public class NodesReloadRewriterResponse extends BaseNodesResponse<NodesReloadRe
         try {
             final XContentBuilder builder = XContentFactory.jsonBuilder().prettyPrint();
             toXContent(builder, EMPTY_PARAMS);
-            return Strings.toString(builder);
+            return builder.toString();
         } catch (final IOException e) {
             return "{ \"error\" : \"" + e.getMessage() + "\"}";
         }

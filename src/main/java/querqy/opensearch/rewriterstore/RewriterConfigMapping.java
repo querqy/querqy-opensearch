@@ -21,8 +21,8 @@ package querqy.opensearch.rewriterstore;
 
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.OpenSearchException;
-import org.opensearch.common.ParsingException;
-import org.opensearch.common.bytes.BytesArray;
+import org.opensearch.core.common.ParsingException;
+import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.XContentBuilder;

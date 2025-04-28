@@ -20,7 +20,7 @@
 package querqy.opensearch.rewriter;
 
 import org.assertj.core.api.Assertions;
-import org.opensearch.action.ActionFuture;
+import org.opensearch.common.action.ActionFuture;
 import org.opensearch.action.search.SearchRequestBuilder;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Response;

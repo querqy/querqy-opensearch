@@ -20,9 +20,9 @@
 package querqy.opensearch.rewriterstore;
 
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
-import static org.opensearch.action.ActionListener.wrap;
+import static org.opensearch.core.action.ActionListener.wrap;
 
-import org.opensearch.action.ActionListener;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.action.delete.DeleteRequestBuilder;
 import org.opensearch.action.delete.DeleteResponse;
 import org.opensearch.action.support.ActionFilters;

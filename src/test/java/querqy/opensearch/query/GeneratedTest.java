@@ -62,7 +62,7 @@ public class GeneratedTest {
 
         final Map<String, Object> parsed;
         try (InputStream stream = XContentHelper.toXContent(generated, XContentType.JSON, true).streamInput()) {
-            parsed = XContentHelper.convertToMap(XContentFactory.xContent(XContentType.JSON), stream, false);
+            parsed = XContentHelper.convertToMap(XContentType.JSON.xContent(), stream, false);
         }
 
         assertNotNull(parsed);

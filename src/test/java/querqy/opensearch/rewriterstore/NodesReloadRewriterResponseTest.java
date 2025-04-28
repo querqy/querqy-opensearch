@@ -25,9 +25,9 @@ import org.opensearch.Version;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.cluster.ClusterName;
 import org.opensearch.cluster.node.DiscoveryNode;
-import org.opensearch.common.io.stream.ByteBufferStreamInput;
-import org.opensearch.common.io.stream.DataOutputStreamOutput;
-import org.opensearch.common.transport.TransportAddress;
+import org.opensearch.core.common.io.stream.ByteBufferStreamInput;
+import org.opensearch.core.common.io.stream.DataOutputStreamOutput;
+import org.opensearch.core.common.transport.TransportAddress;
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;

@@ -28,7 +28,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.index.query.QueryShardContext;
 import org.opensearch.index.shard.IndexEventListener;
 import org.opensearch.index.shard.IndexShard;
-import org.opensearch.index.shard.ShardId;
+import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.indices.IndicesService;
 
 import java.util.List;

@@ -19,7 +19,7 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.opensearch.common.transport.TransportAddress.META_ADDRESS;
+import static org.opensearch.core.common.transport.TransportAddress.META_ADDRESS;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertEquals;
 
@@ -27,7 +27,7 @@ import org.opensearch.Version;
 import org.opensearch.cluster.ClusterName;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.opensearch.common.transport.TransportAddress;
+import org.opensearch.core.common.transport.TransportAddress;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
@@ -59,7 +59,7 @@ public class NodesClearRewriterCacheResponseTest {
 
         final Map<String, Object> parsed;
         try (InputStream stream = XContentHelper.toXContent(response, XContentType.JSON, true).streamInput()) {
-            parsed = XContentHelper.convertToMap(XContentFactory.xContent(XContentType.JSON), stream, false);
+            parsed = XContentHelper.convertToMap(XContentType.JSON.xContent(), stream, false);
         }
 
         final Map<String, Object> nodes = (Map<String, Object>) parsed.get("nodes");
