@@ -84,7 +84,7 @@ dependencies {
     api('org.querqy:querqy-lucene:5.4.lucene900.1')
     api('com.fasterxml.jackson.core:jackson-databind')
     api('com.fasterxml.jackson.core:jackson-core:2.14.2')
-    api('com.fasterxml.jackson.core:jackson-annotations:2.14.2')
+    api('com.fasterxml.jackson.core:jackson-annotations:2.19.0')
     api('com.jayway.jsonpath:json-path:2.7.0')
     implementation("commons-io:commons-io:2.11.0")
     implementation("org.querqy:querqy-core:3.14.1")
