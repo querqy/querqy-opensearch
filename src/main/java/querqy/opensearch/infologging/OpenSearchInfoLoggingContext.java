@@ -19,8 +19,8 @@
 
 package querqy.opensearch.infologging;
 
-import querqy.infologging.InfoLogging;
-import querqy.infologging.InfoLoggingContext;
+import querqy.lucene.rewrite.infologging.InfoLogging;
+import querqy.lucene.rewrite.infologging.InfoLoggingContext;
 import querqy.rewrite.SearchEngineRequestAdapter;
 
 public class OpenSearchInfoLoggingContext extends InfoLoggingContext {

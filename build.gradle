@@ -81,13 +81,13 @@ allprojects {
 }
 
 dependencies {
-    api('org.querqy:querqy-lucene:5.4.lucene900.1')
+    api('org.querqy:querqy-lucene:5.9.lucene980.0')
     api('com.fasterxml.jackson.core:jackson-databind')
     api('com.fasterxml.jackson.core:jackson-core:2.18.2')
     api('com.fasterxml.jackson.core:jackson-annotations:2.18.2')
     api('com.jayway.jsonpath:json-path:2.7.0')
     implementation("commons-io:commons-io:2.11.0")
-    implementation("org.querqy:querqy-core:3.14.1")
+    implementation("org.querqy:querqy-core:3.18.0")
     implementation("net.minidev:json-smart:2.4.8")
     implementation("net.minidev:accessors-smart:2.4.8")
     implementation("org.ow2.asm:asm:9.3")
@@ -132,6 +132,10 @@ tasks.whenTaskAdded {task ->
     if(task.name.contains("publishNebulaPublicationToSonatypeRepository")) {
         task.enabled = false
     }
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:-missing', '-quiet')
 }
 
 dependencyLicenses.enabled = false

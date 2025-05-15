@@ -32,6 +32,8 @@ import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.index.query.QueryShardContext;
+import querqy.lucene.rewrite.infologging.InfoLogging;
+import querqy.lucene.rewrite.infologging.InfoLoggingContext;
 import querqy.opensearch.infologging.OpenSearchInfoLoggingContext;
 import querqy.opensearch.infologging.InfoLoggingSpecProvider;
 import querqy.opensearch.query.BoostingQueries;
@@ -42,7 +44,6 @@ import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.query.QueryBuilderRawQuery;
 import querqy.opensearch.query.Rewriter;
 import querqy.opensearch.query.RewrittenQueries;
-import querqy.infologging.InfoLogging;
 import querqy.lucene.LuceneSearchEngineRequestAdapter;
 import querqy.lucene.PhraseBoosting.PhraseBoostFieldParams;
 import querqy.lucene.QuerySimilarityScoring;
@@ -52,9 +53,10 @@ import querqy.model.QuerqyQuery;
 import querqy.model.RawQuery;
 import querqy.model.StringRawQuery;
 import querqy.parser.QuerqyParser;
-import querqy.rewrite.ContextAwareQueryRewriter;
 import querqy.rewrite.QueryRewriter;
 import querqy.rewrite.RewriteChain;
+import querqy.rewrite.RewriteLoggingConfig;
+import querqy.rewrite.RewriterFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -65,6 +67,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 
 /**
@@ -77,6 +80,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
     final OpenSearchInfoLoggingContext infoLoggingContext;
     private final QuerqyQueryBuilder queryBuilder;
     private final Map<String, Object> context = new HashMap<>();
+    private final RewriteLoggingConfig rewriteLoggingConfig;
 
     public DismaxSearchEngineRequestAdapter(final QuerqyQueryBuilder queryBuilder,
                                             final RewriteChain rewriteChain,
@@ -85,7 +89,8 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
         this.shardContext = shardContext;
         this.rewriteChain = rewriteChain;
         this.queryBuilder = queryBuilder;
-        this.infoLoggingContext = (infoLogging != null) ? new OpenSearchInfoLoggingContext(infoLogging, this) : null;
+        infoLoggingContext = (infoLogging != null) ? new OpenSearchInfoLoggingContext(infoLogging, this) : null;
+        rewriteLoggingConfig = createRewriteLoggingConfig(infoLogging, queryBuilder.getInfoLoggingSpec());
     }
 
     /**
@@ -543,7 +548,7 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
      * @return the InfoLoggingContext object
      */
     @Override
-    public Optional<querqy.infologging.InfoLoggingContext> getInfoLoggingContext() {
+    public Optional<InfoLoggingContext> getInfoLoggingContext() {
         return Optional.ofNullable(infoLoggingContext);
     }
 
@@ -560,6 +565,11 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
         return false;
     }
 
+    @Override
+    public RewriteLoggingConfig getRewriteLoggingConfig() {
+        return rewriteLoggingConfig;
+    }
+
     public QueryShardContext getSearchExecutionContext() {
         return shardContext;
     }
@@ -567,6 +577,41 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
     @Override
     public Optional<InfoLoggingSpec> getInfoLoggingSpec() {
         return infoLoggingContext != null ? Optional.ofNullable(queryBuilder.getInfoLoggingSpec()) : Optional.empty();
+    }
+
+    private RewriteLoggingConfig createRewriteLoggingConfig(final InfoLogging infoLogging,
+                                                            final InfoLoggingSpec infoLoggingSpec) {
+        final RewriteLoggingConfig.RewriteLoggingConfigBuilder builder = RewriteLoggingConfig.builder();
+
+        if (infoLoggingSpec == null) {
+            builder.isActive(false);
+            builder.hasDetails(false);
+        } else {
+            switch (infoLoggingSpec.getPayloadType()) {
+                case DETAIL:
+                    builder.isActive(true);
+                    builder.hasDetails(true);
+                    break;
+                case REWRITER_ID:
+                    builder.isActive(true);
+                    builder.hasDetails(false);
+                    break;
+                default:
+                    builder.isActive(false);
+                    builder.hasDetails(false);
+
+            }
+        }
+
+        if (infoLogging != null) {
+            builder.includedRewriters(rewriteChain.getFactories().stream()
+                    .map(RewriterFactory::getRewriterId)
+                    .filter(infoLogging::isLoggingEnabledForRewriter)
+                    .collect(Collectors.toSet()));
+        }
+
+
+        return builder.build();
     }
 
     class MapperAnalyzerWrapper extends DelegatingAnalyzerWrapper {

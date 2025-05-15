@@ -144,7 +144,9 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         assertNotNull(events);
         assertEquals(1, events.size());
         LogEvent event = events.get(0);
-        assertEquals("{\"id\":\"query-detail\",\"msg\":{\"common_rules\":[{\"APPLIED_RULES\":[\"msg1\"]}]}}",
+        assertEquals("{\"id\":\"query-detail\",\"msg\":{\"common_rules\":[[{\"message\":\"msg1\",\"match\":" +
+                        "{\"term\":\"k\",\"type\":\"exact\"},\"instructions\":" +
+                        "[{\"type\":\"synonym\",\"value\":\"c\"}]}]]}}",
                 event.getMessage().getFormattedMessage());
 
         assertEquals(Log4jSink.MARKER_QUERQY_REWRITER_DETAIL, event.getMarker());
@@ -231,8 +233,10 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         assertNotNull(events);
         assertEquals(1, events.size());
         LogEvent event = events.get(0);
-        assertEquals("{\"id\":\"query-detail\",\"msg\":{\"common_rules1\":[{\"APPLIED_RULES\":[\"msg1\"]}]," +
-                        "\"common_rules2\":[{\"APPLIED_RULES\":[\"msg2\"]}]}}",
+        assertEquals("{\"id\":\"query-detail\",\"msg\":{\"common_rules1\":[[{\"message\":\"msg1\",\"match\":" +
+                        "{\"term\":\"k\",\"type\":\"exact\"},\"instructions\":[{\"type\":\"synonym\"," +
+                        "\"value\":\"c\"}]}]],\"common_rules2\":[[{\"message\":\"msg2\",\"match\":{\"term\":\"k\"," +
+                        "\"type\":\"exact\"},\"instructions\":[{\"type\":\"up\",\"value\":\"q\"}]}]]}}",
                 event.getMessage().getFormattedMessage());
 
         assertEquals(Log4jSink.MARKER_QUERQY_REWRITER_DETAIL, event.getMarker());
@@ -292,8 +296,10 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         assertNotNull(events);
         assertEquals(1, events.size());
         LogEvent event = events.get(0);
-        assertEquals("{\"id\":\"query-detail\",\"msg\":{\"common_rules2\":[{\"APPLIED_RULES\":[\"msg2\"]}],\"replace1\":" +
-                        "[{\"APPLIED_RULES\":[\"rr => [k]\"]}]}}",
+        assertEquals("{\"id\":\"query-detail\",\"msg\":{\"common_rules2\":[[{\"message\":\"msg2\",\"match\":" +
+                        "{\"term\":\"k\",\"type\":\"exact\"},\"instructions\":[{\"type\":\"synonym\"," +
+                        "\"value\":\"c\"}]}]],\"replace1\":[[{\"message\":\"rr => k\",\"match\":{\"term\":\"rr\"," +
+                        "\"type\":\"exact\"},\"instructions\":[{\"type\":\"replace\",\"value\":\"k\"}]}]]}}",
                 event.getMessage().getFormattedMessage());
 
         assertEquals(Log4jSink.MARKER_QUERQY_REWRITER_DETAIL, event.getMarker());
