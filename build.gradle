@@ -37,7 +37,7 @@ opensearchplugin {
 buildscript {
 
     ext {
-        opensearch_version = System.getProperty("opensearch.version", "2.19.0")
+        opensearch_version = System.getProperty("opensearch.version", "2.19.2")
     }
 
     repositories {
@@ -66,7 +66,8 @@ repositories {
 allprojects {
     group = "org.opensearch"
 
-    version = "1.0.os2.19.0"
+    version = opensearch_version - "-SNAPSHOT" + ".0"
+
     if (isSnapshot) {
         version += "-SNAPSHOT"
     }
