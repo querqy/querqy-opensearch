@@ -24,6 +24,7 @@ import querqy.model.ExpandedQuery;
 import querqy.model.Term;
 import querqy.rewrite.QueryRewriter;
 import querqy.rewrite.RewriterFactory;
+import querqy.rewrite.RewriterOutput;
 import querqy.rewrite.SearchEngineRequestAdapter;
 
 import java.util.Collections;
@@ -54,7 +55,7 @@ public class DummyOpenSearchRewriterFactory extends OpenSearchRewriterFactory {
             @Override
             public QueryRewriter createRewriter(final ExpandedQuery input,
                                                 final SearchEngineRequestAdapter searchEngineRequestAdapter) {
-                return query -> query;
+                return (query, adapter) -> RewriterOutput.builder().expandedQuery(query).build();
             }
 
             @Override

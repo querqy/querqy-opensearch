@@ -27,7 +27,6 @@ import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest;
 import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.metadata.MappingMetadata;
-import org.opensearch.common.collect.ImmutableOpenMap;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.index.IndexNotFoundException;
@@ -101,7 +100,7 @@ public class QuerqyMappingsUpdate2To3IntegrationTest extends OpenSearchSingleNod
         client().execute(PutRewriterAction.INSTANCE, new PutRewriterRequest("common_rules", content)).get();
 
         final GetMappingsRequest getMappingsRequest = new GetMappingsRequest().indices(QUERQY_INDEX_NAME);
-        final ImmutableOpenMap<String, MappingMetadata> mappings = indicesClient
+        final Map<String, MappingMetadata> mappings = indicesClient
                 .getMappings(getMappingsRequest).get().getMappings();
         final Map<String, Object> properties = (Map<String, Object>) mappings.get(QUERQY_INDEX_NAME)
                 .getSourceAsMap().get("properties");

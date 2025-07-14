@@ -1,6 +1,7 @@
 # Intellij
 .idea
 bin/
+out/
 
 # Gradle
 .gradle

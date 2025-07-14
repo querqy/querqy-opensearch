@@ -22,9 +22,9 @@ package querqy.opensearch.query;
 import static querqy.opensearch.query.RequestUtils.paramToQueryFieldsAndBoosting;
 
 import org.opensearch.core.ParseField;
-import org.opensearch.common.io.stream.NamedWriteable;
-import org.opensearch.common.io.stream.StreamInput;
-import org.opensearch.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.NamedWriteable;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ObjectParser;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;

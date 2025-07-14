@@ -37,7 +37,7 @@ opensearchplugin {
 buildscript {
 
     ext {
-        opensearch_version = System.getProperty("opensearch.version", "2.7.0")
+        opensearch_version = System.getProperty("opensearch.version", "2.19.2")
     }
 
     repositories {
@@ -66,7 +66,8 @@ repositories {
 allprojects {
     group = "org.opensearch"
 
-    version = "1.0.os2.7.0"
+    version = "1.1.os" + (opensearch_version - "-SNAPSHOT") + ".0"
+
     if (isSnapshot) {
         version += "-SNAPSHOT"
     }
@@ -81,23 +82,22 @@ allprojects {
 }
 
 dependencies {
-    api('org.querqy:querqy-lucene:5.4.lucene900.1')
-    api('com.fasterxml.jackson.core:jackson-databind')
-    api('com.fasterxml.jackson.core:jackson-core:2.14.2')
-    api('com.fasterxml.jackson.core:jackson-annotations:2.14.2')
-    api('com.jayway.jsonpath:json-path:2.7.0')
-    implementation("commons-io:commons-io:2.11.0")
-    implementation("org.querqy:querqy-core:3.14.1")
-    implementation("net.minidev:json-smart:2.4.8")
+    api('org.querqy:querqy-lucene:5.9.lucene980.0')
+    api('com.fasterxml.jackson.core:jackson-databind:2.18.2')
+    api('com.fasterxml.jackson.core:jackson-annotations:2.18.2')
+    api("org.querqy:querqy-core:3.18.0")
+    implementation('com.jayway.jsonpath:json-path:2.9.0')
+    implementation("commons-io:commons-io:2.15.1")
+    implementation('net.minidev:json-smart:2.5.2')
     implementation("net.minidev:accessors-smart:2.4.8")
     implementation("org.ow2.asm:asm:9.3")
     implementation("org.slf4j:slf4j-api:2.0.1")
 
 
     testImplementation('junit:junit:4.13.2')
-    testImplementation('org.mockito:mockito-core:5.2.0')
-    testImplementation('org.apache.logging.log4j:log4j-core:2.17.1')
-    testImplementation('org.assertj:assertj-core:3.24.2')
+    testImplementation('org.mockito:mockito-core:5.14.2')
+    testImplementation('org.apache.logging.log4j:log4j-core:2.21.0')
+    testImplementation('org.assertj:assertj-core:3.23.1')
 }
 
 test {
@@ -108,7 +108,7 @@ test {
 }
 
 jacoco {
-    toolVersion = "0.8.5"
+    toolVersion = "0.8.13"
 }
 
 jacocoTestReport {
@@ -132,6 +132,10 @@ tasks.whenTaskAdded {task ->
     if(task.name.contains("publishNebulaPublicationToSonatypeRepository")) {
         task.enabled = false
     }
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:-missing', '-quiet')
 }
 
 dependencyLicenses.enabled = false
