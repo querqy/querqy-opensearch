@@ -245,7 +245,7 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
     }
 
     private static void assertSize(SearchResponse actual, int expected) {
-        Assertions.assertThat(actual.getHits().getTotalHits().value).isEqualTo(expected);
+        Assertions.assertThat(actual.getHits().getTotalHits().value()).isEqualTo(expected);
     }
 
     private String getConfigFromFileName(String fileName) throws IOException {

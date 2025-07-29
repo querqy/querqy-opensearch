@@ -25,15 +25,14 @@ import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest;
-import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import org.junit.After;
 import org.junit.Test;
+import org.opensearch.transport.client.IndicesAdminClient;
 import querqy.opensearch.rewriterstore.PutRewriterAction;
 import querqy.opensearch.rewriterstore.PutRewriterRequest;
 

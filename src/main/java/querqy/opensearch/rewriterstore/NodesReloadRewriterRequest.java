@@ -19,10 +19,10 @@
 
 package querqy.opensearch.rewriterstore;
 
-import org.opensearch.action.support.nodes.BaseNodeRequest;
 import org.opensearch.action.support.nodes.BaseNodesRequest;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.transport.TransportRequest;
 
 import java.io.IOException;
 
@@ -55,7 +55,7 @@ public class NodesReloadRewriterRequest extends BaseNodesRequest<NodesReloadRewr
     }
 
 
-    public static class NodeRequest extends BaseNodeRequest {
+    public static class NodeRequest extends TransportRequest {
 
         String rewriterId;
 

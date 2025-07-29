@@ -138,7 +138,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -227,7 +227,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -290,7 +290,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
 
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -336,7 +336,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -375,7 +375,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -419,7 +419,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -479,7 +479,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
