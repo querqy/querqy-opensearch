@@ -20,56 +20,52 @@
 package querqy.opensearch.rewriterstore;
 
 import static org.hamcrest.collection.IsMapContaining.hasEntry;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertEquals;
+import org.opensearch.test.OpenSearchTestCase;
+import java.nio.charset.StandardCharsets;
 import static org.mockito.Mockito.mock;
 import static querqy.opensearch.rewriterstore.RestPutRewriterAction.PARAM_REWRITER_ID;
 
-import org.opensearch.client.node.NodeClient;
+import org.opensearch.transport.client.node.NodeClient;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.test.rest.FakeRestRequest;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-import org.mockito.junit.MockitoJUnitRunner;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-@RunWith(MockitoJUnitRunner.class)
-public class RestPutRewriterActionTest {
+public class RestPutRewriterActionTest extends OpenSearchTestCase {
 
-    @Test(expected = IllegalArgumentException.class)
     public void testThatNullRewriterIdIsRejected() {
+        expectThrows(IllegalArgumentException.class, () -> {
 
-        final NodeClient client = mock(NodeClient.class);
-        final FakeRestRequest restRequest = new FakeRestRequest.Builder(null)
-                .withParams(Collections.emptyMap()).build();
+            final NodeClient client = mock(NodeClient.class);
+            final FakeRestRequest restRequest = new FakeRestRequest.Builder(null)
+                    .withParams(Collections.emptyMap()).build();
 
-        new RestPutRewriterAction().prepareRequest(restRequest, client);
+            new RestPutRewriterAction().prepareRequest(restRequest, client);
+        });
 
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testThatEmptyRewriterIdIsRejected() {
+        expectThrows(IllegalArgumentException.class, () -> {
 
-        final NodeClient client = mock(NodeClient.class);
-        final Map<String, String> params = new HashMap<>();
-        params.put(PARAM_REWRITER_ID, " ");
-        final FakeRestRequest restRequest = new FakeRestRequest.Builder(null)
-                .withParams(params).build();
+            final NodeClient client = mock(NodeClient.class);
+            final Map<String, String> params = new HashMap<>();
+            params.put(PARAM_REWRITER_ID, " ");
+            final FakeRestRequest restRequest = new FakeRestRequest.Builder(null)
+                    .withParams(params).build();
 
-        new RestPutRewriterAction().prepareRequest(restRequest, client);
+            new RestPutRewriterAction().prepareRequest(restRequest, client);
+        });
 
     }
 
     @SuppressWarnings("unchecked")
-    @Test
-    public void testThatRequestIsParsed() throws Exception{
+
+    public void testThatRequestIsParsed() throws Exception {
         final NodeClient client = mock(NodeClient.class);
 
         final Map<String, String> params = new HashMap<>();

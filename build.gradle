@@ -27,24 +27,24 @@ apply plugin: 'distribution'
 
 
 opensearchplugin {
-    name 'opensearch-querqy'
-    description 'Query rewriting plugin'
-    classname 'querqy.opensearch.QuerqyPlugin'
-    licenseFile rootProject.file('LICENSE.txt')
-    noticeFile rootProject.file('NOTICE.txt')
+    name = 'opensearch-querqy'
+    description = 'Query rewriting plugin'
+    classname = 'querqy.opensearch.QuerqyPlugin'
+    licenseFile = rootProject.file('LICENSE.txt')
+    noticeFile = rootProject.file('NOTICE.txt')
 }
 
 buildscript {
 
     ext {
-        opensearch_version = System.getProperty("opensearch.version", "2.19.2")
+        opensearch_version = System.getProperty("opensearch.version", "3.4.0")
     }
 
     repositories {
         mavenLocal()
-        maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
+        maven { url = "https://aws.oss.sonatype.org/content/repositories/snapshots" }
         mavenCentral()
-        maven { url "https://plugins.gradle.org/m2/" }
+        maven { url = "https://plugins.gradle.org/m2/" }
     }
 
     dependencies {
@@ -72,8 +72,8 @@ allprojects {
         version += "-SNAPSHOT"
     }
 
-    plugins.withId('java') {
-        sourceCompatibility = targetCompatibility = "11"
+    java {
+        sourceCompatibility = targetCompatibility = "21"
     }
 
     tasks.withType(Jar) {
@@ -82,7 +82,7 @@ allprojects {
 }
 
 dependencies {
-    api('org.querqy:querqy-lucene:5.9.lucene980.0')
+    api('org.querqy:querqy-lucene:5.9.lucene1021.0')
     api('com.fasterxml.jackson.core:jackson-databind:2.18.2')
     api('com.fasterxml.jackson.core:jackson-annotations:2.18.2')
     api("org.querqy:querqy-core:3.18.0")
@@ -91,20 +91,21 @@ dependencies {
     implementation('net.minidev:json-smart:2.5.2')
     implementation("net.minidev:accessors-smart:2.4.8")
     implementation("org.ow2.asm:asm:9.3")
-    implementation("org.slf4j:slf4j-api:2.0.1")
+    implementation("org.slf4j:slf4j-api:2.0.17")
 
 
     testImplementation('junit:junit:4.13.2')
-    testImplementation('org.mockito:mockito-core:5.14.2')
+    testImplementation('org.mockito:mockito-core:5.20.0')
     testImplementation('org.apache.logging.log4j:log4j-core:2.21.0')
     testImplementation('org.assertj:assertj-core:3.23.1')
+    testImplementation "org.opensearch:opensearch-agent-bootstrap:${opensearch_version}"
 }
 
 test {
     useJUnit()
     finalizedBy jacocoTestReport
     include "**/*Test.class"
-    systemProperties 'java.security.policy': file("$projectDir/plugin-security.policy").absolutePath
+    systemProperty 'tests.security.manager', 'false'
 }
 
 jacoco {
@@ -117,7 +118,6 @@ jacocoTestReport {
 
 configurations.all {
     resolutionStrategy.force 'junit:junit:4.13.2'
-    resolutionStrategy.force'com.fasterxml.jackson.core:jackson-databind:2.13.3'
 }
 
 licenseHeaders.enabled = true

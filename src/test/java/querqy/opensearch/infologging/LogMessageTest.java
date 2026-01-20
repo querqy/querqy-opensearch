@@ -19,16 +19,14 @@
 
 package querqy.opensearch.infologging;
 
-import static org.junit.Assert.assertEquals;
+import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import org.junit.Test;
 
-public class LogMessageTest {
+public class LogMessageTest extends OpenSearchTestCase {
 
-    @Test
     public void appendValueTest() {
         final Map<String, Object> obj = new HashMap<>();
         obj.put("str", "string");

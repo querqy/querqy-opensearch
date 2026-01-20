@@ -20,8 +20,8 @@
 package querqy.opensearch.rewriterstore;
 
 import org.opensearch.action.ActionRequestBuilder;
-import org.opensearch.client.OpenSearchClient;
-import org.opensearch.client.node.NodeClient;
+import org.opensearch.transport.client.OpenSearchClient;
+import org.opensearch.transport.client.node.NodeClient;
 import org.opensearch.rest.BaseRestHandler;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.rest.action.RestStatusToXContentListener;

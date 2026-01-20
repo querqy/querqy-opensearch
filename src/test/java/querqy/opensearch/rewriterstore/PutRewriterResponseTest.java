@@ -20,15 +20,13 @@
 package querqy.opensearch.rewriterstore;
 
 import static org.opensearch.core.common.transport.TransportAddress.META_ADDRESS;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
+
+import org.opensearch.test.OpenSearchTestCase;
 
 import org.opensearch.Version;
 import org.opensearch.action.index.IndexResponse;
@@ -43,9 +41,6 @@ import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.core.rest.RestStatus;
 import org.hamcrest.Matchers;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -53,10 +48,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 
-@RunWith(MockitoJUnitRunner.class)
-public class PutRewriterResponseTest {
+public class PutRewriterResponseTest extends OpenSearchTestCase {
 
-    @Test
     public void testThatStatusIsTakenFromIndexResponse() {
         final RestStatus status = RestStatus.CREATED;
         final IndexResponse indexResponse = mock(IndexResponse.class);
@@ -69,7 +62,6 @@ public class PutRewriterResponseTest {
     }
 
     @SuppressWarnings("unchecked")
-    @Test
     public void testToJson() throws IOException {
 
         final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1), "id1", 11,
@@ -106,7 +98,6 @@ public class PutRewriterResponseTest {
 
     }
 
-    @Test
     public void testStreamSerialization() throws IOException {
 
         final IndexResponse indexResponse = new IndexResponse(new ShardId("idx1", "shard1", 1), "id1", 11, 2L,

@@ -19,7 +19,6 @@
 
 package querqy.opensearch.rewriterstore;
 
-import org.opensearch.SpecialPermission;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.action.ValidateActions;
@@ -28,8 +27,8 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import querqy.opensearch.OpenSearchRewriterFactory;
 
 import java.io.IOException;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
+import org.opensearch.secure_sm.AccessController;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -87,15 +86,8 @@ public class PutRewriterRequest extends ActionRequest {
             }
         }
 
-
-        SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
-            sm.checkPermission(new SpecialPermission());
-        }
-
-
-        final List<String> errors =  AccessController.doPrivileged(
-                (PrivilegedAction<List<String> >) () -> {
+        final List<String> errors = AccessController.doPrivileged(
+                () -> {
 
                     try {
                         final Map<String, Object> config = (Map<String, Object>) content.getOrDefault("config",

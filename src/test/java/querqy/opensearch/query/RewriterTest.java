@@ -19,24 +19,25 @@
 
 package querqy.opensearch.query;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.opensearch.common.xcontent.XContentHelper.createParser;
-import static org.opensearch.common.xcontent.XContentHelper.toXContent;
+import org.opensearch.test.OpenSearchTestCase;
+
+import static org.opensearch.core.xcontent.NamedXContentRegistry.EMPTY;
+import static org.opensearch.core.xcontent.DeprecationHandler.IGNORE_DEPRECATIONS;
 import static org.opensearch.common.xcontent.XContentType.JSON;
-import static org.junit.Assert.assertEquals;
 
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
-import org.junit.Test;
+import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.common.bytes.BytesReference;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-public class RewriterTest {
+public class RewriterTest extends OpenSearchTestCase {
 
-    @Test
     public void testStreamSerializationWithParams() throws IOException {
 
         final Rewriter rewriter1 = new Rewriter("rewriter_1");
@@ -61,7 +62,6 @@ public class RewriterTest {
 
     }
 
-    @Test
     public void testStreamSerializationWithoutParams() throws IOException {
 
         final Rewriter rewriter1 = new Rewriter("rewriter_1");
@@ -78,7 +78,6 @@ public class RewriterTest {
 
     }
 
-    @Test
     public void testToJsonWithParams() throws IOException {
 
         final Rewriter rewriter1 = new Rewriter("some_rewriter");
@@ -93,7 +92,12 @@ public class RewriterTest {
 
         assertFalse(rewriter1.isFragment());
 
-        final XContentParser parser = createParser(null, null, toXContent(rewriter1, JSON, true), JSON);
+        final XContentBuilder builder = XContentFactory.jsonBuilder();
+        rewriter1.toXContent(builder, ToXContent.EMPTY_PARAMS);
+        final XContentParser parser = JSON.xContent().createParser(
+                EMPTY,
+                IGNORE_DEPRECATIONS,
+                BytesReference.bytes(builder).streamInput());
         parser.nextToken();
 
         final Rewriter rewriter2 = Rewriter.PARSER.parse(parser, null);
@@ -105,7 +109,6 @@ public class RewriterTest {
 
     }
 
-    @Test
     public void testToFragmentWithoutParams() {
 
         final Rewriter rewriter1 = new Rewriter("some_rewriter");

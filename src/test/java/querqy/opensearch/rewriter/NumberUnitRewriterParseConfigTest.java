@@ -20,7 +20,13 @@
 package querqy.opensearch.rewriter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.Test;
+
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.empty;
+import org.opensearch.test.OpenSearchTestCase;
+
 import querqy.opensearch.rewriter.numberunit.NumberUnitConfigObject;
 import querqy.rewrite.contrib.numberunit.model.NumberUnitDefinition;
 
@@ -28,107 +34,107 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
+public class NumberUnitRewriterParseConfigTest extends OpenSearchTestCase {
 
+        private static String basePath = "/numberunit/";
 
-public class NumberUnitRewriterParseConfigTest {
+        public void testFullConfig() throws IOException {
+                final NumberUnitConfigObject numberUnitConfigObject = createConfigObjectFromFileName(
+                                "number-unit-full-config.json");
+                assertThat(numberUnitConfigObject.getScaleForLinearFunctions(), equalTo(1001));
+                assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getBoost(), notNullValue());
+                assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getFilter(), notNullValue());
 
-    private static String basePath = "/numberunit/";
+                final List<NumberUnitDefinition> numberUnitDefinitions = new NumberUnitRewriterFactory("")
+                                .parseConfig(numberUnitConfigObject);
+                assertThat(numberUnitDefinitions, notNullValue());
+                assertThat(numberUnitDefinitions, not(empty()));
 
-    @Test
-    public void testFullConfig() throws IOException {
-        final NumberUnitConfigObject numberUnitConfigObject = createConfigObjectFromFileName("number-unit-full-config.json");
-        assertThat(numberUnitConfigObject.getScaleForLinearFunctions()).isEqualTo(1001);
-        assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getBoost()).isNotNull();
-        assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getFilter()).isNotNull();
+                NumberUnitDefinition numberUnitDefinition = numberUnitDefinitions.get(0);
 
-        final List<NumberUnitDefinition> numberUnitDefinitions = new NumberUnitRewriterFactory("").parseConfig(numberUnitConfigObject);
-        assertThat(numberUnitDefinitions).isNotNull();
-        assertThat(numberUnitDefinitions).isNotEmpty();
+                assertThat(numberUnitDefinition.unitDefinitions, notNullValue());
+                assertThat(numberUnitDefinition.unitDefinitions, not(empty()));
 
-        NumberUnitDefinition numberUnitDefinition = numberUnitDefinitions.get(0);
+                assertThat(numberUnitDefinition.unitDefinitions, notNullValue());
+                assertThat(numberUnitDefinition.unitDefinitions, not(empty()));
+                assertThat(numberUnitDefinition.unitDefinitions.get(0).term, notNullValue());
+                assertThat(numberUnitDefinition.unitDefinitions.get(0).term, equalTo("term"));
+                assertThat(numberUnitDefinition.unitDefinitions.get(0).multiplier.doubleValue(), equalTo(1002.0));
 
-        assertThat(numberUnitDefinition.unitDefinitions).isNotNull();
-        assertThat(numberUnitDefinition.unitDefinitions).isNotEmpty();
+                assertThat(numberUnitDefinition.fields, notNullValue());
+                assertThat(numberUnitDefinition.fields, not(empty()));
+                assertThat(numberUnitDefinition.fields.get(0).fieldName, notNullValue());
+                assertThat(numberUnitDefinition.fields.get(0).fieldName, equalTo("fieldName"));
+                assertThat(numberUnitDefinition.fields.get(0).scale, equalTo(1003));
 
-        assertThat(numberUnitDefinition.unitDefinitions).isNotNull();
-        assertThat(numberUnitDefinition.unitDefinitions).isNotEmpty();
-        assertThat(numberUnitDefinition.unitDefinitions.get(0).term).isNotNull();
-        assertThat(numberUnitDefinition.unitDefinitions.get(0).term).isEqualTo("term");
-        assertThat(numberUnitDefinition.unitDefinitions.get(0).multiplier.doubleValue()).isEqualTo(1002);
+                assertThat(numberUnitDefinition.maxScoreForExactMatch.doubleValue(), equalTo(1004.0));
+                assertThat(numberUnitDefinition.minScoreAtUpperBoundary.doubleValue(), equalTo(1005.0));
+                assertThat(numberUnitDefinition.minScoreAtLowerBoundary.doubleValue(), equalTo(1006.0));
+                assertThat(numberUnitDefinition.additionalScoreForExactMatch.doubleValue(), equalTo(1007.0));
 
-        assertThat(numberUnitDefinition.fields).isNotNull();
-        assertThat(numberUnitDefinition.fields).isNotEmpty();
-        assertThat(numberUnitDefinition.fields.get(0).fieldName).isNotNull();
-        assertThat(numberUnitDefinition.fields.get(0).fieldName).isEqualTo("fieldName");
-        assertThat(numberUnitDefinition.fields.get(0).scale).isEqualTo(1003);
+                assertThat(numberUnitDefinition.boostPercentageUpperBoundary.doubleValue(), equalTo(1008.0));
+                assertThat(numberUnitDefinition.boostPercentageLowerBoundary.doubleValue(), equalTo(1009.0));
+                assertThat(numberUnitDefinition.boostPercentageUpperBoundaryExactMatch.doubleValue(), equalTo(1010.0));
+                assertThat(numberUnitDefinition.boostPercentageLowerBoundaryExactMatch.doubleValue(), equalTo(1011.0));
 
-        assertThat(numberUnitDefinition.maxScoreForExactMatch.doubleValue()).isEqualTo(1004);
-        assertThat(numberUnitDefinition.minScoreAtUpperBoundary.doubleValue()).isEqualTo(1005);
-        assertThat(numberUnitDefinition.minScoreAtLowerBoundary.doubleValue()).isEqualTo(1006);
-        assertThat(numberUnitDefinition.additionalScoreForExactMatch.doubleValue()).isEqualTo(1007);
+                assertThat(numberUnitDefinition.filterPercentageUpperBoundary.doubleValue(), equalTo(1012.0));
+                assertThat(numberUnitDefinition.filterPercentageLowerBoundary.doubleValue(), equalTo(1013.0));
+        }
 
-        assertThat(numberUnitDefinition.boostPercentageUpperBoundary.doubleValue()).isEqualTo(1008);
-        assertThat(numberUnitDefinition.boostPercentageLowerBoundary.doubleValue()).isEqualTo(1009);
-        assertThat(numberUnitDefinition.boostPercentageUpperBoundaryExactMatch.doubleValue()).isEqualTo(1010);
-        assertThat(numberUnitDefinition.boostPercentageLowerBoundaryExactMatch.doubleValue()).isEqualTo(1011);
+        public void testInvalidConfig() throws IOException {
+                final NumberUnitConfigObject numberUnitConfigObject = createConfigObjectFromFileName(
+                                "number-unit-invalid-config.json");
+                expectThrows(IllegalArgumentException.class,
+                                () -> new NumberUnitRewriterFactory("").parseConfig(numberUnitConfigObject));
+        }
 
-        assertThat(numberUnitDefinition.filterPercentageUpperBoundary.doubleValue()).isEqualTo(1012);
-        assertThat(numberUnitDefinition.filterPercentageLowerBoundary.doubleValue()).isEqualTo(1013);
-    }
+        public void testMinimalConfig() throws IOException {
+                final NumberUnitConfigObject numberUnitConfigObject = createConfigObjectFromFileName(
+                                "number-unit-minimal-config.json");
 
-    @Test(expected = IllegalArgumentException.class)
-    public void testInvalidConfig() throws IOException {
-        final NumberUnitConfigObject numberUnitConfigObject = createConfigObjectFromFileName("number-unit-invalid-config.json");
-        new NumberUnitRewriterFactory("").parseConfig(numberUnitConfigObject);
-    }
+                assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getBoost(), notNullValue());
+                assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getFilter(), notNullValue());
 
-    @Test
-    public void testMinimalConfig() throws IOException {
-        final NumberUnitConfigObject numberUnitConfigObject = createConfigObjectFromFileName("number-unit-minimal-config.json");
+                final List<NumberUnitDefinition> numberUnitDefinitions = new NumberUnitRewriterFactory("")
+                                .parseConfig(numberUnitConfigObject);
+                assertThat(numberUnitDefinitions, notNullValue());
+                assertThat(numberUnitDefinitions, not(empty()));
 
-        assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getBoost()).isNotNull();
-        assertThat(numberUnitConfigObject.getNumberUnitDefinitions().get(0).getFilter()).isNotNull();
+                NumberUnitDefinition numberUnitDefinition = numberUnitDefinitions.get(0);
 
-        final List<NumberUnitDefinition> numberUnitDefinitions = new NumberUnitRewriterFactory("").parseConfig(numberUnitConfigObject);
-        assertThat(numberUnitDefinitions).isNotNull();
-        assertThat(numberUnitDefinitions).isNotEmpty();
+                assertThat(numberUnitDefinition.unitDefinitions, notNullValue());
+                assertThat(numberUnitDefinition.unitDefinitions, not(empty()));
 
-        NumberUnitDefinition numberUnitDefinition = numberUnitDefinitions.get(0);
+                assertThat(numberUnitDefinition.unitDefinitions, notNullValue());
+                assertThat(numberUnitDefinition.unitDefinitions, not(empty()));
+                assertThat(numberUnitDefinition.unitDefinitions.get(0).term, notNullValue());
+                assertThat(numberUnitDefinition.unitDefinitions.get(0).term, equalTo("term"));
+                assertThat(numberUnitDefinition.unitDefinitions.get(0).multiplier, notNullValue());
 
-        assertThat(numberUnitDefinition.unitDefinitions).isNotNull();
-        assertThat(numberUnitDefinition.unitDefinitions).isNotEmpty();
+                assertThat(numberUnitDefinition.fields, notNullValue());
+                assertThat(numberUnitDefinition.fields, not(empty()));
+                assertThat(numberUnitDefinition.fields.get(0).fieldName, notNullValue());
+                assertThat(numberUnitDefinition.fields.get(0).fieldName, equalTo("fieldName"));
+                assertThat(numberUnitDefinition.fields.get(0).scale, notNullValue());
 
-        assertThat(numberUnitDefinition.unitDefinitions).isNotNull();
-        assertThat(numberUnitDefinition.unitDefinitions).isNotEmpty();
-        assertThat(numberUnitDefinition.unitDefinitions.get(0).term).isNotNull();
-        assertThat(numberUnitDefinition.unitDefinitions.get(0).term).isEqualTo("term");
-        assertThat(numberUnitDefinition.unitDefinitions.get(0).multiplier).isNotNull();
+                assertThat(numberUnitDefinition.maxScoreForExactMatch.doubleValue(), notNullValue());
+                assertThat(numberUnitDefinition.minScoreAtUpperBoundary.doubleValue(), notNullValue());
+                assertThat(numberUnitDefinition.minScoreAtLowerBoundary.doubleValue(), notNullValue());
+                assertThat(numberUnitDefinition.additionalScoreForExactMatch.doubleValue(), notNullValue());
 
-        assertThat(numberUnitDefinition.fields).isNotNull();
-        assertThat(numberUnitDefinition.fields).isNotEmpty();
-        assertThat(numberUnitDefinition.fields.get(0).fieldName).isNotNull();
-        assertThat(numberUnitDefinition.fields.get(0).fieldName).isEqualTo("fieldName");
-        assertThat(numberUnitDefinition.fields.get(0).scale).isNotNull();
+                assertThat(numberUnitDefinition.boostPercentageUpperBoundary.doubleValue(), notNullValue());
+                assertThat(numberUnitDefinition.boostPercentageLowerBoundary.doubleValue(), notNullValue());
+                assertThat(numberUnitDefinition.boostPercentageUpperBoundaryExactMatch.doubleValue(), notNullValue());
+                assertThat(numberUnitDefinition.boostPercentageLowerBoundaryExactMatch.doubleValue(), notNullValue());
 
-        assertThat(numberUnitDefinition.maxScoreForExactMatch.doubleValue()).isNotNull();
-        assertThat(numberUnitDefinition.minScoreAtUpperBoundary.doubleValue()).isNotNull();
-        assertThat(numberUnitDefinition.minScoreAtLowerBoundary.doubleValue()).isNotNull();
-        assertThat(numberUnitDefinition.additionalScoreForExactMatch.doubleValue()).isNotNull();
+                assertThat(numberUnitDefinition.filterPercentageUpperBoundary.doubleValue(), notNullValue());
+                assertThat(numberUnitDefinition.filterPercentageLowerBoundary.doubleValue(), notNullValue());
+        }
 
-        assertThat(numberUnitDefinition.boostPercentageUpperBoundary.doubleValue()).isNotNull();
-        assertThat(numberUnitDefinition.boostPercentageLowerBoundary.doubleValue()).isNotNull();
-        assertThat(numberUnitDefinition.boostPercentageUpperBoundaryExactMatch.doubleValue()).isNotNull();
-        assertThat(numberUnitDefinition.boostPercentageLowerBoundaryExactMatch.doubleValue()).isNotNull();
-
-        assertThat(numberUnitDefinition.filterPercentageUpperBoundary.doubleValue()).isNotNull();
-        assertThat(numberUnitDefinition.filterPercentageLowerBoundary.doubleValue()).isNotNull();
-    }
-
-    private NumberUnitConfigObject createConfigObjectFromFileName(String fileName) throws IOException {
-        InputStream inputStream = this.getClass().getResourceAsStream(basePath + fileName);
-        final ObjectMapper objectMapper = new ObjectMapper();
-        return objectMapper.readValue(inputStream, NumberUnitConfigObject.class);
-    }
+        private NumberUnitConfigObject createConfigObjectFromFileName(String fileName) throws IOException {
+                InputStream inputStream = this.getClass().getResourceAsStream(basePath + fileName);
+                final ObjectMapper objectMapper = new ObjectMapper();
+                return objectMapper.readValue(inputStream, NumberUnitConfigObject.class);
+        }
 
 }

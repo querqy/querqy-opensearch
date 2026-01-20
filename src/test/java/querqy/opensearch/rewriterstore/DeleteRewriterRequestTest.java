@@ -19,29 +19,23 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertEquals;
-
+import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.OpenSearchParseException;
 import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.junit.Test;
 
 import java.io.IOException;
 
-public class DeleteRewriterRequestTest {
+public class DeleteRewriterRequestTest extends OpenSearchTestCase {
 
-    @Test(expected = OpenSearchParseException.class)
     public void testNullRewriterIsNotAccepted() {
-        new DeleteRewriterRequest((String) null);
+        expectThrows(OpenSearchParseException.class, () -> new DeleteRewriterRequest((String) null));
     }
 
-    @Test
     public void testValidate() {
         final DeleteRewriterRequest validRequest = new DeleteRewriterRequest("r27");
         assertNull(validRequest.validate());
     }
 
-    @Test
     public void testStreamSerialization() throws IOException {
         final DeleteRewriterRequest request1 = new DeleteRewriterRequest("r31");
         final BytesStreamOutput output = new BytesStreamOutput();

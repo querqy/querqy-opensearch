@@ -19,10 +19,6 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertEquals;
 import static org.opensearch.core.common.transport.TransportAddress.META_ADDRESS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -35,16 +31,14 @@ import org.opensearch.cluster.ClusterName;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.transport.TransportAddress;
-import org.opensearch.common.xcontent.XContentFactory;
+
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.core.rest.RestStatus;
 import org.hamcrest.Matchers;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.opensearch.test.OpenSearchTestCase;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -52,10 +46,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 
-@RunWith(MockitoJUnitRunner.class)
-public class DeleteRewriterResponseTest {
+public class DeleteRewriterResponseTest extends OpenSearchTestCase {
 
-    @Test
     public void testThatStatusIsTakenFromDeleteResponse() {
         final RestStatus status = RestStatus.NOT_FOUND;
         final DeleteResponse deleteResponse = mock(DeleteResponse.class);
@@ -67,7 +59,6 @@ public class DeleteRewriterResponseTest {
         verify(deleteResponse, times(1)).status();
     }
 
-    @Test
     public void testStreamSerialization() throws IOException {
 
         final DiscoveryNode node1 = new DiscoveryNode("name1", "d1", new TransportAddress(META_ADDRESS, 0),
@@ -105,7 +96,6 @@ public class DeleteRewriterResponseTest {
 
 
     @SuppressWarnings("unchecked")
-    @Test
     public void testToJson() throws IOException {
 
         final DiscoveryNode node1 = new DiscoveryNode("name1", "d1", new TransportAddress(META_ADDRESS, 0),

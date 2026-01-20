@@ -19,16 +19,11 @@
 
 package querqy.opensearch.rewriter;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_LOWER_CASE_INPUT;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_MAX_COMBINE_LENGTH;
@@ -44,49 +39,47 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.LeafReader;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.IndexReaderContext;
-import org.apache.lucene.index.Term;
 import org.apache.lucene.search.spell.WordBreakSpellChecker;
 import org.apache.lucene.search.IndexSearcher;
 import org.opensearch.index.query.QueryShardContext;
 import querqy.opensearch.DismaxSearchEngineRequestAdapter;
 import org.opensearch.index.shard.IndexShard;
 import org.hamcrest.Matchers;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;;
+import org.opensearch.common.SuppressForbidden;
+import org.opensearch.test.OpenSearchTestCase;
+import org.apache.lucene.index.Terms;
+import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.index.TermsEnum;
 import querqy.lucene.contrib.rewrite.wordbreak.LuceneCompounder;
 import querqy.lucene.contrib.rewrite.wordbreak.MorphologicalWordBreaker;
 import querqy.lucene.contrib.rewrite.wordbreak.WordBreakCompoundRewriter;
 import querqy.rewrite.RewriterFactory;
 import querqy.trie.TrieMap;
+import static org.mockito.Mockito.withSettings;
+import static org.mockito.ArgumentMatchers.any;
 
+@SuppressForbidden(reason = "Using reflection to mock top level reader context")
+public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
-@RunWith(MockitoJUnitRunner.class)
-public class WordBreakCompoundRewriterFactoryTest {
-
-    @Test(expected = IllegalArgumentException.class)
     public void testConfigureRequiresDictionaryField() throws Exception {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
-        factory.configure(Collections.emptyMap());
+        expectThrows(IllegalArgumentException.class, () -> factory.configure(Collections.emptyMap()));
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testConfigureRequiresNonEmptyDictionaryField() throws Exception {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
-        factory.configure(Collections.singletonMap("dictionaryField", " "));
+        expectThrows(IllegalArgumentException.class,
+                () -> factory.configure(Collections.singletonMap("dictionaryField", " ")));
     }
 
-
-    @Test
     public void testConfigureRequiresDictionaryFieldOnly() throws Exception {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(Collections.singletonMap("dictionaryField", "f1"));
     }
 
-
-    @Test
     public void testValidateRequiresDictionaryField() {
 
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
@@ -100,15 +93,12 @@ public class WordBreakCompoundRewriterFactoryTest {
 
     }
 
-
-    @Test
     public void testValidateRequiresDictionaryFieldOnly() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         final List<String> errors = factory.validateConfiguration(Collections.singletonMap("dictionaryField", "f1"));
         assertTrue(errors == null || errors.isEmpty());
     }
 
-    @Test
     public void testValidateRefusesInvalidMorphology() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         final Map<String, Object> config = new HashMap<>();
@@ -119,7 +109,6 @@ public class WordBreakCompoundRewriterFactoryTest {
         assertThat(errors, Matchers.contains("Unknown morphology: IDIOLECT"));
     }
 
-    @Test
     public void testThatDefaultConfigurationIsApplied() throws Exception {
 
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
@@ -141,34 +130,48 @@ public class WordBreakCompoundRewriterFactoryTest {
         final MorphologicalWordBreaker wordBreaker = factory.getWordBreaker();
         assertNotNull(wordBreaker);
 
-        final IndexReader indexReader = mock(IndexReader.class);
-        final IndexReaderContext topReaderContext = mock(IndexReaderContext.class);
+        final LeafReader indexReader = mock(LeafReader.class, withSettings().useConstructor());
+        when(indexReader.maxDoc()).thenReturn(1);
 
-        when(indexReader.getContext()).thenReturn(topReaderContext);
-        when(topReaderContext.reader()).thenReturn(indexReader);
+        final LeafReaderContext topReaderContext = indexReader.getContext();
+
         // This is horrible, but there seems to be no way to mock top level IndexReaderContext
         final Field field = IndexReaderContext.class.getDeclaredField("isTopLevel");
         field.setAccessible(true);
         field.setBoolean(topReaderContext, true);
         field.setAccessible(false);
 
-        when(indexReader.docFreq(new Term("f1", "def"))).thenReturn(20);
+        Terms mockTerms = mock(Terms.class);
+        TermsEnum mockTermsEnum = mock(TermsEnum.class);
+        when(indexReader.terms(eq("f1"))).thenReturn(mockTerms);
+        when(mockTerms.iterator()).thenReturn(mockTermsEnum);
+
+        final Map<BytesRef, Integer> freqMap = new HashMap<>();
+        freqMap.put(new BytesRef("def"), 20);
+
+        final BytesRef[] currentTerm = new BytesRef[1];
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            BytesRef term = invocation.getArgument(0);
+            currentTerm[0] = term;
+            return freqMap.containsKey(term);
+        }).when(mockTermsEnum).seekExact(any(BytesRef.class));
+
+        when(mockTermsEnum.docFreq()).thenAnswer(invocation -> freqMap.get(currentTerm[0]));
 
         wordBreaker.breakWord("abcdef", indexReader, 2, true);
-        verify(indexReader, times(1)).docFreq(eq(new Term("f1", "def")));
-        verify(indexReader, times(1)).docFreq(eq(new Term("f1", "abc")));
-        // min break length is 3:
-        verify(indexReader, times(0)).docFreq(eq(new Term("f1", "ab")));
-        // this will not be called by DEFAULT morphology:
-        verify(indexReader, times(0)).docFreq(eq(new Term("f1", "cdef")));
-        verify(indexReader, times(0)).docFreq(eq(new Term("f1", "abce")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("def")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("abc")));
 
+        // min break length is 3:
+        verify(mockTermsEnum, times(0)).seekExact(eq(new BytesRef("ab")));
+        // this will not be called by DEFAULT morphology:
+        verify(mockTermsEnum, times(0)).seekExact(eq(new BytesRef("cdef")));
+        verify(mockTermsEnum, times(0)).seekExact(eq(new BytesRef("abce")));
 
     }
 
-
-    @Test
-    public void testThatConfigurationIsApplied() throws Exception  {
+    public void testThatConfigurationIsApplied() throws Exception {
 
         final Map<String, Object> config = new HashMap<>();
         config.put("minSuggestionFreq", 11);
@@ -187,10 +190,8 @@ public class WordBreakCompoundRewriterFactoryTest {
         decompoundConf.put("verifyCollation", !DEFAULT_VERIFY_DECOMPOUND_COLLATION);
         decompoundConf.put("maxExpansions", 87);
 
-
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(config);
-
 
         final WordBreakSpellChecker spellChecker = factory.getSpellChecker();
         assertNotNull(spellChecker);
@@ -218,31 +219,45 @@ public class WordBreakCompoundRewriterFactoryTest {
         final MorphologicalWordBreaker wordBreaker = factory.getWordBreaker();
         assertNotNull(wordBreaker);
 
-        final IndexReader indexReader = mock(IndexReader.class);
-        final IndexReaderContext topReaderContext = mock(IndexReaderContext.class);
+        final LeafReader indexReader = mock(LeafReader.class, withSettings().useConstructor());
+        when(indexReader.maxDoc()).thenReturn(1);
 
-        when(indexReader.getContext()).thenReturn(topReaderContext);
-        when(topReaderContext.reader()).thenReturn(indexReader);
-        // This is horrible, but there seems to be no way to mock top level IndexReaderContext
+        final LeafReaderContext topReaderContext = indexReader.getContext();
+
         final Field field = IndexReaderContext.class.getDeclaredField("isTopLevel");
         field.setAccessible(true);
         field.setBoolean(topReaderContext, true);
         field.setAccessible(false);
 
-        when(indexReader.docFreq(new Term("f2", "de"))).thenReturn(20);
+        Terms mockTerms = mock(Terms.class);
+        TermsEnum mockTermsEnum = mock(TermsEnum.class);
+        when(indexReader.terms(eq("f2"))).thenReturn(mockTerms);
+        when(mockTerms.iterator()).thenReturn(mockTermsEnum);
+
+        final Map<BytesRef, Integer> freqMap = new HashMap<>();
+        freqMap.put(new BytesRef("de"), 20);
+
+        final BytesRef[] currentTerm = new BytesRef[1];
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            BytesRef term = invocation.getArgument(0);
+            currentTerm[0] = term;
+            return freqMap.containsKey(term);
+        }).when(mockTermsEnum).seekExact(any(BytesRef.class));
+
+        when(mockTermsEnum.docFreq()).thenAnswer(invocation -> freqMap.get(currentTerm[0]));
 
         wordBreaker.breakWord("abcde", indexReader, 2, true);
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "e")));
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "de")));
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "cde")));
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "bcde")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("e")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("de")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("cde")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("bcde")));
         // this will be generated by GERMAN morphology:
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "abce")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("abce")));
 
     }
 
-    @Test
-    public void testThatDecompoundMorphologyIsApplied() throws Exception  {
+    public void testThatDecompoundMorphologyIsApplied() throws Exception {
         final Map<String, Object> config = new HashMap<>();
         config.put("minSuggestionFreq", 11);
         config.put("maxCombineLength", 22);
@@ -261,27 +276,44 @@ public class WordBreakCompoundRewriterFactoryTest {
         factory.configure(config);
         final MorphologicalWordBreaker wordBreaker = factory.getWordBreaker();
         assertNotNull(wordBreaker);
-        final IndexReader indexReader = mock(IndexReader.class);
-        final IndexReaderContext topReaderContext = mock(IndexReaderContext.class);
-        when(indexReader.getContext()).thenReturn(topReaderContext);
-        when(topReaderContext.reader()).thenReturn(indexReader);
-        // This is horrible, but there seems to be no way to mock top level IndexReaderContext
+        final LeafReader indexReader = mock(LeafReader.class, withSettings().useConstructor());
+        when(indexReader.maxDoc()).thenReturn(1);
+
+        final LeafReaderContext topReaderContext = indexReader.getContext();
+
         final Field field = IndexReaderContext.class.getDeclaredField("isTopLevel");
         field.setAccessible(true);
         field.setBoolean(topReaderContext, true);
         field.setAccessible(false);
-        when(indexReader.docFreq(new Term("f2", "de"))).thenReturn(20);
+
+        Terms mockTerms = mock(Terms.class);
+        TermsEnum mockTermsEnum = mock(TermsEnum.class);
+        when(indexReader.terms(eq("f2"))).thenReturn(mockTerms);
+        when(mockTerms.iterator()).thenReturn(mockTermsEnum);
+
+        final Map<BytesRef, Integer> freqMap = new HashMap<>();
+        freqMap.put(new BytesRef("de"), 20);
+
+        final BytesRef[] currentTerm = new BytesRef[1];
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            BytesRef term = invocation.getArgument(0);
+            currentTerm[0] = term;
+            return freqMap.containsKey(term);
+        }).when(mockTermsEnum).seekExact(any(BytesRef.class));
+
+        when(mockTermsEnum.docFreq()).thenAnswer(invocation -> freqMap.get(currentTerm[0]));
+
         wordBreaker.breakWord("abcde", indexReader, 2, true);
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "e")));
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "de")));
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "cde")));
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "bcde")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("e")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("de")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("cde")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("bcde")));
         // this will be generated by GERMAN morphology:
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "abce")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("abce")));
     }
 
-    @Test
-    public void testThatCompoundMorphologyIsApplied() throws Exception  {
+    public void testThatCompoundMorphologyIsApplied() throws Exception {
         final Map<String, Object> config = new HashMap<>();
         config.put("minSuggestionFreq", 11);
         config.put("maxCombineLength", 22);
@@ -303,28 +335,36 @@ public class WordBreakCompoundRewriterFactoryTest {
         final LuceneCompounder compounder = factory.getCompounder();
         final MorphologicalWordBreaker wordBreaker = factory.getWordBreaker();
         assertNotNull(wordBreaker);
-        final IndexReader indexReader = mock(IndexReader.class);
-        final IndexReaderContext topReaderContext = mock(IndexReaderContext.class);
-        // This is horrible, but there seems to be no way to mock top level IndexReaderContext
+        final LeafReader indexReader = mock(LeafReader.class, withSettings().useConstructor());
+
+        final LeafReaderContext topReaderContext = indexReader.getContext();
+
         final Field field = IndexReaderContext.class.getDeclaredField("isTopLevel");
         field.setAccessible(true);
         field.setBoolean(topReaderContext, true);
         field.setAccessible(false);
+
+        Terms mockTerms = mock(Terms.class);
+        TermsEnum mockTermsEnum = mock(TermsEnum.class);
+        when(indexReader.terms(eq("f2"))).thenReturn(mockTerms);
+        when(mockTerms.iterator()).thenReturn(mockTermsEnum);
+
         compounder.combine(new querqy.model.Term[] {
-                new querqy.model.Term(null, "ab"), new querqy.model.Term(null, "de")}, indexReader, false);
+                new querqy.model.Term(null, "ab"), new querqy.model.Term(null, "de") }, indexReader, false);
         // this will be generated by GERMAN morphology:
-        verify(indexReader, times(1)).docFreq(eq(new Term("f2", "absde")));
+        verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("absde")));
     }
 
-    @Test
     public void testCreateRewriter() throws Exception {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(Collections.singletonMap("dictionaryField", "f1"));
         final IndexShard indexShard = mock(IndexShard.class);
-        final IndexReader indexReader = mock(IndexReader.class);
-        final IndexReaderContext topReaderContext = mock(IndexReaderContext.class);
-        when(topReaderContext.reader()).thenReturn(indexReader);
-        // This is horrible, but there seems to be no way to mock top level IndexReaderContext
+        final LeafReader indexReader = mock(LeafReader.class, withSettings().useConstructor());
+
+        final LeafReaderContext topReaderContext = indexReader.getContext();
+
+        // This is horrible, but there seems to be no way to mock top level
+        // IndexReaderContext
         final Field field = IndexReaderContext.class.getDeclaredField("isTopLevel");
         field.setAccessible(true);
         field.setBoolean(topReaderContext, true);
@@ -334,11 +374,11 @@ public class WordBreakCompoundRewriterFactoryTest {
         final IndexSearcher searcher = mock(IndexSearcher.class);
         when(searchExecutionContext.searcher()).thenReturn(searcher);
         when(searcher.getTopReaderContext()).thenReturn(topReaderContext);
-        final DismaxSearchEngineRequestAdapter searchEngineRequestAdapter =
-                mock(DismaxSearchEngineRequestAdapter.class);
+        final DismaxSearchEngineRequestAdapter searchEngineRequestAdapter = mock(
+                DismaxSearchEngineRequestAdapter.class);
         when(searchEngineRequestAdapter.getSearchExecutionContext()).thenReturn(searchExecutionContext);
         final RewriterFactory rewriterFactory = factory.createRewriterFactory(indexShard);
-        assertTrue(rewriterFactory.createRewriter(null, searchEngineRequestAdapter) instanceof
-                WordBreakCompoundRewriter);
+        assertTrue(
+                rewriterFactory.createRewriter(null, searchEngineRequestAdapter) instanceof WordBreakCompoundRewriter);
     }
 }

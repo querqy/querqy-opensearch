@@ -42,7 +42,6 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
-import org.junit.Test;
 import querqy.opensearch.QuerqyPlugin;
 import querqy.opensearch.query.InfoLoggingSpec;
 import querqy.opensearch.query.MatchingQuery;
@@ -136,7 +135,6 @@ public class InfoLoggingMultiShardIntegrationTest extends OpenSearchIntegTestCas
                 .get();
     }
 
-    @Test
     public void testThatMessageGetsLoggedOncePerShard() throws Exception {
 
         index();
@@ -164,8 +162,6 @@ public class InfoLoggingMultiShardIntegrationTest extends OpenSearchIntegTestCas
         querqyQuery.setMinimumShouldMatch("1");
         querqyQuery.setInfoLoggingSpec(new InfoLoggingSpec(LogPayloadType.DETAIL, "query-detail"));
 
-
-
         int attempts = 10;
 
         while (attempts > 0) {
@@ -173,7 +169,7 @@ public class InfoLoggingMultiShardIntegrationTest extends OpenSearchIntegTestCas
             final SearchRequestBuilder searchRequestBuilder = client().prepareSearch(INDEX_NAME);
             searchRequestBuilder.setQuery(querqyQuery);
             SearchResponse response = searchRequestBuilder.execute().get();
-            if (response.getHits().getTotalHits().value == 2L) {
+            if (response.getHits().getTotalHits().value() == 2L) {
                 break;
             }
             attempts--;

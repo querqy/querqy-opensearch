@@ -19,8 +19,7 @@
 
 package querqy.opensearch.query;
 
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertEquals;
+import org.opensearch.test.OpenSearchTestCase;
 
 import static org.opensearch.core.xcontent.DeprecationHandler.THROW_UNSUPPORTED_OPERATION;
 
@@ -30,20 +29,18 @@ import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
-import org.junit.Test;
+
 import querqy.opensearch.infologging.LogPayloadType;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
-public class InfoLoggingSpecTest {
+public class InfoLoggingSpecTest extends OpenSearchTestCase {
 
-    @Test
     public void testThatRewriterIdIsDefaultPayloadType() {
         assertEquals(LogPayloadType.NONE, new InfoLoggingSpec().getPayloadType());
     }
 
-    @Test
     public void testEqualsHashCode() {
         InfoLoggingSpec spec1 = new InfoLoggingSpec();
         InfoLoggingSpec spec2 = new InfoLoggingSpec();
@@ -71,8 +68,6 @@ public class InfoLoggingSpecTest {
 
     }
 
-
-    @Test
     public void testWriteReadJson() throws IOException {
 
         final InfoLoggingSpec spec =  new InfoLoggingSpec();
@@ -93,7 +88,6 @@ public class InfoLoggingSpecTest {
         assertEquals(spec.isLogged(), spec2.isLogged());
     }
 
-    @Test
     public void testWriteReadStream() throws IOException {
         final InfoLoggingSpec spec =  new InfoLoggingSpec();
         spec.setId("ID2");

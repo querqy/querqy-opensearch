@@ -19,16 +19,13 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.junit.Assert.assertEquals;
-
+import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.junit.Test;
 
 import java.io.IOException;
 
-public class NodesReloadRewriterRequestTest {
+public class NodesReloadRewriterRequestTest extends OpenSearchTestCase {
 
-    @Test
     public void testStreamSerialization() throws IOException {
 
         final NodesReloadRewriterRequest request1 = new NodesReloadRewriterRequest("r1", "n1", "n2");

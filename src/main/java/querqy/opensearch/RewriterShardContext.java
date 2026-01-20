@@ -24,7 +24,7 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.OpenSearchException;
 import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.get.GetResponse;
-import org.opensearch.client.Client;
+import org.opensearch.transport.client.Client;
 import org.opensearch.common.cache.Cache;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;

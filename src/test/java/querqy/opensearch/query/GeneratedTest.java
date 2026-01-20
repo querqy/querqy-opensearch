@@ -19,16 +19,13 @@
 
 package querqy.opensearch.query;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertNotNull;
+import org.opensearch.test.OpenSearchTestCase;
 
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
 import org.hamcrest.Matchers;
-import org.junit.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,9 +33,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-public class GeneratedTest {
+public class GeneratedTest extends OpenSearchTestCase {
 
-    @Test
     public void testStreamSerialization() throws IOException {
         final Generated generated1 = new Generated(Arrays.asList("field1^20.1", "field2^3", "field3"));
         generated1.setFieldBoostFactor(0.8f);
@@ -55,7 +51,6 @@ public class GeneratedTest {
     }
 
     @SuppressWarnings("unchecked")
-    @Test
     public void testToJson() throws IOException {
         final Generated generated = new Generated(Arrays.asList("field1^20.1", "field2^3", "field3"));
         generated.setFieldBoostFactor(0.8f);

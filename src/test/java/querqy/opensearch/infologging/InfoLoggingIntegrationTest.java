@@ -37,7 +37,7 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
-import org.junit.Test;
+
 import querqy.opensearch.QuerqyPlugin;
 import querqy.opensearch.QuerqyProcessor;
 import querqy.opensearch.query.InfoLoggingSpec;
@@ -56,7 +56,7 @@ import java.util.Map;
 
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 
-public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
+public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
 
     private final String INDEX_NAME = "test_index";
     private static ListAppender APPENDER;
@@ -107,7 +107,6 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         }
     }
 
-    @Test
     public void testOneRewriterLoggingDetails() throws Exception {
         index();
 
@@ -138,7 +137,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -153,7 +152,6 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
 
     }
 
-    @Test
     public void testInvalidSinkName() {
 
         final Map<String, Object> content = new HashMap<>();
@@ -179,7 +177,6 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         }
     }
 
-    @Test
     public void testTwoRewritersOfSameTypeLoggingDetails() throws Exception {
 
         index();
@@ -227,23 +224,22 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
         assertEquals(1, events.size());
         LogEvent event = events.get(0);
         assertEquals("{\"id\":\"query-detail\",\"msg\":{\"common_rules1\":[[{\"message\":\"msg1\",\"match\":" +
-                        "{\"term\":\"k\",\"type\":\"exact\"},\"instructions\":[{\"type\":\"synonym\"," +
-                        "\"value\":\"c\"}]}]],\"common_rules2\":[[{\"message\":\"msg2\",\"match\":{\"term\":\"k\"," +
-                        "\"type\":\"exact\"},\"instructions\":[{\"type\":\"up\",\"value\":\"q\"}]}]]}}",
+                "{\"term\":\"k\",\"type\":\"exact\"},\"instructions\":[{\"type\":\"synonym\"," +
+                "\"value\":\"c\"}]}]],\"common_rules2\":[[{\"message\":\"msg2\",\"match\":{\"term\":\"k\"," +
+                "\"type\":\"exact\"},\"instructions\":[{\"type\":\"up\",\"value\":\"q\"}]}]]}}",
                 event.getMessage().getFormattedMessage());
 
         assertEquals(Log4jSink.MARKER_QUERQY_REWRITER_DETAIL, event.getMarker());
 
     }
 
-    @Test
     public void testTwoRewritersOfDifferentTypesLoggingDetails() throws Exception {
 
         index();
@@ -290,7 +286,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
 
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -306,7 +302,6 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
 
     }
 
-    @Test
     public void testThatInfoLoggingTypeNoneIsDefault() throws Exception {
         index();
 
@@ -336,14 +331,13 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
         assertTrue(events.isEmpty());
     }
 
-    @Test
     public void testOneRewriterLoggingId() throws Exception {
 
         index();
@@ -375,7 +369,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -387,7 +381,6 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
 
     }
 
-    @Test
     public void testLoggingWithOutRequestId() throws Exception {
 
         index();
@@ -419,7 +412,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
@@ -431,7 +424,6 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
 
     }
 
-    @Test
     public void testTwoRewritersLoggingIds() throws Exception {
 
         index();
@@ -479,7 +471,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase  {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
         final List<LogEvent> events = APPENDER.getEvents();
         assertNotNull(events);
