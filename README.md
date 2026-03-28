@@ -31,7 +31,7 @@ Querqy for OpenSearch can be used in the same way as Querqy for Elasticsearch, w
 * For the definition of rewriters, paths to classes are slightly different (replacing `elasticsearch` by 
   `opensearch`). For instance, the CommonRulesRewriter could be defined as follows:
 
-  `PUT /_querqy/rewriter/common_rules` 
+  `PUT /_plugins/_querqy/rewriter/common_rules` 
   ```json
   {
     "class": "querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory",
