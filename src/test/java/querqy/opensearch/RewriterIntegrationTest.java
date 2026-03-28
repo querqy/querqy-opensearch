@@ -85,7 +85,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
     }
 
@@ -108,7 +108,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         searchRequestBuilder.setQuery(querqyQuery);
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
         final SearchHits hits = response.getHits();
-        assertEquals(1L, hits.getTotalHits().value);
+        assertEquals(1L, hits.getTotalHits().value());
         assertEquals("a c", hits.getHits()[0].getSourceAsMap().get("field2"));
     }
 
@@ -167,7 +167,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(1L, response.getHits().getTotalHits().value);
+        assertEquals(1L, response.getHits().getTotalHits().value());
 
 
         final Map<String, Object> content2 = new HashMap<>();
@@ -192,7 +192,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         searchRequestBuilder2.setQuery(querqyQuery2);
 
         SearchResponse response2 = client().search(searchRequestBuilder2.request()).get();
-        assertEquals(2L, response2.getHits().getTotalHits().value);
+        assertEquals(2L, response2.getHits().getTotalHits().value());
 
     }
 
@@ -224,7 +224,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         searchRequestBuilder.setQuery(querqyQuery);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(2L, response.getHits().getTotalHits().value);
+        assertEquals(2L, response.getHits().getTotalHits().value());
 
 
         final DeleteRewriterRequest delRequest = new DeleteRewriterRequest("common_rules");

@@ -55,7 +55,7 @@ public class LuceneQueryBuildingIntegrationTest extends OpenSearchSingleNodeTest
         searchRequestBuilder.setQuery(queryAnalyzerMatch);
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(1L, response.getHits().getTotalHits().value);
+        assertEquals(1L, response.getHits().getTotalHits().value());
 
         final QuerqyQueryBuilder queryAnalyzerMismatch = new QuerqyQueryBuilder(
                 getInstanceFromNode(QuerqyProcessor.class));
@@ -66,7 +66,7 @@ public class LuceneQueryBuildingIntegrationTest extends OpenSearchSingleNodeTest
         searchRequestBuilder.setQuery(queryAnalyzerMismatch);
 
         response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(0L, response.getHits().getTotalHits().value);
+        assertEquals(0L, response.getHits().getTotalHits().value());
 
     }
 

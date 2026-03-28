@@ -173,7 +173,7 @@ public class InfoLoggingMultiShardIntegrationTest extends OpenSearchIntegTestCas
             final SearchRequestBuilder searchRequestBuilder = client().prepareSearch(INDEX_NAME);
             searchRequestBuilder.setQuery(querqyQuery);
             SearchResponse response = searchRequestBuilder.execute().get();
-            if (response.getHits().getTotalHits().value == 2L) {
+            if (response.getHits().getTotalHits().value() == 2L) {
                 break;
             }
             attempts--;

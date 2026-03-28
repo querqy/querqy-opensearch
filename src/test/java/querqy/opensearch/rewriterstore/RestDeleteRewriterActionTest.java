@@ -24,10 +24,10 @@ import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
 import static querqy.opensearch.rewriterstore.RestDeleteRewriterAction.PARAM_REWRITER_ID;
 
-import org.opensearch.client.node.NodeClient;
 import org.opensearch.test.rest.FakeRestRequest;
-import org.junit.Test;
+import org.opensearch.transport.client.node.NodeClient;
 
+import org.junit.Test;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
