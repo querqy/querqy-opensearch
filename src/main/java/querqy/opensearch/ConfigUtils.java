@@ -19,11 +19,9 @@
 
 package querqy.opensearch;
 
-import org.opensearch.SpecialPermission;
 import querqy.trie.TrieMap;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
+import org.opensearch.secure_sm.AccessController;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Map;
@@ -66,29 +64,23 @@ public interface ConfigUtils {
 
     @SuppressWarnings("unchecked")
     static <V> V getInstanceFromArg(final Map<String, Object> config, final String name, final V defaultValue) {
-        SecurityManager sm = System.getSecurityManager();
-        if (sm != null) {
-            sm.checkPermission(new SpecialPermission());
-        }
-
-
         return AccessController.doPrivileged(
-            (PrivilegedAction<V>) () -> {
-                final String classField = (String) config.get(name);
-                if (classField == null) {
-                    return defaultValue;
-                }
+                () -> {
+                    final String classField = (String) config.get(name);
+                    if (classField == null) {
+                        return defaultValue;
+                    }
 
-                final String className = classField.trim();
-                if (className.isEmpty()) {
-                    return defaultValue;
-                }
+                    final String className = classField.trim();
+                    if (className.isEmpty()) {
+                        return defaultValue;
+                    }
 
-                try {
-                    return (V) Class.forName(className).getConstructor().newInstance();
-                } catch (final Exception e) {
-                    throw new RuntimeException(e);
-                }
+                    try {
+                        return (V) Class.forName(className).getConstructor().newInstance();
+                    } catch (final Exception e) {
+                        throw new RuntimeException(e);
+                    }
             });
 
     }

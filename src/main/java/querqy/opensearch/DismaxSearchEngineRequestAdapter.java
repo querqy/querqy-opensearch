@@ -393,7 +393,6 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
      * <p>Get a map to hold context information while rewriting the query.</p>
      *
      * @return A non-null context map.
-     * @see ContextAwareQueryRewriter
      */
     @Override
     public Map<String, Object> getContext() {
@@ -554,9 +553,6 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
 
     /**
      * <p>Should debug information be collected while rewriting the query?</p>
-     * <p>Debug information will be kept in the context map under the
-     * {@link querqy.rewrite.AbstractLoggingRewriter#CONTEXT_KEY_DEBUG_DATA} key.</p>
-     *
      * @return true if debug information shall be collected, false otherwise
      * @see #getContext()
      */

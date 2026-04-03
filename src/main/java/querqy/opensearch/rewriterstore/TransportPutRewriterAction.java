@@ -41,6 +41,8 @@ import org.opensearch.action.support.HandledTransportAction;
 import org.opensearch.action.support.WriteRequest;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
+
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.settings.Settings;
@@ -52,8 +54,6 @@ import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.IndicesAdminClient;
 
 import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.ExecutionException;
 
@@ -253,7 +253,7 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
 
     private static String readUtf8Resource(final String name) {
         final Scanner scanner = new Scanner(TransportPutRewriterAction.class.getClassLoader().getResourceAsStream(name),
-                Charset.forName("utf-8").name()).useDelimiter("\\A");
+                StandardCharsets.UTF_8).useDelimiter("\\A");
         return scanner.hasNext() ? scanner.next() : "";
     }
 

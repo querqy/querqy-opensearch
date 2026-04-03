@@ -161,8 +161,6 @@ public class RewriterShardContextsTest extends OpenSearchIntegTestCase {
                 .get();
     }
 
-    private static final Random RAND = new Random();
-
     /**
      * The first (= 0th) node provided by the test framework would just use the passed in QuerqyQueryBuilder object
      * so that the builder would not have its QuerqyProcessor set by the plugin. We always return a client of the

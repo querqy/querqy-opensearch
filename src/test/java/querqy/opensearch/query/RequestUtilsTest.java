@@ -19,27 +19,21 @@
 
 package querqy.opensearch.query;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-
+import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.index.query.AbstractQueryBuilder;
-import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 
-public class RequestUtilsTest {
+public class RequestUtilsTest extends OpenSearchTestCase {
 
-    @Test
     public void testParamToQueryFieldsAndBoostingReturnsEmptyMapForNullParam() {
         final Map<String, Float> qf = RequestUtils.paramToQueryFieldsAndBoosting(null);
         assertNotNull(qf);
         assertTrue(qf.isEmpty());
     }
 
-    @Test
     public void testParamToQueryFieldsAndBoostingReturnsEmptyMapForEmptyParam() {
         final Map<String, Float> qf = RequestUtils
                 .paramToQueryFieldsAndBoosting(Collections.emptyList());
@@ -47,32 +41,31 @@ public class RequestUtilsTest {
         assertTrue(qf.isEmpty());
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testParamToQueryFieldsAndBoostingDoesntAcceptWeightAtBeginning() {
-        RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f1", "^32"));
+        expectThrows(IllegalArgumentException.class,
+                () -> RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f1", "^32")));
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testParamToQueryFieldsAndBoostingDoesntHatchAtEnd() {
-        RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f1", "f2^"));
+        expectThrows(IllegalArgumentException.class,
+                () -> RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f1", "f2^")));
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testParamToQueryFieldsAndBoostingDoesntAcceptDuplicateFieldnameWithWeightOnOne() {
-        RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f0", "f1", "f1^0.3"));
+        expectThrows(IllegalArgumentException.class,
+                () -> RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f0", "f1", "f1^0.3")));
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testParamToQueryFieldsAndBoostingDoesntAcceptDuplicateFieldnameWithWeightOnBoth() {
-        RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f0", "f1^0.3", "f1^0.3"));
+        expectThrows(IllegalArgumentException.class,
+                () -> RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f0", "f1^0.3", "f1^0.3")));
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testParamToQueryFieldsAndBoostingDoesntAcceptDuplicateFieldnameWithWeightOnNone() {
-        RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f0", "f1", "f1"));
+        expectThrows(IllegalArgumentException.class,
+                () -> RequestUtils.paramToQueryFieldsAndBoosting(Arrays.asList("f0", "f1", "f1")));
     }
 
-    @Test
     public void testParamToQueryFieldsAndBoostingReturnCorrectFieldsAndWeights() {
         final Map<String, Float> qf = RequestUtils.paramToQueryFieldsAndBoosting(
                 Arrays.asList("f0", "f1^0.4", "f2", "f3^20"));

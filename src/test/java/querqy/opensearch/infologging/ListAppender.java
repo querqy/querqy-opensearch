@@ -146,7 +146,7 @@ public class ListAppender extends AbstractAppender {
             data.add(bytes);
             return;
         }
-        final String str = new String(bytes);
+        final String str = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         if (newLine) {
             int index = 0;
             while (index < str.length()) {

@@ -22,6 +22,13 @@ package querqy.opensearch;
 import static org.hamcrest.collection.IsMapContaining.hasEntry;
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.junit.After;
+
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest;
@@ -30,16 +37,10 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
-import org.junit.After;
-import org.junit.Test;
 import org.opensearch.transport.client.IndicesAdminClient;
 import querqy.opensearch.rewriterstore.PutRewriterAction;
 import querqy.opensearch.rewriterstore.PutRewriterRequest;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
 public class QuerqyMappingsUpdate1To3IntegrationTest extends OpenSearchSingleNodeTestCase {
 
@@ -58,7 +59,6 @@ public class QuerqyMappingsUpdate1To3IntegrationTest extends OpenSearchSingleNod
         }
     }
 
-    @Test
     @SuppressWarnings("unchecked")
     public void testUpdate1To3() throws Exception {
 

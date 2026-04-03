@@ -33,7 +33,7 @@ import org.opensearch.tasks.Task;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
 
-public class TransportDeleteRewriterAction  extends HandledTransportAction<DeleteRewriterRequest, DeleteRewriterResponse> {
+public class TransportDeleteRewriterAction extends HandledTransportAction<DeleteRewriterRequest, DeleteRewriterResponse> {
 
     private final Client client;
     private final ClusterService clusterService;

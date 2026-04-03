@@ -21,7 +21,7 @@ package querqy.opensearch;
 
 import static org.hamcrest.CoreMatchers.everyItem;
 import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+
 import static org.mockito.Mockito.mock;
 import static querqy.opensearch.query.AbstractLuceneQueryTest.anyFilter;
 import static querqy.opensearch.query.AbstractLuceneQueryTest.anyMust;
@@ -35,20 +35,15 @@ import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DisjunctionMaxQuery;
 import org.apache.lucene.search.TermQuery;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.opensearch.test.OpenSearchTestCase;
 import querqy.lucene.LuceneQueries;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-@RunWith(MockitoJUnitRunner.class)
-public class QuerqyProcessorTest {
+public class QuerqyProcessorTest extends OpenSearchTestCase {
 
 
-    @Test
     public void testThatAppendFilterQueriesForNullFilterQueries() {
         final LuceneQueries queries = new LuceneQueries(
                 new TermQuery(new Term("f1", "a")),
@@ -67,7 +62,6 @@ public class QuerqyProcessorTest {
 
     }
 
-    @Test
     public void testThatAppendFilterQueriesForNoFilterQueries() {
 
         final LuceneQueries queries = new LuceneQueries(
@@ -87,7 +81,6 @@ public class QuerqyProcessorTest {
 
     }
 
-    @Test
     public void testThatAllNegativeFilterQueryGetsAppended() {
         final DisjunctionMaxQuery dmqNeg = new DisjunctionMaxQuery(Arrays.asList(new TermQuery(new Term("f1", "filter_a")),
                 new TermQuery(new Term("f2", "filter_a"))), 1f);

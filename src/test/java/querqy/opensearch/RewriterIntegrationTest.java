@@ -37,7 +37,7 @@ import org.opensearch.core.rest.RestStatus;
 import org.opensearch.search.SearchHits;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import org.junit.After;
-import org.junit.Test;
+
 import querqy.opensearch.query.MatchingQuery;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.query.Rewriter;
@@ -112,7 +112,6 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         assertEquals("a c", hits.getHits()[0].getSourceAsMap().get("field2"));
     }
 
-    @Test
     public void testLargeConfig() throws Exception {
         index();
 
@@ -121,7 +120,8 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
 
         final String rules;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                getClass().getClassLoader().getResourceAsStream("commonrules/rules-large.txt")))) {
+                getClass().getClassLoader().getResourceAsStream("commonrules/rules-large.txt"),
+                java.nio.charset.StandardCharsets.UTF_8))) {
 
             rules = reader.lines().collect(Collectors.joining("\n"));
         }
@@ -168,7 +168,6 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
         assertEquals(1L, response.getHits().getTotalHits().value());
-
 
         final Map<String, Object> content2 = new HashMap<>();
         content2.put("class", querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory.class.getName());
@@ -225,7 +224,6 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
 
         SearchResponse response = client().search(searchRequestBuilder.request()).get();
         assertEquals(2L, response.getHits().getTotalHits().value());
-
 
         final DeleteRewriterRequest delRequest = new DeleteRewriterRequest("common_rules");
         client().execute(DeleteRewriterAction.INSTANCE, delRequest).get();

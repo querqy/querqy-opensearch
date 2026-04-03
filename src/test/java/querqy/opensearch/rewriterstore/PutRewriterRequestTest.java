@@ -19,25 +19,19 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertEquals;
-
-import org.opensearch.action.ActionRequestValidationException;
-import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.hamcrest.Matchers;
-import org.junit.Test;
-import querqy.opensearch.DummyOpenSearchRewriterFactory;
-
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-public class PutRewriterRequestTest {
+import org.opensearch.action.ActionRequestValidationException;
+import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.hamcrest.Matchers;
+import org.opensearch.test.OpenSearchTestCase;
+import querqy.opensearch.DummyOpenSearchRewriterFactory;
 
-    @Test
+public class PutRewriterRequestTest extends OpenSearchTestCase {
+
     public void testValidateMissingRewriterId() {
 
         final PutRewriterRequest invalidRequest = new PutRewriterRequest(null, null);
@@ -45,7 +39,6 @@ public class PutRewriterRequestTest {
         assertNotNull(validationResult);
     }
 
-    @Test
     public void testValidateMissingClassConfig() {
 
         final PutRewriterRequest invalidRequest = new PutRewriterRequest("r8", Collections.emptyMap());
@@ -54,7 +47,6 @@ public class PutRewriterRequestTest {
 
     }
 
-    @Test
     public void testInvalidConfig() {
 
         final Map<String, Object> content = new HashMap<>();
@@ -70,7 +62,6 @@ public class PutRewriterRequestTest {
 
     }
 
-    @Test
     public void testValidConfig() {
 
         final Map<String, Object> content = new HashMap<>();
@@ -84,7 +75,6 @@ public class PutRewriterRequestTest {
 
     }
 
-    @Test
     public void testStreamSerialization() throws IOException {
 
         final Map<String, Object> content = new HashMap<>();

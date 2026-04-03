@@ -21,10 +21,7 @@ package querqy.opensearch;
 
 import static org.hamcrest.Matchers.arrayContaining;
 import static org.hamcrest.Matchers.emptyArray;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-
-import org.junit.Test;
+import org.opensearch.test.OpenSearchTestCase;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.query.Rewriter;
 
@@ -37,13 +34,13 @@ import java.util.Optional;
 /*
  * Rewriters will access params using prefix 'querqy.<rewriter id>.....'
  */
-public class DismaxSearchEngineRequestAdapterTest {
+public class DismaxSearchEngineRequestAdapterTest extends OpenSearchTestCase {
 
-    @Test
     public void testThatGetParamsReturnsNoneIfItsNotARewriterParamName() {
         // no rewriter at all
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
-        final DismaxSearchEngineRequestAdapter adapter = new DismaxSearchEngineRequestAdapter(builder, null, null, null);
+        final DismaxSearchEngineRequestAdapter adapter = new DismaxSearchEngineRequestAdapter(builder, null, null,
+                null);
         assertEquals(Optional.empty(), adapter.getParam("not.a.rewriter"));
 
         // some rewriter
@@ -52,8 +49,6 @@ public class DismaxSearchEngineRequestAdapterTest {
 
     }
 
-
-    @Test
     public void testGetParamForUnknownRewriter() {
         // no rewriter at all
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
@@ -68,7 +63,6 @@ public class DismaxSearchEngineRequestAdapterTest {
         assertEquals(Optional.empty(), adapter.getParam("querqy.rid2.x"));
     }
 
-    @Test
     public void testGetParamForKnownRewriterWithoutParams() {
 
         final Rewriter rewriter = new Rewriter("rid1");
@@ -81,10 +75,8 @@ public class DismaxSearchEngineRequestAdapterTest {
         assertEquals(Optional.empty(), adapter.getParam("querqy.rid1"));
         assertEquals(Optional.empty(), adapter.getParam("querqy.rid1.x"));
 
-
     }
 
-    @Test
     public void testGetParamForKnownRewriterWithEmptyParams() {
 
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
@@ -100,8 +92,6 @@ public class DismaxSearchEngineRequestAdapterTest {
 
     }
 
-
-    @Test
     public void testGetStringParam() {
 
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
@@ -133,7 +123,6 @@ public class DismaxSearchEngineRequestAdapterTest {
 
     }
 
-    @Test
     public void testGetRequestParams() {
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
 
@@ -167,7 +156,6 @@ public class DismaxSearchEngineRequestAdapterTest {
 
     }
 
-    @Test
     public void testGetBooleanRequestParam() {
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
 
@@ -197,7 +185,6 @@ public class DismaxSearchEngineRequestAdapterTest {
         assertEquals(Optional.of(Boolean.FALSE), adapter.getBooleanRequestParam("querqy.rid2.y"));
     }
 
-    @Test
     public void testGetIntegerRequestParam() {
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
 
@@ -227,7 +214,6 @@ public class DismaxSearchEngineRequestAdapterTest {
         assertEquals(Optional.of(24), adapter.getIntegerRequestParam("querqy.rid2.y"));
     }
 
-    @Test
     public void testGetFloatRequestParam() {
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
 
@@ -257,7 +243,6 @@ public class DismaxSearchEngineRequestAdapterTest {
         assertEquals(Optional.of(10008f), adapter.getFloatRequestParam("querqy.rid2.y"));
     }
 
-    @Test
     public void testGetDoubleRequestParam() {
         final QuerqyQueryBuilder builder = new QuerqyQueryBuilder();
 

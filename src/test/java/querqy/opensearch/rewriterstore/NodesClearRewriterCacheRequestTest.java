@@ -19,18 +19,14 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-
+import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.junit.Test;
 
 import java.io.IOException;
 import java.util.Optional;
 
-public class NodesClearRewriterCacheRequestTest {
+public class NodesClearRewriterCacheRequestTest extends OpenSearchTestCase {
 
-    @Test
     public void testStreamSerializationWithoutRewriterId() throws IOException {
 
         final NodesClearRewriterCacheRequest request1 = new NodesClearRewriterCacheRequest(null, "n1", "n2");
@@ -44,7 +40,6 @@ public class NodesClearRewriterCacheRequestTest {
 
     }
 
-    @Test
     public void testStreamSerializationWithRewriterId() throws IOException {
 
         final NodesClearRewriterCacheRequest request1 = new NodesClearRewriterCacheRequest("r1", "n1", "n2");
@@ -58,21 +53,18 @@ public class NodesClearRewriterCacheRequestTest {
 
     }
 
-    @Test
     public void testNodeRequestCreationWithRewriterId() {
         final NodesClearRewriterCacheRequest request = new NodesClearRewriterCacheRequest("r1", "n1", "n2");
         final NodesClearRewriterCacheRequest.NodeRequest nodeRequest = request.newNodeRequest();
         assertEquals(Optional.of("r1"), nodeRequest.getRewriterId());
     }
 
-    @Test
     public void testNodeRequestCreationWithoutRewriterId() {
         final NodesClearRewriterCacheRequest request = new NodesClearRewriterCacheRequest(null, "n1", "n2");
         final NodesClearRewriterCacheRequest.NodeRequest nodeRequest = request.newNodeRequest();
         assertFalse(nodeRequest.getRewriterId().isPresent());
     }
 
-    @Test
     public void testNodeRequestSerializationWithRewriterId() throws IOException {
 
         final NodesClearRewriterCacheRequest.NodeRequest nodeRequest1 = new NodesClearRewriterCacheRequest
@@ -89,7 +81,6 @@ public class NodesClearRewriterCacheRequestTest {
 
     }
 
-    @Test
     public void testNodeRequestSerializationWithoutRewriterId() throws IOException {
 
         final NodesClearRewriterCacheRequest.NodeRequest nodeRequest1 = new NodesClearRewriterCacheRequest

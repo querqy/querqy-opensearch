@@ -23,10 +23,10 @@ import org.assertj.core.api.Assertions;
 import org.opensearch.common.action.ActionFuture;
 import org.opensearch.action.search.SearchRequestBuilder;
 import org.opensearch.action.search.SearchResponse;
-import org.opensearch.client.Response;
+import org.opensearch.transport.client.Client;
 import org.opensearch.search.SearchHit;
 import org.junit.Before;
-import org.junit.Test;
+
 import querqy.opensearch.QuerqyProcessor;
 import querqy.opensearch.query.MatchingQuery;
 import querqy.opensearch.query.QuerqyQueryBuilder;
@@ -40,6 +40,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -57,7 +58,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         indexDocs();
     }
 
-    @Test
     public void testBoostingForExactMatchRange() {
         String q = "smartphone 9 zoll";
 
@@ -68,7 +68,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         Assertions.assertThat(hits[0].getScore()).isEqualTo(hits[1].getScore());
     }
 
-    @Test
     public void testBoostingForExactMatchRangeAcrossUnits() {
         String q = "smartphone 9 zoll 1000gb";
 
@@ -76,7 +75,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertOrderForDocs(response, "12", "13");
     }
 
-    @Test
     public void testUnlimitedRange() {
         String q = "55unitUnlimited";
 
@@ -84,7 +82,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertContainsAllDocsInAnyOrder(response, "5", "6", "20");
     }
 
-    @Test
     public void testNumberUnitOnlyQuery() {
         String q = "55 zoll";
 
@@ -92,7 +89,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertSize(response, 4);
     }
 
-    @Test
     public void testBoostingForMultipleNumberUnitInputs() {
         String q = "tv 200 cm 2 cm";
 
@@ -100,7 +96,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertOrderForDocs(response, "1", "2");
     }
 
-    @Test
     public void testBoostingForMultipleNumberUnitInputsAcrossUnits() {
         String q = "notebook 14 zoll 1tb";
 
@@ -108,7 +103,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertOrderForDocs(response, "7", "8", "6", "11", "10");
     }
 
-    @Test
     public void testBoostingForSingleNumberUnitInputAndSingleUnitConfig() {
         String q = "notebook 15 zoll";
 
@@ -116,7 +110,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertOrderForDocs(response, "7", "6", "8", "9");
     }
 
-    @Test
     public void testFilteringForSingleNumberUnitInputAndSingleUnitConfig() {
         String q = "tv 55 zoll";
 
@@ -124,7 +117,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertContainsAllDocsInAnyOrder(response, "1", "2", "3");
     }
 
-    @Test
     public void testFilteringForMultipleNumberUnitInputs() {
         String q = "tv 200 cm 2 cm";
 
@@ -132,7 +124,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertContainsAllDocsInAnyOrder(response, "1", "2");
     }
 
-    @Test
     public void testFilteringForMultipleNumberUnitInputsAcrossUnits() {
         String q;
         SearchResponse response;
@@ -146,7 +137,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertContainsAllDocsInAnyOrder(response, "4");
     }
 
-    @Test
     public void testFilteringForSingleNumberUnitInputAndMultipleUnitConfig() {
         String q = "tv 210 cm";
 
@@ -154,7 +144,6 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
         assertContainsAllDocsInAnyOrder(response, "1", "2");
     }
 
-    @Test
     public void testFilteringForSingleNumberUnitInputAndMultipleUnitConfig2() {
         String q = "tv 120 cm";
 
@@ -251,7 +240,7 @@ public class NumberUnitRewriterFactoryTest extends AbstractRewriterIntegrationTe
     private String getConfigFromFileName(String fileName) throws IOException {
         InputStream inputStream = this.getClass().getResourceAsStream(basePath + fileName);
 
-        BufferedReader buf = new BufferedReader(new InputStreamReader(inputStream));
+        BufferedReader buf = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
 
         String line = buf.readLine();
         StringBuilder sb = new StringBuilder();

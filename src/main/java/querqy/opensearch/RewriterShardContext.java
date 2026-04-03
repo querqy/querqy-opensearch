@@ -28,8 +28,8 @@ import org.opensearch.common.cache.Cache;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
-import org.opensearch.index.IndexService;
 import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.index.IndexService;
 import org.opensearch.indices.InvalidTypeNameException;
 import org.opensearch.transport.client.Client;
 import querqy.opensearch.rewriterstore.LoadRewriterConfig;
@@ -144,9 +144,8 @@ public class RewriterShardContext {
                 final Object sinksObj = infoLogging.get("sinks");
                 if (sinksObj instanceof String) {
                     loggingEnabled = "log4j".equals(sinksObj);
-                } else if (sinksObj instanceof Collection<?>) {
-                    Collection<?> sinksCollection = (Collection<?>) sinksObj;
-                    loggingEnabled = (sinksCollection.size() > 0) && sinksCollection.contains("log4j");
+                } else if (sinksObj instanceof final Collection<?> sinksCollection) {
+                    loggingEnabled = (!sinksCollection.isEmpty()) && sinksCollection.contains("log4j");
                 } else {
                     loggingEnabled = false;
                 }

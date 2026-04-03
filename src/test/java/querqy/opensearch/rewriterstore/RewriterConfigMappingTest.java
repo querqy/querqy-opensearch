@@ -19,22 +19,16 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.hamcrest.Matchers.everyItem;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-
+import org.opensearch.test.OpenSearchTestCase;
 import org.apache.lucene.util.BytesRef;
 import org.hamcrest.Matchers;
-import org.junit.Test;
+import static org.hamcrest.Matchers.everyItem;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
-public class RewriterConfigMappingTest {
+public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
-
-    @Test
     public void testStringToSourceValue() {
         String s = "123456789ä";
         if (new BytesRef(s).length != 11) {
@@ -61,9 +55,8 @@ public class RewriterConfigMappingTest {
 
     }
 
-    @Test(expected = IllegalArgumentException.class)
     public void testStringToSourceValueWithIllegalLimit() {
-        RewriterConfigMapping.stringToSourceValue("12345", 2);
+        expectThrows(IllegalArgumentException.class, () -> RewriterConfigMapping.stringToSourceValue("12345", 2));
     }
 
 }

@@ -19,7 +19,7 @@
 
 package querqy.opensearch.rewriterstore;
 
-import static org.junit.Assert.assertEquals;
+import org.opensearch.test.OpenSearchTestCase;
 
 import org.opensearch.Version;
 import org.opensearch.action.FailedNodeException;
@@ -28,7 +28,6 @@ import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.core.common.io.stream.ByteBufferStreamInput;
 import org.opensearch.core.common.io.stream.DataOutputStreamOutput;
 import org.opensearch.core.common.transport.TransportAddress;
-import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -38,9 +37,8 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 
-public class NodesReloadRewriterResponseTest {
+public class NodesReloadRewriterResponseTest extends OpenSearchTestCase {
 
-    @Test
     public void testWriteToReadFromStream() throws IOException {
 
         final ByteArrayOutputStream bos = new ByteArrayOutputStream();

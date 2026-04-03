@@ -46,7 +46,7 @@ import org.opensearch.plugins.Plugin;
 import org.opensearch.test.AbstractQueryTestCase;
 import org.opensearch.test.TestGeoShapeFieldMapperPlugin;
 import org.junit.Before;
-import org.junit.Test;
+
 import querqy.opensearch.QuerqyPlugin;
 import querqy.opensearch.QuerqyProcessor;
 import querqy.lucene.rewrite.DependentTermQueryBuilder;
@@ -120,7 +120,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
                 "test1")));
     }
 
-    @Test
     public void testWriteReadStreamForMinimalProperties() throws IOException {
 
         final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
@@ -139,7 +138,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
-    @Test
     public void testQueryBuildingIsDelegatedToQuerqyProcessor() throws Exception {
 
         final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
@@ -155,7 +153,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
-    @Test
     public void testWriteReadJsonForMinimalProperties() throws IOException {
 
         final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
@@ -175,7 +172,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
-    @Test
     public void testWriteReadStreamForAllProperties() throws IOException {
 
         final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
@@ -218,7 +214,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
-    @Test
     public void testWriteReadStreamForAllPropertiesAndRewriterParams() throws IOException {
 
         final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
@@ -274,11 +269,8 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
         assertEqualBuilders(writeQuerqyQueryBuilder, readQuerqyQueryBuilder);
 
-
     }
 
-
-    @Test
     public void testWriteReadJsonForAllProperties() throws IOException {
 
         final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
@@ -337,7 +329,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
-    @Test
     public void testThatMissingMatchingQueryCausesParsingException() throws IOException {
 
         try {
@@ -350,7 +341,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
-    @Test
     public void testThatMissingQueryStringCausesParsingException() throws IOException {
 
         try {
@@ -364,7 +354,6 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
-    @Test
     public void testThatMissingQueryFieldsCausesParsingException() throws IOException {
 
         try {
