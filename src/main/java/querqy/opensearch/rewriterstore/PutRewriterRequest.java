@@ -24,10 +24,11 @@ import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.action.ValidateActions;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.secure_sm.AccessController;
+
 import querqy.opensearch.OpenSearchRewriterFactory;
 
 import java.io.IOException;
-import org.opensearch.secure_sm.AccessController;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -98,10 +99,6 @@ public class PutRewriterRequest extends ActionRequest {
                         throw new RuntimeException(e);
                     }
                 });
-
-
-
-
 
         if (errors != null && !errors.isEmpty()) {
             final ActionRequestValidationException arve = new ActionRequestValidationException();
