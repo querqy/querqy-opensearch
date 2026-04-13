@@ -150,7 +150,9 @@ loggerUsageCheck.enabled = false
 publishing {
     publications {
         mavenJava(MavenPublication) {
-            artifact distZip
+            artifact(tasks.named("distZip")) {
+                builtBy(tasks.named("distZip"))
+            }
 
             groupId = 'org.querqy'
             artifactId = 'opensearch-querqy'
@@ -205,6 +207,10 @@ signing {
     def signingPassword = findProperty("signingPassword")
     useInMemoryPgpKeys(signingKey, signingPassword)
     sign publishing.publications.mavenJava
+}
+
+tasks.named("signMavenJavaPublication") {
+    dependsOn(tasks.named("bundlePlugin"))
 }
 
 javadoc {
