@@ -117,6 +117,7 @@ jacocoTestReport {
 
 configurations.all {
     resolutionStrategy.force 'junit:junit:4.13.2'
+    resolutionStrategy.force 'org.mockito:mockito-core:5.23.0'
 }
 
 licenseHeaders.enabled = true
