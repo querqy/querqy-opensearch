@@ -1,4 +1,5 @@
 querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory
+querqy.opensearch.rewriter.RegexReplaceRewriterFactory
 querqy.opensearch.rewriter.ReplaceRewriterFactory
 querqy.opensearch.rewriter.NumberUnitRewriterFactory
 querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory
