@@ -89,9 +89,7 @@ dependencies {
     api("org.querqy:querqy-core:3.20.2")
     api('com.fasterxml.jackson.core:jackson-databind:2.18.2')
     api('com.fasterxml.jackson.core:jackson-annotations:2.18.2')
-    implementation('com.jayway.jsonpath:json-path:2.9.0')
-    implementation('net.minidev:json-smart:2.5.2')
-    implementation("net.minidev:accessors-smart:2.4.8")
+    implementation('com.jayway.jsonpath:json-path:3.0.0')
     implementation("org.ow2.asm:asm:9.10.1")
     implementation("org.slf4j:slf4j-api:2.0.17")
 
