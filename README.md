@@ -1,5 +1,6 @@
 [![Test and Build OpenSearch Querqy Plugin](https://github.com/querqy/querqy-opensearch/actions/workflows/opensearch-querqy-test-and-build-workflow.yml/badge.svg)](https://github.com/querqy/querqy-opensearch/actions/workflows/opensearch-querqy-test-and-build-workflow.yml)
 
+
 # OpenSearch Querqy
 
 Querqy is a query rewriting plugin that helps to solve relevance issues making search engines more precise regarding 
@@ -42,4 +43,4 @@ Querqy for OpenSearch can be used in the same way as Querqy for Elasticsearch, w
   ```
   
 * Developer documentation can be found [here](docs/opensearch_dev_documentation.md)
-* Developer channel: Join #querqy-dev on the [E-commerce search Slack space](https://ecom-search.slack.com)
+* Developer channel: Join #querqy on the [Search Relevancy Slack space](https://opensourceconnections.com/slack)
