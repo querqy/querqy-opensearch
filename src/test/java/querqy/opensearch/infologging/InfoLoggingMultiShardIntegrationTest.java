@@ -147,7 +147,7 @@ public class InfoLoggingMultiShardIntegrationTest extends OpenSearchIntegTestCas
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);

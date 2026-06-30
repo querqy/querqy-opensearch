@@ -23,8 +23,8 @@ import org.opensearch.index.shard.IndexShard;
 import querqy.opensearch.ConfigUtils;
 import querqy.opensearch.OpenSearchRewriterFactory;
 import querqy.rewrite.RewriterFactory;
-import querqy.rewrite.commonrules.QuerqyParserFactory;
-import querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory;
+import querqy.rewriter.commonrules.QuerqyParserFactory;
+import querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -42,7 +42,7 @@ public class ReplaceRewriterFactory extends OpenSearchRewriterFactory {
 
     private static final String DEFAULT_INPUT_DELIMITER = "\t";
 
-    private querqy.rewrite.contrib.ReplaceRewriterFactory delegate;
+    private querqy.rewriter.replace.ReplaceRewriterFactory delegate;
 
     public ReplaceRewriterFactory(String rewriterId) {
         super(rewriterId);
@@ -64,7 +64,7 @@ public class ReplaceRewriterFactory extends OpenSearchRewriterFactory {
                 config, "querqyParser", DEFAULT_RHS_QUERY_PARSER, QuerqyParserFactory.class);
 
         try {
-            delegate = new querqy.rewrite.contrib.ReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase,
+            delegate = new querqy.rewriter.replace.ReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase,
                     inputDelimiter, querqyParser.createParser());
         } catch (final IOException e) {
             throw new OpenSearchException(e);
@@ -96,7 +96,7 @@ public class ReplaceRewriterFactory extends OpenSearchRewriterFactory {
         }
 
         try {
-            new querqy.rewrite.contrib.ReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase, inputDelimiter,
+            new querqy.rewriter.replace.ReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase, inputDelimiter,
                     querqyParser.createParser());
         } catch (final IOException e) {
             return Collections.singletonList("Cannot create rewriter: " + e.getMessage());

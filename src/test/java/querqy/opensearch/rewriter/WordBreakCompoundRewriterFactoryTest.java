@@ -25,11 +25,9 @@ import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.eq;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_LOWER_CASE_INPUT;
-import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_MAX_COMBINE_LENGTH;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_MIN_BREAK_LENGTH;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_MIN_SUGGESTION_FREQ;
 import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.DEFAULT_VERIFY_DECOMPOUND_COLLATION;
-import static querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.MAX_CHANGES;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
@@ -38,14 +36,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-//<<<<<<< HEAD
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.IndexReaderContext;
-import org.apache.lucene.search.spell.WordBreakSpellChecker;
 import org.apache.lucene.search.IndexSearcher;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.index.query.QueryShardContext;
+import querqy.lucene.LuceneTermCorpus;
 import querqy.opensearch.DismaxSearchEngineRequestAdapter;
 import org.opensearch.index.shard.IndexShard;
 import org.hamcrest.Matchers;
@@ -53,9 +50,9 @@ import org.opensearch.test.OpenSearchTestCase;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.index.TermsEnum;
-import querqy.lucene.contrib.rewrite.wordbreak.LuceneCompounder;
-import querqy.lucene.contrib.rewrite.wordbreak.MorphologicalWordBreaker;
-import querqy.lucene.contrib.rewrite.wordbreak.WordBreakCompoundRewriter;
+import querqy.rewriter.wordbreak.MorphologicalCompounder;
+import querqy.rewriter.wordbreak.MorphologicalWordBreaker;
+import querqy.rewriter.wordbreak.WordBreakCompoundRewriter;
 import querqy.rewrite.RewriterFactory;
 import querqy.trie.TrieMap;
 import static org.mockito.Mockito.withSettings;
@@ -113,16 +110,10 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(Collections.singletonMap("dictionaryField", "f1"));
-        final WordBreakSpellChecker spellChecker = factory.getSpellChecker();
-        assertNotNull(spellChecker);
-        assertEquals(MAX_CHANGES, spellChecker.getMaxChanges());
-        assertEquals(DEFAULT_MAX_COMBINE_LENGTH, spellChecker.getMaxCombineWordLength());
-        assertEquals(DEFAULT_MIN_SUGGESTION_FREQ, spellChecker.getMinSuggestionFrequency());
-        assertEquals(DEFAULT_MIN_BREAK_LENGTH, spellChecker.getMinBreakWordLength());
+
         assertEquals(DEFAULT_LOWER_CASE_INPUT, factory.isLowerCaseInput());
         assertEquals(DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS, factory.isAlwaysAddReverseCompounds());
         assertEquals(DEFAULT_VERIFY_DECOMPOUND_COLLATION, factory.isVerifyDecompoundCollation());
-
         assertEquals("f1", factory.getDictionaryField());
 
         assertNotNull(factory.getCompounder());
@@ -159,7 +150,8 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
         when(mockTermsEnum.docFreq()).thenAnswer(invocation -> freqMap.get(currentTerm[0]));
 
-        wordBreaker.breakWord("abcdef", indexReader, 2, true);
+        final LuceneTermCorpus corpus = new LuceneTermCorpus(() -> indexReader, "f1");
+        wordBreaker.breakWord("abcdef", corpus, 2, false);
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("def")));
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("abc")));
 
@@ -193,12 +185,6 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(config);
 
-        final WordBreakSpellChecker spellChecker = factory.getSpellChecker();
-        assertNotNull(spellChecker);
-
-        assertEquals(22, spellChecker.getMaxCombineWordLength());
-        assertEquals(11, spellChecker.getMinSuggestionFrequency());
-        assertEquals(1, spellChecker.getMinBreakWordLength());
         assertEquals(87, factory.getMaxDecompoundExpansions());
 
         assertNotEquals(DEFAULT_LOWER_CASE_INPUT, factory.isLowerCaseInput());
@@ -247,7 +233,8 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
         when(mockTermsEnum.docFreq()).thenAnswer(invocation -> freqMap.get(currentTerm[0]));
 
-        wordBreaker.breakWord("abcde", indexReader, 2, true);
+        final LuceneTermCorpus corpus = new LuceneTermCorpus(() -> indexReader, "f2");
+        wordBreaker.breakWord("abcde", corpus, 2, false);
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("e")));
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("de")));
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("cde")));
@@ -304,7 +291,8 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
         when(mockTermsEnum.docFreq()).thenAnswer(invocation -> freqMap.get(currentTerm[0]));
 
-        wordBreaker.breakWord("abcde", indexReader, 2, true);
+        final LuceneTermCorpus corpus = new LuceneTermCorpus(() -> indexReader, "f2");
+        wordBreaker.breakWord("abcde", corpus, 2, false);
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("e")));
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("de")));
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("cde")));
@@ -332,7 +320,7 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         compoundConf.put("morphology", "GERMAN");
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(config);
-        final LuceneCompounder compounder = factory.getCompounder();
+        final MorphologicalCompounder compounder = factory.getCompounder();
         final MorphologicalWordBreaker wordBreaker = factory.getWordBreaker();
         assertNotNull(wordBreaker);
         final LeafReader indexReader = mock(LeafReader.class, withSettings().useConstructor());
@@ -349,8 +337,9 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         when(indexReader.terms(eq("f2"))).thenReturn(mockTerms);
         when(mockTerms.iterator()).thenReturn(mockTermsEnum);
 
+        final LuceneTermCorpus corpus = new LuceneTermCorpus(() -> indexReader, "f2");
         compounder.combine(new querqy.model.Term[] {
-                new querqy.model.Term(null, "ab"), new querqy.model.Term(null, "de") }, indexReader, false);
+                new querqy.model.Term(null, "ab"), new querqy.model.Term(null, "de") }, corpus, false);
         // this will be generated by GERMAN morphology:
         verify(mockTermsEnum, times(1)).seekExact(eq(new BytesRef("absde")));
 

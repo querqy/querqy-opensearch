@@ -18,8 +18,7 @@
 
 package querqy.opensearch.rewriter;
 
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.spell.WordBreakSpellChecker;
+import querqy.lucene.LuceneTermCorpus;
 import querqy.opensearch.DismaxSearchEngineRequestAdapter;
 import org.opensearch.index.shard.IndexShard;
 import querqy.opensearch.ConfigUtils;
@@ -28,13 +27,11 @@ import querqy.model.ExpandedQuery;
 import querqy.model.Term;
 import querqy.rewrite.QueryRewriter;
 import querqy.rewrite.RewriterFactory;
-import querqy.lucene.contrib.rewrite.wordbreak.LuceneCompounder;
-import querqy.lucene.contrib.rewrite.wordbreak.MorphologicalCompounder;
-import querqy.lucene.contrib.rewrite.wordbreak.MorphologicalWordBreaker;
-import querqy.lucene.contrib.rewrite.wordbreak.Morphology;
-import querqy.lucene.contrib.rewrite.wordbreak.MorphologyProvider;
-import querqy.lucene.contrib.rewrite.wordbreak.SpellCheckerCompounder;
-import querqy.lucene.contrib.rewrite.wordbreak.WordBreakCompoundRewriter;
+import querqy.rewriter.wordbreak.MorphologicalCompounder;
+import querqy.rewriter.wordbreak.MorphologicalWordBreaker;
+import querqy.rewriter.wordbreak.Morphology;
+import querqy.rewriter.wordbreak.MorphologyProvider;
+import querqy.rewriter.wordbreak.WordBreakCompoundRewriter;
 import querqy.rewrite.SearchEngineRequestAdapter;
 import querqy.trie.TrieMap;
 
@@ -46,16 +43,6 @@ import java.util.Optional;
 import java.util.Set;
 
 public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory {
-
-    // this controls behaviour of the Lucene WordBreakSpellChecker:
-    // for compounds: maximum distance of leftmost and rightmost term index
-    //                e.g. max_changes = 1 for A B C D will check AB BC CD,
-    //                     max_changes = 2 for A B C D will check AB ABC BC BCD CD
-    // for decompounds: maximum splits performed
-    //                  e.g. max_changes = 1 for ABCD will check A BCD, AB CD, ABC D,
-    //                       max_changes = 2 for ABCD will check A BCD, A B CD, A BC D, AB CD, AB C D, ABC D
-    // as we currently only send 2-grams to WBSP for compounding only max_changes = 1 is correctly supported
-    static final int MAX_CHANGES = 1;
 
     static final int MAX_EVALUATIONS = 100;
 
@@ -69,21 +56,16 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     static final String DEFAULT_MORPHOLOGY_NAME = "DEFAULT";
     private static final MorphologyProvider MORPHOLOGY_PROVIDER = new MorphologyProvider();
 
-
     private String dictionaryField;
-
     private boolean lowerCaseInput = DEFAULT_LOWER_CASE_INPUT;
     private boolean alwaysAddReverseCompounds = DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS;
-
-    private WordBreakSpellChecker spellChecker;
-    private LuceneCompounder compounder;
+    private MorphologicalCompounder compounder;
     private MorphologicalWordBreaker wordBreaker;
     private TrieMap<Boolean> reverseCompoundTriggerWords;
     private TrieMap<Boolean> protectedWords;
     private int maxDecompoundExpansions = DEFAULT_MAX_DECOMPOUND_EXPANSIONS;
     private boolean verifyDecompoundCollation = DEFAULT_VERIFY_DECOMPOUND_COLLATION;
-
-
+    private int minSuggestionFreq = DEFAULT_MIN_SUGGESTION_FREQ;
 
     public WordBreakCompoundRewriterFactory(final String rewriterId) {
         super(rewriterId);
@@ -92,8 +74,7 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     @Override
     public void configure(final Map<String, Object> config) {
 
-        final int minSuggestionFreq = ConfigUtils.getArg(config, "minSuggestionFreq", DEFAULT_MIN_SUGGESTION_FREQ);
-        final int maxCombineLength = ConfigUtils.getArg(config, "maxCombineLength", DEFAULT_MAX_COMBINE_LENGTH);
+        minSuggestionFreq = ConfigUtils.getArg(config, "minSuggestionFreq", DEFAULT_MIN_SUGGESTION_FREQ);
         final int minBreakLength = ConfigUtils.getArg(config, "minBreakLength", DEFAULT_MIN_BREAK_LENGTH);
         dictionaryField = ConfigUtils.getStringArg(config, "dictionaryField")
                 .map(String::trim)
@@ -103,14 +84,8 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         alwaysAddReverseCompounds = ConfigUtils.getArg(config, "alwaysAddReverseCompounds",
                 DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS);
 
-        spellChecker = new WordBreakSpellChecker();
-        spellChecker.setMaxChanges(MAX_CHANGES);
-        spellChecker.setMinSuggestionFrequency(minSuggestionFreq);
-        spellChecker.setMaxCombineWordLength(maxCombineLength);
-        spellChecker.setMinBreakWordLength(minBreakLength);
-        spellChecker.setMaxEvaluations(100);
-
         final String defaultMorphologyName = ConfigUtils.getStringArg(config, "morphology", DEFAULT_MORPHOLOGY_NAME);
+
         Map<String, Object> compoundConf = (Map<String, Object>) config.get("compound");
         if (compoundConf == null) {
             compoundConf = Collections.emptyMap();
@@ -118,20 +93,8 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         final String compoundMorphologyName = ConfigUtils.getStringArg(compoundConf, "morphology",
                 defaultMorphologyName);
         final Optional<Morphology> compoundMorphology = MORPHOLOGY_PROVIDER.get(compoundMorphologyName);
-        if (compoundMorphology.isEmpty() || compoundMorphology.get() == MorphologyProvider.DEFAULT) {
-            // use WordBreakSpellChecker when DEFAULT for backwards compatibility
-            final WordBreakSpellChecker spellChecker = new WordBreakSpellChecker();
-            spellChecker.setMaxChanges(MAX_CHANGES);
-            spellChecker.setMinSuggestionFrequency(minSuggestionFreq);
-            spellChecker.setMaxCombineWordLength(maxCombineLength);
-            spellChecker.setMinBreakWordLength(minBreakLength);
-            spellChecker.setMaxEvaluations(100);
-            compounder = new SpellCheckerCompounder(spellChecker, dictionaryField, lowerCaseInput);
-        } else {
-            compounder = new MorphologicalCompounder(compoundMorphology.get(), dictionaryField, lowerCaseInput,
-                    minSuggestionFreq);
-        }
-
+        compounder = new MorphologicalCompounder(
+                compoundMorphology.orElse(MorphologyProvider.DEFAULT), lowerCaseInput, minSuggestionFreq);
 
         Map<String, Object> decompoundConf = (Map<String, Object>) config.get("decompound");
         if (decompoundConf == null) {
@@ -140,13 +103,15 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         final String decompoundMorphologyName = ConfigUtils.getStringArg(decompoundConf, "morphology",
                 defaultMorphologyName);
         final Optional<Morphology> decompoundMorphology = MORPHOLOGY_PROVIDER.get(decompoundMorphologyName);
-        wordBreaker = new MorphologicalWordBreaker(decompoundMorphology.get(), dictionaryField, lowerCaseInput,
+        wordBreaker = new MorphologicalWordBreaker(
+                decompoundMorphology.orElse(MorphologyProvider.DEFAULT), lowerCaseInput,
                 minSuggestionFreq, minBreakLength, MAX_EVALUATIONS);
+
         reverseCompoundTriggerWords = ConfigUtils.getTrieSetArg(config, "reverseCompoundTriggerWords");
         protectedWords = ConfigUtils.getTrieSetArg(config, "protectedWords");
         maxDecompoundExpansions = ConfigUtils.getArg(decompoundConf, "maxExpansions",
                 DEFAULT_MAX_DECOMPOUND_EXPANSIONS);
-        verifyDecompoundCollation =  ConfigUtils.getArg(decompoundConf, "verifyCollation",
+        verifyDecompoundCollation = ConfigUtils.getArg(decompoundConf, "verifyCollation",
                 DEFAULT_VERIFY_DECOMPOUND_COLLATION);
     }
 
@@ -184,7 +149,6 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         }
 
         return errors;
-
     }
 
     @Override
@@ -195,14 +159,15 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
             public QueryRewriter createRewriter(final ExpandedQuery input,
                                                 final SearchEngineRequestAdapter searchEngineRequestAdapter) {
 
+                final DismaxSearchEngineRequestAdapter adapter =
+                        (DismaxSearchEngineRequestAdapter) searchEngineRequestAdapter;
+                final LuceneTermCorpus corpus = new LuceneTermCorpus(
+                        () -> adapter.getSearchExecutionContext().searcher().getTopReaderContext().reader(),
+                        dictionaryField);
 
-
-                return new WordBreakCompoundRewriter(wordBreaker, compounder,
-                        getShardIndexReader((DismaxSearchEngineRequestAdapter) searchEngineRequestAdapter),
-                        lowerCaseInput, alwaysAddReverseCompounds, reverseCompoundTriggerWords, maxDecompoundExpansions,
-                        verifyDecompoundCollation, protectedWords);
-
-
+                return new WordBreakCompoundRewriter(wordBreaker, compounder, corpus,
+                        lowerCaseInput, alwaysAddReverseCompounds, reverseCompoundTriggerWords,
+                        maxDecompoundExpansions, verifyDecompoundCollation, protectedWords);
             }
 
             @Override
@@ -212,14 +177,9 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         };
     }
 
-    public WordBreakSpellChecker getSpellChecker() {
-        return spellChecker;
-    }
-
     public String getDictionaryField() {
         return dictionaryField;
     }
-
 
     public boolean isLowerCaseInput() {
         return lowerCaseInput;
@@ -245,17 +205,11 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         return verifyDecompoundCollation;
     }
 
-    private IndexReader getShardIndexReader(final DismaxSearchEngineRequestAdapter searchEngineRequestAdapter) {
-        return searchEngineRequestAdapter.getSearchExecutionContext().searcher().getTopReaderContext().reader();
-    }
-
-    public LuceneCompounder getCompounder() {
+    public MorphologicalCompounder getCompounder() {
         return compounder;
     }
 
     public MorphologicalWordBreaker getWordBreaker() {
         return wordBreaker;
     }
-
-
 }

@@ -23,11 +23,11 @@ import org.opensearch.index.shard.IndexShard;
 import querqy.opensearch.ConfigUtils;
 import querqy.opensearch.OpenSearchRewriterFactory;
 import querqy.rewrite.RewriterFactory;
-import querqy.rewrite.commonrules.QuerqyParserFactory;
-import querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory;
-import querqy.rewrite.commonrules.model.BoostInstruction.BoostMethod;
-import querqy.rewrite.commonrules.select.ExpressionCriteriaSelectionStrategyFactory;
-import querqy.rewrite.commonrules.select.SelectionStrategyFactory;
+import querqy.rewriter.commonrules.QuerqyParserFactory;
+import querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory;
+import querqy.rewriter.commonrules.model.BoostInstruction.BoostMethod;
+import querqy.rewriter.commonrules.select.ExpressionCriteriaSelectionStrategyFactory;
+import querqy.rewriter.commonrules.select.SelectionStrategyFactory;
 import querqy.rewrite.lookup.preprocessing.LookupPreprocessorType;
 
 import java.io.IOException;
@@ -52,7 +52,7 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
 
     static final LookupPreprocessorType DEFAULT_LOOKUP_PREPROCESSOR_TYPE = LookupPreprocessorType.LOWERCASE;
 
-    private querqy.rewrite.commonrules.SimpleCommonRulesRewriterFactory delegate;
+    private querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory delegate;
 
     public SimpleCommonRulesRewriterFactory(final String rewriterId) {
         super(rewriterId);
@@ -76,7 +76,7 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
                 .orElse(DEFAULT_LOOKUP_PREPROCESSOR_TYPE);
 
         try {
-            delegate = new querqy.rewrite.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
+            delegate = new querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
                     new StringReader(rules), allowBooleanInput, BoostMethod.ADDITIVE,
                     querqyParser, selectionStrategyFactories,
                     DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType);
@@ -110,7 +110,7 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
                 .map(LookupPreprocessorType::fromString)
                 .orElse(DEFAULT_LOOKUP_PREPROCESSOR_TYPE);
         try {
-            new querqy.rewrite.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
+            new querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
                     new StringReader(rules), allowBooleanInput, BoostMethod.ADDITIVE,querqyParser,
                     Collections.emptyMap(),
                     DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType);

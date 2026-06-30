@@ -118,7 +118,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -162,7 +162,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -189,7 +189,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config1 = new HashMap<>();
         config1.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config1.put("ignoreCase", true);
-        config1.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config1.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content1.put("config", config1);
 
         final PutRewriterRequest request1 = new PutRewriterRequest("common_rules1", content1);
@@ -205,7 +205,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config2 = new HashMap<>();
         config2.put("rules", "k =>\nUP: q\n@_log: \"msg2\"");
         config2.put("ignoreCase", true);
-        config2.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config2.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content2.put("config", config2);
 
         final PutRewriterRequest request2 = new PutRewriterRequest("common_rules2", content2);
@@ -266,7 +266,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config2 = new HashMap<>();
         config2.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg2\"");
         config2.put("ignoreCase", true);
-        config2.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config2.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content2.put("config", config2);
 
         final PutRewriterRequest request2 = new PutRewriterRequest("common_rules2", content2);
@@ -313,7 +313,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config1 = new HashMap<>();
         config1.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config1.put("ignoreCase", true);
-        config1.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config1.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content1.put("config", config1);
 
         final PutRewriterRequest request1 = new PutRewriterRequest("common_rules1", content1);
@@ -350,7 +350,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -393,7 +393,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -436,7 +436,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config1 = new HashMap<>();
         config1.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
         config1.put("ignoreCase", true);
-        config1.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config1.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content1.put("config", config1);
 
         final PutRewriterRequest request1 = new PutRewriterRequest("common_rules1", content1);
@@ -452,7 +452,7 @@ public class InfoLoggingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config2 = new HashMap<>();
         config2.put("rules", "k =>\nUP: q\n@_log: \"msg2\"");
         config2.put("ignoreCase", true);
-        config2.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config2.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content2.put("config", config2);
 
         final PutRewriterRequest request2 = new PutRewriterRequest("common_rules2", content2);

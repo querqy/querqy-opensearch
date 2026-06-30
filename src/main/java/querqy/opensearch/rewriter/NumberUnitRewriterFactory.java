@@ -25,9 +25,9 @@ import querqy.opensearch.rewriter.numberunit.NumberUnitConfigObject;
 import querqy.opensearch.rewriter.numberunit.NumberUnitConfigObject.NumberUnitDefinitionObject;
 import querqy.opensearch.rewriter.numberunit.NumberUnitQueryCreatorOpenSearch;
 import querqy.rewrite.RewriterFactory;
-import querqy.rewrite.contrib.numberunit.model.FieldDefinition;
-import querqy.rewrite.contrib.numberunit.model.NumberUnitDefinition;
-import querqy.rewrite.contrib.numberunit.model.UnitDefinition;
+import querqy.rewriter.numberunit.model.FieldDefinition;
+import querqy.rewriter.numberunit.model.NumberUnitDefinition;
+import querqy.rewriter.numberunit.model.UnitDefinition;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -72,7 +72,7 @@ public class NumberUnitRewriterFactory extends OpenSearchRewriterFactory {
 
     private static final String KEY_CONFIG_PROPERTY = "config";
 
-    private querqy.rewrite.contrib.NumberUnitRewriterFactory delegate;
+    private querqy.rewriter.numberunit.NumberUnitRewriterFactory delegate;
 
     public NumberUnitRewriterFactory(String rewriterId) {
         super(rewriterId);
@@ -100,7 +100,7 @@ public class NumberUnitRewriterFactory extends OpenSearchRewriterFactory {
         final int scale = getOrDefaultInt(numberUnitConfigObject::getScaleForLinearFunctions,
                 DEFAULT_SCALE_FOR_LINEAR_FUNCTIONS);
 
-        this.delegate = new querqy.rewrite.contrib.NumberUnitRewriterFactory(
+        this.delegate = new querqy.rewriter.numberunit.NumberUnitRewriterFactory(
                 rewriterId, parseConfig(numberUnitConfigObject), new NumberUnitQueryCreatorOpenSearch(scale));
 
     }

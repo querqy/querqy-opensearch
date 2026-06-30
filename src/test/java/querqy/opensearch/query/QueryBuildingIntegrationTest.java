@@ -56,7 +56,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nUP(1000): -aa");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -91,7 +91,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nUP(1000): -aa -bb");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -126,7 +126,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nUP(1000): kk");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -161,7 +161,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nUP(1000): kk jj");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -196,7 +196,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nDOWN(1000): aa bb");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -232,7 +232,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nUP(1000): kk -aa");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -267,7 +267,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nUP(1000): -aa\nUP(1000): -bb");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -302,7 +302,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nFILTER: -aa");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -337,7 +337,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nFILTER: -ii -jj");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -372,7 +372,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nUP(1000): *{\"term\": {\"field1\":\"ii\"}}");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -407,7 +407,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nDOWN(1000): *{\"term\": {\"field1\":\"bb\"}}");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -442,7 +442,7 @@ public class QueryBuildingIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "cc =>\nFILTER: *{\"term\": {\"field1\":\"ii\"}}");
         config.put("ignoreCase", true);
-        config.put("querqyParser", "querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory");
+        config.put("querqyParser", "querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory");
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
