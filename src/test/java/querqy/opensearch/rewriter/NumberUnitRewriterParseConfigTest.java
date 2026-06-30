@@ -27,7 +27,7 @@ import static org.hamcrest.Matchers.empty;
 import org.opensearch.test.OpenSearchTestCase;
 
 import querqy.opensearch.rewriter.numberunit.NumberUnitConfigObject;
-import querqy.rewrite.contrib.numberunit.model.NumberUnitDefinition;
+import querqy.rewriter.numberunit.model.NumberUnitDefinition;
 
 import java.io.IOException;
 import java.io.InputStream;

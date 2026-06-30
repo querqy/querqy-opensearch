@@ -39,7 +39,7 @@ public class RegexReplaceRewriterFactory  extends OpenSearchRewriterFactory {
     public static final String PROP_RULES = "rules";
     public static final String PROP_IGNORE_CASE = "ignoreCase";
 
-    private querqy.rewrite.replace.RegexReplaceRewriterFactory delegate;
+    private querqy.rewriter.regexreplace.RegexReplaceRewriterFactory delegate;
 
     public RegexReplaceRewriterFactory(final String rewriterId) {
         super(rewriterId);
@@ -56,7 +56,7 @@ public class RegexReplaceRewriterFactory  extends OpenSearchRewriterFactory {
         final boolean ignoreCase = ConfigUtils.getArg(config, PROP_IGNORE_CASE, DEFAULT_IGNORE_CASE);
 
         try {
-            delegate = new querqy.rewrite.replace.RegexReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase);
+            delegate = new querqy.rewriter.regexreplace.RegexReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase);
         } catch (final IOException e) {
             throw new OpenSearchException(e);
         }
@@ -76,7 +76,7 @@ public class RegexReplaceRewriterFactory  extends OpenSearchRewriterFactory {
         final boolean ignoreCase = ConfigUtils.getArg(config, PROP_IGNORE_CASE, DEFAULT_IGNORE_CASE);
 
         try {
-            new querqy.rewrite.replace.RegexReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase);
+            new querqy.rewriter.regexreplace.RegexReplaceRewriterFactory(rewriterId, rulesReader, ignoreCase);
         } catch (final IOException e) {
             return Collections.singletonList("Cannot create rewriter: " + e.getMessage());
         }

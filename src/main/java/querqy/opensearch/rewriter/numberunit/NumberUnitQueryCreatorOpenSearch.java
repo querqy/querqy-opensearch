@@ -30,9 +30,9 @@ import querqy.opensearch.query.QueryBuilderRawQuery;
 import querqy.model.BoostQuery;
 import querqy.model.Clause;
 import querqy.model.RawQuery;
-import querqy.rewrite.contrib.numberunit.NumberUnitQueryCreator;
-import querqy.rewrite.contrib.numberunit.model.NumberUnitDefinition;
-import querqy.rewrite.contrib.numberunit.model.PerUnitNumberUnitDefinition;
+import querqy.rewriter.numberunit.NumberUnitQueryCreator;
+import querqy.rewriter.numberunit.model.NumberUnitDefinition;
+import querqy.rewriter.numberunit.model.PerUnitNumberUnitDefinition;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;

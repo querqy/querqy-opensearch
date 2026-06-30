@@ -36,7 +36,7 @@ opensearchplugin {
 buildscript {
 
     ext {
-        opensearch_version = System.getProperty("opensearch.version", "3.5.0")
+        opensearch_version = System.getProperty("opensearch.version", "3.6.0")
     }
 
     repositories {
@@ -65,7 +65,7 @@ repositories {
 allprojects {
     group = "org.opensearch"
 
-    version = "1.2.os" + (opensearch_version - "-SNAPSHOT")
+    version = "1.3.os" + (opensearch_version - "-SNAPSHOT")
 
     if (isSnapshot) {
         version += "-SNAPSHOT"
@@ -84,8 +84,8 @@ allprojects {
 }
 
 dependencies {
-    api('org.querqy:querqy-lucene:5.9.lucene1032.0')
-    api("org.querqy:querqy-core:3.20.2")
+    api('org.querqy:querqy-lucene:5.11.lucene1040.0')
+    api("org.querqy:querqy-core:4.1.0")
     api('com.fasterxml.jackson.core:jackson-databind:2.22.0')
     api('com.fasterxml.jackson.core:jackson-annotations:2.22')
     implementation('com.jayway.jsonpath:json-path:3.0.0')

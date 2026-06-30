@@ -67,7 +67,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "k =>\nSYNONYM: c");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -95,7 +95,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "a =>\nFILTER: * {\"term\":{\"field2\":\"c\" }}");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
         client().execute(PutRewriterAction.INSTANCE, request).get();
@@ -128,7 +128,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", rules);
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -149,7 +149,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
@@ -174,7 +174,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config2 = new HashMap<>();
         config2.put("rules", "k =>\nSYNONYM: c");
         config2.put("ignoreCase", true);
-        config2.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config2.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content2.put("config", config2);
 
         final PutRewriterRequest request2 = new PutRewriterRequest("common_rules", content2);
@@ -205,7 +205,7 @@ public class RewriterIntegrationTest extends OpenSearchSingleNodeTestCase {
         final Map<String, Object> config = new HashMap<>();
         config.put("rules", "k =>\nSYNONYM: c");
         config.put("ignoreCase", true);
-        config.put("querqyParser", querqy.rewrite.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
         final PutRewriterRequest request = new PutRewriterRequest("common_rules", content);
