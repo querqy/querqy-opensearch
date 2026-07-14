@@ -86,7 +86,7 @@ allprojects {
 dependencies {
     api('org.querqy:querqy-lucene:5.11.lucene1040.0')
     api("org.querqy:querqy-core:4.1.0")
-    api('com.fasterxml.jackson.core:jackson-databind:2.22.0')
+    api('com.fasterxml.jackson.core:jackson-databind:2.22.1')
     api('com.fasterxml.jackson.core:jackson-annotations:2.22')
     implementation('com.jayway.jsonpath:json-path:3.0.0')
     runtimeOnly("org.slf4j:slf4j-api:2.0.17")
