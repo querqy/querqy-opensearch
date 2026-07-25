@@ -19,7 +19,6 @@
 package querqy.opensearch;
 
 import org.opensearch.index.shard.IndexShard;
-import querqy.model.ExpandedQuery;
 import querqy.model.Term;
 import querqy.rewrite.QueryRewriter;
 import querqy.rewrite.RewriterFactory;
@@ -52,8 +51,7 @@ public class DummyOpenSearchRewriterFactory extends OpenSearchRewriterFactory {
     public RewriterFactory createRewriterFactory(final IndexShard indexShard)  {
         return new RewriterFactory(rewriterId) {
             @Override
-            public QueryRewriter createRewriter(final ExpandedQuery input,
-                                                final SearchEngineRequestAdapter searchEngineRequestAdapter) {
+            public QueryRewriter createRewriter(final SearchEngineRequestAdapter searchEngineRequestAdapter) {
                 return (query, adapter) -> RewriterOutput.builder().expandedQuery(query).build();
             }
 

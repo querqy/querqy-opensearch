@@ -369,6 +369,6 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         when(searchEngineRequestAdapter.getSearchExecutionContext()).thenReturn(searchExecutionContext);
         final RewriterFactory rewriterFactory = factory.createRewriterFactory(indexShard);
         assertTrue(
-                rewriterFactory.createRewriter(null, searchEngineRequestAdapter) instanceof WordBreakCompoundRewriter);
+                rewriterFactory.createRewriter(searchEngineRequestAdapter) instanceof WordBreakCompoundRewriter);
     }
 }

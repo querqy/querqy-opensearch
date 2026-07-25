@@ -23,7 +23,6 @@ import querqy.opensearch.DismaxSearchEngineRequestAdapter;
 import org.opensearch.index.shard.IndexShard;
 import querqy.opensearch.ConfigUtils;
 import querqy.opensearch.OpenSearchRewriterFactory;
-import querqy.model.ExpandedQuery;
 import querqy.model.Term;
 import querqy.rewrite.QueryRewriter;
 import querqy.rewrite.RewriterFactory;
@@ -156,8 +155,7 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
 
         return new RewriterFactory(getRewriterId()) {
             @Override
-            public QueryRewriter createRewriter(final ExpandedQuery input,
-                                                final SearchEngineRequestAdapter searchEngineRequestAdapter) {
+            public QueryRewriter createRewriter(final SearchEngineRequestAdapter searchEngineRequestAdapter) {
 
                 final DismaxSearchEngineRequestAdapter adapter =
                         (DismaxSearchEngineRequestAdapter) searchEngineRequestAdapter;
