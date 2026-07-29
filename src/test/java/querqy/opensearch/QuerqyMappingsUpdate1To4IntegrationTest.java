@@ -41,7 +41,7 @@ import querqy.opensearch.rewriterstore.PutRewriterAction;
 import querqy.opensearch.rewriterstore.PutRewriterRequest;
 
 
-public class QuerqyMappingsUpdate1To3IntegrationTest extends OpenSearchSingleNodeTestCase {
+public class QuerqyMappingsUpdate1To4IntegrationTest extends OpenSearchSingleNodeTestCase {
 
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
@@ -59,7 +59,7 @@ public class QuerqyMappingsUpdate1To3IntegrationTest extends OpenSearchSingleNod
     }
 
     @SuppressWarnings("unchecked")
-    public void testUpdate1To3() throws Exception {
+    public void testUpdate1To4() throws Exception {
 
         final String v1Mapping = "{\n" +
                 "    \"properties\": {\n" +
@@ -108,6 +108,8 @@ public class QuerqyMappingsUpdate1To3IntegrationTest extends OpenSearchSingleNod
         final Map<String, Object> config_v_003_mapping = (Map<String, Object>) properties.get("config_v_003");
         assertNotNull(config_v_003_mapping);
         assertEquals(false, config_v_003_mapping.get("doc_values"));
+
+        assertThat((Map<String, Object>) properties.get("revision"), hasEntry("type", "keyword"));
 
     }
 }

@@ -3,6 +3,7 @@
       "class": {"type": "keyword"},
       "type": {"type": "keyword"},
       "version": {"type":  "integer"},
+      "revision": {"type": "keyword"},
       "info_logging": {
         "properties": {
           "sinks": {"type" : "keyword" }
