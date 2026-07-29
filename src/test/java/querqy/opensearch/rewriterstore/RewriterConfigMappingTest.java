@@ -44,6 +44,9 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     private static final String CLASS_NAME = "querqy.opensearch.DummyOpenSearchRewriterFactory";
 
+    /** 2026-07-29T08:15:30.123Z */
+    private static final long SAVED_AT_MILLIS = 1785312930123L;
+
     public void testStringToSourceValue() {
         String s = "123456789ä";
         if (new BytesRef(s).length != 11) {
@@ -86,7 +89,7 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatDocumentIsSavedWithCurrentMappingVersion() throws IOException {
 
-        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(putContent(config(), null));
+        final Map<String, Object> source = toLuceneSource(putContent(config(), null));
 
         assertEquals(CURRENT_MAPPING_VERSION, source.get(PROP_VERSION));
         assertEquals("rewriter", source.get(PROP_TYPE));
@@ -95,7 +98,7 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatConfigIsStoredCanonically() throws IOException {
 
-        final String stored = (String) RewriterConfigMapping.toLuceneSource(putContent(config(), null))
+        final String stored = (String) toLuceneSource(putContent(config(), null))
                 .get(CURRENT.getConfigStringProperty());
 
         assertEquals("{\"a\":{\"c\":3,\"d\":2},\"b\":1,\"list\":[\"x\",\"y\"]}", stored);
@@ -103,9 +106,9 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatCanonicalConfigDoesNotDependOnPropertyOrder() throws IOException {
 
-        final Object stored1 = RewriterConfigMapping.toLuceneSource(putContent(config(), null))
+        final Object stored1 = toLuceneSource(putContent(config(), null))
                 .get(CURRENT.getConfigStringProperty());
-        final Object stored2 = RewriterConfigMapping.toLuceneSource(putContent(configInDifferentOrder(), null))
+        final Object stored2 = toLuceneSource(putContent(configInDifferentOrder(), null))
                 .get(CURRENT.getConfigStringProperty());
 
         assertEquals(stored1, stored2);
@@ -113,8 +116,7 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatRevisionIsSavedAndRead() throws IOException {
 
-        final Map<String, Object> source = RewriterConfigMapping
-                .toLuceneSource(putContent(config(), "release-2026-07-29"));
+        final Map<String, Object> source = toLuceneSource(putContent(config(), "release-2026-07-29"));
 
         assertEquals("release-2026-07-29", source.get(PROP_REVISION));
         assertEquals("release-2026-07-29", getMapping(source).getRevision(source));
@@ -122,7 +124,7 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatRevisionIsNotSavedIfItWasNotSupplied() throws IOException {
 
-        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(putContent(config(), null));
+        final Map<String, Object> source = toLuceneSource(putContent(config(), null));
 
         assertFalse(source.containsKey(PROP_REVISION));
         assertNull(getMapping(source).getRevision(source));
@@ -183,7 +185,7 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatConfigHashOfV3DocumentEqualsHashOfCurrentDocument() throws IOException {
 
-        final Map<String, Object> v4Source = RewriterConfigMapping.toLuceneSource(putContent(config(), null));
+        final Map<String, Object> v4Source = toLuceneSource(putContent(config(), null));
 
         // a document as it was saved by mapping version 3: the config was not stored in canonical form
         final Map<String, Object> v3Source = new HashMap<>();
@@ -205,8 +207,8 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
             rules.append("k").append(rules.length()).append(" =>\n  SYNONYM: c\n");
         }
 
-        final Map<String, Object> source = RewriterConfigMapping
-                .toLuceneSource(putContent(Collections.singletonMap("rules", rules.toString()), null));
+        final Map<String, Object> source = toLuceneSource(
+                putContent(Collections.singletonMap("rules", rules.toString()), null));
 
         final Object configValue = source.get(CURRENT.getConfigStringProperty());
         if (!(configValue instanceof String[])) {
@@ -237,14 +239,66 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatConfigCanBeReadBackFromCanonicalDocument() throws IOException {
 
-        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(putContent(config(), null));
+        final Map<String, Object> source = toLuceneSource(putContent(config(), null));
 
         assertEquals(config(), getMapping(source).getConfig("r1", source));
     }
 
+    public void testThatSavedAtIsSavedAsIso8601() throws IOException {
+
+        final Map<String, Object> source = toLuceneSource(putContent(config(), null));
+
+        assertEquals("2026-07-29T08:15:30.123Z", source.get(RewriterConfigMapping.PROP_SAVED_AT));
+        assertEquals("2026-07-29T08:15:30.123Z", getMapping(source).getSavedAt(source));
+    }
+
+    public void testThatSavedAtIsNotSavedIfNoTimestampIsSupplied() throws IOException {
+
+        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(putContent(config(), null), null);
+
+        assertFalse(source.containsKey(RewriterConfigMapping.PROP_SAVED_AT));
+        assertNull(getMapping(source).getSavedAt(source));
+    }
+
+    public void testThatSavedAtSuppliedByTheUserIsIgnored() throws IOException {
+
+        final Map<String, Object> content = putContent(config(), null);
+        content.put(RewriterConfigMapping.PROP_SAVED_AT, "1970-01-01T00:00:00Z");
+
+        assertEquals("2026-07-29T08:15:30.123Z",
+                toLuceneSource(content).get(RewriterConfigMapping.PROP_SAVED_AT));
+    }
+
+    public void testThatSavedAtIsReadFromEpochMillis() {
+
+        // the date field type also accepts epoch millis, which we could see in a document that wasn't written by the
+        // rewriter API
+        final Map<String, Object> source = new HashMap<>();
+        source.put(PROP_VERSION, CURRENT_MAPPING_VERSION);
+        source.put(RewriterConfigMapping.PROP_SAVED_AT, SAVED_AT_MILLIS);
+
+        assertEquals("2026-07-29T08:15:30.123Z", CURRENT.getSavedAt(source));
+    }
+
+    public void testThatConfigHashDoesNotDependOnSavedAt() throws IOException {
+
+        final Map<String, Object> source1 = RewriterConfigMapping
+                .toLuceneSource(putContent(config(), null), SAVED_AT_MILLIS);
+        final Map<String, Object> source2 = RewriterConfigMapping
+                .toLuceneSource(putContent(config(), null), SAVED_AT_MILLIS + 86_400_000L);
+
+        assertNotEquals(source1.get(RewriterConfigMapping.PROP_SAVED_AT),
+                source2.get(RewriterConfigMapping.PROP_SAVED_AT));
+        assertEquals(CURRENT.computeConfigHash("r1", source1), CURRENT.computeConfigHash("r1", source2));
+    }
+
     private static String configHashOf(final Map<String, Object> putRequestContent) throws IOException {
-        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(putRequestContent);
+        final Map<String, Object> source = toLuceneSource(putRequestContent);
         return getMapping(source).computeConfigHash("r1", source);
+    }
+
+    private static Map<String, Object> toLuceneSource(final Map<String, Object> putRequestContent) throws IOException {
+        return RewriterConfigMapping.toLuceneSource(putRequestContent, SAVED_AT_MILLIS);
     }
 
     private static Map<String, Object> putContent(final Map<String, Object> config, final String revision) {

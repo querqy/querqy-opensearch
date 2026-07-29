@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -58,6 +59,12 @@ public abstract class RewriterConfigMapping {
      * rewriter document - see {@link #computeConfigHash(String, Map)}.
      */
     public static final String PROP_CONFIG_HASH = "config_hash";
+
+    /**
+     * The point in time at which the rewriter configuration was saved, set by the node that received the
+     * configuration. Saved and returned as an ISO-8601 timestamp in UTC.
+     */
+    public static final String PROP_SAVED_AT = "saved_at";
 
     private static final String CONFIG_HASH_ALGORITHM = "SHA-256";
 
@@ -142,12 +149,24 @@ public abstract class RewriterConfigMapping {
 
     }
 
+    /**
+     * @param putRequestContent The payload of the request to save the rewriter
+     * @param savedAtMillis The point in time at which the rewriter is saved, in epoch millis, or null to save the
+     *                      rewriter without this information
+     * @return The document to save in the rewriter index
+     * @throws IOException if the rewriter config cannot be serialized
+     */
     @SuppressWarnings("unchecked")
-    public static Map<String, Object> toLuceneSource(final Map<String, Object> putRequestContent) throws IOException {
-        final Map<String, Object> source = new HashMap<>(putRequestContent.size() + 4);
+    public static Map<String, Object> toLuceneSource(final Map<String, Object> putRequestContent,
+                                                     final Long savedAtMillis) throws IOException {
+        final Map<String, Object> source = new HashMap<>(putRequestContent.size() + 5);
         source.put(PROP_TYPE, "rewriter");
         source.put(PROP_VERSION, CURRENT_MAPPING_VERSION);
         source.put(CURRENT.getRewriterClassNameProperty(), putRequestContent.get("class"));
+
+        if (savedAtMillis != null) {
+            source.put(PROP_SAVED_AT, toIsoInstant(savedAtMillis));
+        }
 
         final Map<String, Object> infoLoggingConfig = (Map<String, Object>) putRequestContent.get("info_logging");
         if (infoLoggingConfig != null) {
@@ -236,6 +255,29 @@ public abstract class RewriterConfigMapping {
     public String getRevision(final Map<String, Object> source) {
         final Object revision = source.get(PROP_REVISION);
         return revision == null ? null : revision.toString();
+    }
+
+    /**
+     * @param source The stored rewriter document
+     * @return The point in time at which the rewriter was saved, as an ISO-8601 timestamp in UTC, or null if the
+     * document doesn't carry this information - which is the case for rewriters that were saved before mapping
+     * version 4.
+     */
+    public String getSavedAt(final Map<String, Object> source) {
+
+        final Object savedAt = source.get(PROP_SAVED_AT);
+
+        if (savedAt == null) {
+            return null;
+        }
+
+        // We always save the timestamp as an ISO-8601 string but the date field type also accepts epoch millis,
+        // which is what we could see in a document that wasn't written by the rewriter API.
+        return (savedAt instanceof Number) ? toIsoInstant(((Number) savedAt).longValue()) : savedAt.toString();
+    }
+
+    private static String toIsoInstant(final long epochMillis) {
+        return Instant.ofEpochMilli(epochMillis).toString();
     }
 
     /**

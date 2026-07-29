@@ -35,6 +35,7 @@ import querqy.opensearch.rewriterstore.PutRewriterRequest;
 import querqy.opensearch.rewriterstore.RewriterInfo;
 import querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -78,6 +79,40 @@ public class RewriterConfigReadIntegrationTest extends OpenSearchSingleNodeTestC
         assertNotNull(config);
         assertEquals("k =>\n  SYNONYM: c", config.get("rules"));
         assertEquals(Boolean.TRUE, config.get("ignoreCase"));
+    }
+
+    public void testThatSavedAtIsSetByTheNodeThatSavesTheRewriter() throws Exception {
+
+        final long beforeSaving = System.currentTimeMillis();
+        putRewriter("common_rules", "k =>\n  SYNONYM: c", null);
+
+        final String savedAt = getRewriter("common_rules").getRewriter().getSavedAt();
+        assertNotNull(savedAt);
+
+        // the timestamp is taken from the node clock, which is only updated every couple of hundred milliseconds
+        final long savedAtMillis = Instant.parse(savedAt).toEpochMilli();
+        assertTrue("saved_at is not in the expected range: " + savedAt, savedAtMillis >= beforeSaving - 1000L);
+        assertTrue("saved_at is not in the expected range: " + savedAt,
+                savedAtMillis <= System.currentTimeMillis() + 1000L);
+    }
+
+    public void testThatSavedAtAdvancesWhenTheSameConfigIsSavedAgain() throws Exception {
+
+        putRewriter("common_rules", "k =>\n  SYNONYM: c", null);
+        final RewriterInfo firstSave = getRewriter("common_rules").getRewriter();
+
+        // The node clock has a granularity of a few hundred milliseconds, so saving again right away can leave the
+        // timestamp unchanged. Save until it has advanced instead of waiting for a fixed amount of time.
+        assertBusy(() -> {
+            putRewriter("common_rules", "k =>\n  SYNONYM: c", null);
+            final RewriterInfo laterSave = getRewriter("common_rules").getRewriter();
+
+            assertTrue("saved_at did not advance: " + laterSave.getSavedAt(),
+                    Instant.parse(laterSave.getSavedAt()).isAfter(Instant.parse(firstSave.getSavedAt())));
+
+            // the config didn't change, so its hash must not change either
+            assertEquals(firstSave.getConfigHash(), laterSave.getConfigHash());
+        });
     }
 
     public void testThatRevisionIsEmptyIfItWasNotSupplied() throws Exception {
@@ -146,6 +181,7 @@ public class RewriterConfigReadIntegrationTest extends OpenSearchSingleNodeTestC
         assertNull(rewriterA.getRevision());
         assertNull(rewriterA.getConfig());
         assertNotNull(rewriterA.getConfigHash());
+        assertNotNull(rewriterA.getSavedAt());
         assertEquals(SimpleCommonRulesRewriterFactory.class.getName(), rewriterA.getRewriterClassName());
 
         final RewriterInfo rewriterB = rewriters.get(1);

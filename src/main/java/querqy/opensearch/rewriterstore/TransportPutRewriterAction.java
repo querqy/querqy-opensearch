@@ -49,6 +49,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.tasks.Task;
+import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.IndicesAdminClient;
@@ -63,15 +64,18 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
 
     private final Client client;
     private final ClusterService clusterService;
+    private final ThreadPool threadPool;
     private final Settings settings;
     private boolean mappingsVersionChecked = false;
 
     @Inject
     public TransportPutRewriterAction(final TransportService transportService, final ActionFilters actionFilters,
-                                      final ClusterService clusterService, final Client client, final Settings settings)
+                                      final ClusterService clusterService, final ThreadPool threadPool,
+                                      final Client client, final Settings settings)
     {
         super(NAME, false, transportService, actionFilters, PutRewriterRequest::new);
         this.clusterService = clusterService;
+        this.threadPool = threadPool;
         this.client = client;
         this.settings = settings;
     }
@@ -182,6 +186,11 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
                     "      \"" + RewriterConfigMapping.PROP_REVISION + "\": {\"type\" : \"keyword\" }");
         }
 
+        if (!existingProperties.containsKey(RewriterConfigMapping.PROP_SAVED_AT)) {
+            missingProperties.put(RewriterConfigMapping.PROP_SAVED_AT,
+                    "      \"" + RewriterConfigMapping.PROP_SAVED_AT + "\": {\"type\" : \"date\" }");
+        }
+
         if (missingProperties.isEmpty()) {
             return;
         }
@@ -243,7 +252,9 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
     private IndexRequest buildIndexRequest(final Task parentTask, final PutRewriterRequest request) throws IOException {
 
         final IndexRequest indexRequest = client.prepareIndex(QUERQY_INDEX_NAME).setId(request.getRewriterId())
-                .setCreate(false).setSource(RewriterConfigMapping.toLuceneSource(request.getContent()))
+                .setCreate(false)
+                .setSource(RewriterConfigMapping.toLuceneSource(request.getContent(),
+                        threadPool.absoluteTimeInMillis()))
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).request();
         indexRequest.setParentTask(clusterService.localNode().getId(), parentTask.getId());
         return indexRequest;

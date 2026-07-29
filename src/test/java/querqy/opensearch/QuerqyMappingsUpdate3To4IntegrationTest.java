@@ -114,12 +114,14 @@ public class QuerqyMappingsUpdate3To4IntegrationTest extends OpenSearchSingleNod
         assertNotNull(properties);
 
         assertThat((Map<String, Object>) properties.get("revision"), hasEntry("type", "keyword"));
+        assertThat((Map<String, Object>) properties.get("saved_at"), hasEntry("type", "date"));
 
         // the revision must have been saved in the new property and the hash must be derived from the config
         final RewriterInfo rewriter = client()
                 .execute(GetRewriterAction.INSTANCE, new GetRewriterRequest("common_rules")).get().getRewriter();
 
         assertEquals("release-2026-07-29", rewriter.getRevision());
+        assertNotNull(rewriter.getSavedAt());
         assertTrue("Not a SHA-256 hex string: " + rewriter.getConfigHash(),
                 rewriter.getConfigHash().matches("[0-9a-f]{64}"));
 

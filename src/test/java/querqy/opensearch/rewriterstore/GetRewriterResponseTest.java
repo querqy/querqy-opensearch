@@ -36,6 +36,8 @@ import java.util.Map;
 
 public class GetRewriterResponseTest extends OpenSearchTestCase {
 
+    private static final String SAVED_AT = "2026-07-29T08:15:30.123Z";
+
     public void testThatStatusIsOk() {
         assertEquals(RestStatus.OK, new GetRewriterResponse(Collections.emptyList()).status());
         assertEquals(RestStatus.OK, new GetRewriterResponse(rewriterInfo("r1", "rev1", true)).status());
@@ -53,6 +55,7 @@ public class GetRewriterResponseTest extends OpenSearchTestCase {
         assertEquals("some.RewriterFactory", rewriter.getRewriterClassName());
         assertEquals("rev1", rewriter.getRevision());
         assertEquals("hash-of-r1", rewriter.getConfigHash());
+        assertEquals(SAVED_AT, rewriter.getSavedAt());
         assertEquals(config(), rewriter.getConfig());
         assertEquals(Collections.singletonMap("sinks", Collections.singletonList("log4j")),
                 rewriter.getInfoLoggingConfig());
@@ -61,11 +64,12 @@ public class GetRewriterResponseTest extends OpenSearchTestCase {
     public void testStreamSerializationOfRewriterWithoutOptionalProperties() throws IOException {
 
         final RewriterInfo rewriterInfo = new RewriterInfo("r1", "some.RewriterFactory", null, "hash-of-r1", null,
-                null);
+                null, null);
 
         final RewriterInfo deserialized = deserialize(new GetRewriterResponse(rewriterInfo)).getRewriter();
 
         assertNull(deserialized.getRevision());
+        assertNull(deserialized.getSavedAt());
         assertNull(deserialized.getConfig());
         assertNull(deserialized.getInfoLoggingConfig());
         assertEquals("hash-of-r1", deserialized.getConfigHash());
@@ -101,6 +105,7 @@ public class GetRewriterResponseTest extends OpenSearchTestCase {
         assertThat(rewriter, hasEntry("class", "some.RewriterFactory"));
         assertThat(rewriter, hasEntry(RewriterConfigMapping.PROP_REVISION, "rev1"));
         assertThat(rewriter, hasEntry(RewriterConfigMapping.PROP_CONFIG_HASH, "hash-of-r1"));
+        assertThat(rewriter, hasEntry(RewriterConfigMapping.PROP_SAVED_AT, SAVED_AT));
         assertEquals(config(), rewriter.get("config"));
         assertNotNull(rewriter.get("info_logging"));
     }
@@ -109,11 +114,12 @@ public class GetRewriterResponseTest extends OpenSearchTestCase {
     public void testThatOptionalPropertiesAreOmittedInJson() throws IOException {
 
         final Map<String, Object> parsed = toMap(new GetRewriterResponse(
-                new RewriterInfo("r1", "some.RewriterFactory", null, "hash-of-r1", null, null)));
+                new RewriterInfo("r1", "some.RewriterFactory", null, "hash-of-r1", null, null, null)));
 
         final Map<String, Object> rewriter = (Map<String, Object>) parsed.get(GetRewriterResponse.FIELD_REWRITER);
 
         assertFalse(rewriter.containsKey(RewriterConfigMapping.PROP_REVISION));
+        assertFalse(rewriter.containsKey(RewriterConfigMapping.PROP_SAVED_AT));
         assertFalse(rewriter.containsKey("config"));
         assertFalse(rewriter.containsKey("info_logging"));
         assertThat(rewriter, hasEntry(RewriterConfigMapping.PROP_CONFIG_HASH, "hash-of-r1"));
@@ -133,6 +139,7 @@ public class GetRewriterResponseTest extends OpenSearchTestCase {
 
         assertThat(rewriters.get(0), hasEntry(RewriterInfo.FIELD_REWRITER_ID, "r1"));
         assertThat(rewriters.get(0), hasEntry(RewriterConfigMapping.PROP_CONFIG_HASH, "hash-of-r1"));
+        assertThat(rewriters.get(0), hasEntry(RewriterConfigMapping.PROP_SAVED_AT, SAVED_AT));
         assertFalse(rewriters.get(0).containsKey("config"));
 
         assertThat(rewriters.get(1), hasEntry(RewriterInfo.FIELD_REWRITER_ID, "r2"));
@@ -155,7 +162,7 @@ public class GetRewriterResponseTest extends OpenSearchTestCase {
     private static RewriterInfo rewriterInfo(final String rewriterId, final String revision,
                                             final boolean includeConfig) {
         return new RewriterInfo(rewriterId, "some.RewriterFactory", revision, "hash-of-" + rewriterId,
-                includeConfig ? config() : null,
+                SAVED_AT, includeConfig ? config() : null,
                 Collections.singletonMap("sinks", Collections.singletonList("log4j")));
     }
 

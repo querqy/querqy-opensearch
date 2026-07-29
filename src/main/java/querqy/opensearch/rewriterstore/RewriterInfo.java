@@ -40,6 +40,7 @@ public class RewriterInfo implements Writeable, ToXContentObject {
     private final String rewriterClassName;
     private final String revision;
     private final String configHash;
+    private final String savedAt;
     private final Map<String, Object> config;
     private final Map<String, Object> infoLoggingConfig;
 
@@ -61,17 +62,19 @@ public class RewriterInfo implements Writeable, ToXContentObject {
                 mapping.getRewriterClassName(rewriterId, source),
                 mapping.getRevision(source),
                 mapping.computeConfigHash(rewriterId, source),
+                mapping.getSavedAt(source),
                 includeConfig ? mapping.getConfig(rewriterId, source) : null,
                 mapping.getInfoLoggingConfig(rewriterId, source));
     }
 
     public RewriterInfo(final String rewriterId, final String rewriterClassName, final String revision,
-                        final String configHash, final Map<String, Object> config,
+                        final String configHash, final String savedAt, final Map<String, Object> config,
                         final Map<String, Object> infoLoggingConfig) {
         this.rewriterId = rewriterId;
         this.rewriterClassName = rewriterClassName;
         this.revision = revision;
         this.configHash = configHash;
+        this.savedAt = savedAt;
         this.config = config;
         this.infoLoggingConfig = infoLoggingConfig;
     }
@@ -81,6 +84,7 @@ public class RewriterInfo implements Writeable, ToXContentObject {
         rewriterClassName = in.readOptionalString();
         revision = in.readOptionalString();
         configHash = in.readString();
+        savedAt = in.readOptionalString();
         config = in.readBoolean() ? in.readMap() : null;
         infoLoggingConfig = in.readBoolean() ? in.readMap() : null;
     }
@@ -91,6 +95,7 @@ public class RewriterInfo implements Writeable, ToXContentObject {
         out.writeOptionalString(rewriterClassName);
         out.writeOptionalString(revision);
         out.writeString(configHash);
+        out.writeOptionalString(savedAt);
         out.writeBoolean(config != null);
         if (config != null) {
             out.writeMap(config);
@@ -114,6 +119,10 @@ public class RewriterInfo implements Writeable, ToXContentObject {
         }
 
         builder.field(RewriterConfigMapping.PROP_CONFIG_HASH, configHash);
+
+        if (savedAt != null) {
+            builder.field(RewriterConfigMapping.PROP_SAVED_AT, savedAt);
+        }
 
         if (infoLoggingConfig != null) {
             builder.field(RewriterConfigMapping.CURRENT.getInfoLoggingProperty(), infoLoggingConfig);
@@ -146,6 +155,14 @@ public class RewriterInfo implements Writeable, ToXContentObject {
 
     public String getConfigHash() {
         return configHash;
+    }
+
+    /**
+     * @return The point in time at which the rewriter was saved, as an ISO-8601 timestamp in UTC, or null for a
+     * rewriter that was saved before this information was recorded.
+     */
+    public String getSavedAt() {
+        return savedAt;
     }
 
     /**

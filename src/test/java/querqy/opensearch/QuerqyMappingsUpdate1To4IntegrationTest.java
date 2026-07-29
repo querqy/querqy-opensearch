@@ -110,6 +110,7 @@ public class QuerqyMappingsUpdate1To4IntegrationTest extends OpenSearchSingleNod
         assertEquals(false, config_v_003_mapping.get("doc_values"));
 
         assertThat((Map<String, Object>) properties.get("revision"), hasEntry("type", "keyword"));
+        assertThat((Map<String, Object>) properties.get("saved_at"), hasEntry("type", "date"));
 
     }
 }
