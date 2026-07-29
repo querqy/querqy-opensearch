@@ -30,10 +30,13 @@ import querqy.rewriter.wordbreak.MorphologicalCompounder;
 import querqy.rewriter.wordbreak.MorphologicalWordBreaker;
 import querqy.rewriter.wordbreak.Morphology;
 import querqy.rewriter.wordbreak.MorphologyProvider;
+import querqy.rewriter.wordbreak.OptionalModifierConfig;
+import querqy.rewriter.wordbreak.OptionalModifierPosition;
 import querqy.rewriter.wordbreak.WordBreakCompoundRewriter;
 import querqy.rewrite.SearchEngineRequestAdapter;
 import querqy.trie.TrieMap;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -46,13 +49,15 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     static final int MAX_EVALUATIONS = 100;
 
     static final int DEFAULT_MIN_SUGGESTION_FREQ = 1;
-    static final int DEFAULT_MAX_COMBINE_LENGTH = 30;
     static final int DEFAULT_MIN_BREAK_LENGTH = 3;
     static final int DEFAULT_MAX_DECOMPOUND_EXPANSIONS = 3;
+    static final int DEFAULT_MAX_COMPOUND_EXPANSIONS = 3;
     static final boolean DEFAULT_LOWER_CASE_INPUT = false;
     static final boolean DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS = false;
     static final boolean DEFAULT_VERIFY_DECOMPOUND_COLLATION = false;
     static final String DEFAULT_MORPHOLOGY_NAME = "DEFAULT";
+    static final String DEFAULT_OPTIONAL_MODIFIER_POSITION = OptionalModifierPosition.NONE.name();
+    static final float DEFAULT_OPTIONAL_MODIFIER_BOOST = 1.0f;
     private static final MorphologyProvider MORPHOLOGY_PROVIDER = new MorphologyProvider();
 
     private String dictionaryField;
@@ -63,8 +68,10 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     private TrieMap<Boolean> reverseCompoundTriggerWords;
     private TrieMap<Boolean> protectedWords;
     private int maxDecompoundExpansions = DEFAULT_MAX_DECOMPOUND_EXPANSIONS;
+    private int maxCompoundExpansions = DEFAULT_MAX_COMPOUND_EXPANSIONS;
     private boolean verifyDecompoundCollation = DEFAULT_VERIFY_DECOMPOUND_COLLATION;
     private int minSuggestionFreq = DEFAULT_MIN_SUGGESTION_FREQ;
+    private OptionalModifierConfig optionalModifierConfig = OptionalModifierConfig.DISABLED;
 
     public WordBreakCompoundRewriterFactory(final String rewriterId) {
         super(rewriterId);
@@ -92,8 +99,10 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         final String compoundMorphologyName = ConfigUtils.getStringArg(compoundConf, "morphology",
                 defaultMorphologyName);
         final Optional<Morphology> compoundMorphology = MORPHOLOGY_PROVIDER.get(compoundMorphologyName);
+        maxCompoundExpansions = ConfigUtils.getArg(compoundConf, "maxExpansions", DEFAULT_MAX_COMPOUND_EXPANSIONS);
         compounder = new MorphologicalCompounder(
-                compoundMorphology.orElse(MorphologyProvider.DEFAULT), lowerCaseInput, minSuggestionFreq);
+                compoundMorphology.orElse(MorphologyProvider.DEFAULT), lowerCaseInput, minSuggestionFreq,
+                maxCompoundExpansions);
 
         Map<String, Object> decompoundConf = (Map<String, Object>) config.get("decompound");
         if (decompoundConf == null) {
@@ -112,6 +121,22 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
                 DEFAULT_MAX_DECOMPOUND_EXPANSIONS);
         verifyDecompoundCollation = ConfigUtils.getArg(decompoundConf, "verifyCollation",
                 DEFAULT_VERIFY_DECOMPOUND_COLLATION);
+
+        final String optionalModifierPositionName = ConfigUtils.getStringArg(decompoundConf,
+                "optionalModifierPosition", DEFAULT_OPTIONAL_MODIFIER_POSITION);
+        final float optionalModifierBoost = ((Number) decompoundConf.getOrDefault(
+                "optionalModifierBoost", DEFAULT_OPTIONAL_MODIFIER_BOOST)).floatValue();
+        optionalModifierConfig = new OptionalModifierConfig(
+                parseOptionalModifierPosition(optionalModifierPositionName), optionalModifierBoost);
+    }
+
+    private static OptionalModifierPosition parseOptionalModifierPosition(final String name) {
+        try {
+            return OptionalModifierPosition.valueOf(name.trim().toUpperCase());
+        } catch (final IllegalArgumentException e) {
+            throw new IllegalArgumentException("No such optionalModifierPosition " + name + ". Valid values: "
+                    + Arrays.toString(OptionalModifierPosition.values()));
+        }
     }
 
     @Override
@@ -137,6 +162,17 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
                     errors.add("Unknown decompound morphology: " + morphologyName);
                 }
             });
+
+            final String optionalModifierPositionName = ConfigUtils.getStringArg(decompoundConf,
+                    "optionalModifierPosition", DEFAULT_OPTIONAL_MODIFIER_POSITION);
+            final float optionalModifierBoost = ((Number) decompoundConf.getOrDefault(
+                    "optionalModifierBoost", DEFAULT_OPTIONAL_MODIFIER_BOOST)).floatValue();
+            try {
+                new OptionalModifierConfig(
+                        parseOptionalModifierPosition(optionalModifierPositionName), optionalModifierBoost);
+            } catch (final IllegalArgumentException e) {
+                errors.add(e.getMessage());
+            }
         }
         final Map<String, Object> compoundConf = (Map<String, Object>) config.get("compound");
         if (compoundConf != null) {
@@ -165,7 +201,8 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
 
                 return new WordBreakCompoundRewriter(wordBreaker, compounder, corpus,
                         lowerCaseInput, alwaysAddReverseCompounds, reverseCompoundTriggerWords,
-                        maxDecompoundExpansions, verifyDecompoundCollation, protectedWords);
+                        maxDecompoundExpansions, verifyDecompoundCollation, protectedWords,
+                        optionalModifierConfig);
             }
 
             @Override
@@ -199,8 +236,16 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         return maxDecompoundExpansions;
     }
 
+    public int getMaxCompoundExpansions() {
+        return maxCompoundExpansions;
+    }
+
     public boolean isVerifyDecompoundCollation() {
         return verifyDecompoundCollation;
+    }
+
+    public OptionalModifierConfig getOptionalModifierConfig() {
+        return optionalModifierConfig;
     }
 
     public MorphologicalCompounder getCompounder() {

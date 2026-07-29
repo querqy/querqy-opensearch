@@ -52,6 +52,8 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.index.TermsEnum;
 import querqy.rewriter.wordbreak.MorphologicalCompounder;
 import querqy.rewriter.wordbreak.MorphologicalWordBreaker;
+import querqy.rewriter.wordbreak.OptionalModifierConfig;
+import querqy.rewriter.wordbreak.OptionalModifierPosition;
 import querqy.rewriter.wordbreak.WordBreakCompoundRewriter;
 import querqy.rewrite.RewriterFactory;
 import querqy.trie.TrieMap;
@@ -106,6 +108,31 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         assertThat(errors, Matchers.contains("Unknown morphology: IDIOLECT"));
     }
 
+    public void testValidateRefusesUnknownOptionalModifierPosition() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryField", "f1");
+        final Map<String, Object> decompoundConf = new HashMap<>();
+        config.put("decompound", decompoundConf);
+        decompoundConf.put("optionalModifierPosition", "MIDDLE");
+
+        final List<String> errors = factory.validateConfiguration(config);
+        assertEquals(1, errors.size());
+        assertTrue(errors.getFirst().contains("MIDDLE"));
+    }
+
+    public void testValidateRefusesNonNeutralBoostWithoutOptionalModifierPosition() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryField", "f1");
+        final Map<String, Object> decompoundConf = new HashMap<>();
+        config.put("decompound", decompoundConf);
+        decompoundConf.put("optionalModifierBoost", 1.5f);
+
+        final List<String> errors = factory.validateConfiguration(config);
+        assertEquals(1, errors.size());
+    }
+
     public void testThatDefaultConfigurationIsApplied() throws Exception {
 
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
@@ -115,6 +142,9 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         assertEquals(DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS, factory.isAlwaysAddReverseCompounds());
         assertEquals(DEFAULT_VERIFY_DECOMPOUND_COLLATION, factory.isVerifyDecompoundCollation());
         assertEquals("f1", factory.getDictionaryField());
+        assertEquals(OptionalModifierConfig.DISABLED, factory.getOptionalModifierConfig());
+        assertEquals(WordBreakCompoundRewriterFactory.DEFAULT_MAX_COMPOUND_EXPANSIONS,
+                factory.getMaxCompoundExpansions());
 
         assertNotNull(factory.getCompounder());
 
@@ -167,7 +197,6 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
         final Map<String, Object> config = new HashMap<>();
         config.put("minSuggestionFreq", 11);
-        config.put("maxCombineLength", 22);
         config.put("minBreakLength", 1);
         config.put("dictionaryField", "f2");
         config.put("lowerCaseInput", !DEFAULT_LOWER_CASE_INPUT);
@@ -181,11 +210,15 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
         decompoundConf.put("verifyCollation", !DEFAULT_VERIFY_DECOMPOUND_COLLATION);
         decompoundConf.put("maxExpansions", 87);
+        decompoundConf.put("optionalModifierPosition", "first");
+        decompoundConf.put("optionalModifierBoost", 2.0f);
 
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(config);
 
         assertEquals(87, factory.getMaxDecompoundExpansions());
+        assertEquals(new OptionalModifierConfig(OptionalModifierPosition.FIRST, 2.0f),
+                factory.getOptionalModifierConfig());
 
         assertNotEquals(DEFAULT_LOWER_CASE_INPUT, factory.isLowerCaseInput());
         assertNotEquals(DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS, factory.isAlwaysAddReverseCompounds());
@@ -247,7 +280,6 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
     public void testThatDecompoundMorphologyIsApplied() throws Exception {
         final Map<String, Object> config = new HashMap<>();
         config.put("minSuggestionFreq", 2);
-        config.put("maxCombineLength", 22);
         config.put("minBreakLength", 1);
         config.put("dictionaryField", "f2");
         config.put("lowerCaseInput", !DEFAULT_LOWER_CASE_INPUT);
@@ -304,7 +336,6 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
     public void testThatCompoundMorphologyIsApplied() throws Exception {
         final Map<String, Object> config = new HashMap<>();
         config.put("minSuggestionFreq", 11);
-        config.put("maxCombineLength", 5);
         config.put("minBreakLength", 1);
         config.put("dictionaryField", "f2");
         config.put("lowerCaseInput", !DEFAULT_LOWER_CASE_INPUT);
@@ -318,8 +349,10 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         final Map<String, Object> compoundConf = new HashMap<>();
         config.put("compound", compoundConf);
         compoundConf.put("morphology", "GERMAN");
+        compoundConf.put("maxExpansions", 42);
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         factory.configure(config);
+        assertEquals(42, factory.getMaxCompoundExpansions());
         final MorphologicalCompounder compounder = factory.getCompounder();
         final MorphologicalWordBreaker wordBreaker = factory.getWordBreaker();
         assertNotNull(wordBreaker);
