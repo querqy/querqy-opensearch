@@ -65,7 +65,7 @@ repositories {
 allprojects {
     group = "org.opensearch"
 
-    version = "1.3.os" + (opensearch_version - "-SNAPSHOT")
+    version = "1.2.os" + (opensearch_version - "-SNAPSHOT")
 
     if (isSnapshot) {
         version += "-SNAPSHOT"
