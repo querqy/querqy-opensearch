@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.UnaryOperator;
 
 public interface ConfigUtils {
 
@@ -80,8 +81,14 @@ public interface ConfigUtils {
 
     static <T extends Enum<T>> Optional<T> getEnumArg(final Map<String, Object> config, final String name,
                                                       final Class<T> enumClass) {
+        return getEnumArg(config, name, enumClass, UnaryOperator.identity());
+    }
+
+    static <T extends Enum<T>> Optional<T> getEnumArg(final Map<String, Object> config, final String name,
+                                                      final Class<T> enumClass,
+                                                      final UnaryOperator<String> preprocessor) {
         final String value = (String) config.get(name);
-        return (value == null) ? Optional.empty() : Optional.of(Enum.valueOf(enumClass, value));
+        return (value == null) ? Optional.empty() : Optional.of(Enum.valueOf(enumClass, preprocessor.apply(value)));
     }
 
     @SuppressWarnings("unchecked")
