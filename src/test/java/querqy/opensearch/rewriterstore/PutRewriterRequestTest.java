@@ -74,6 +74,42 @@ public class PutRewriterRequestTest extends OpenSearchTestCase {
 
     }
 
+    public void testValidRevision() {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", DummyOpenSearchRewriterFactory.class.getName());
+        content.put("config", new HashMap<String, Object>());
+        content.put("revision", "release-2026-07-29");
+
+        assertNull(new PutRewriterRequest("r8", content).validate());
+    }
+
+    public void testThatNonStringRevisionIsRejected() {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", DummyOpenSearchRewriterFactory.class.getName());
+        content.put("config", new HashMap<String, Object>());
+        content.put("revision", 42);
+
+        final ActionRequestValidationException validationResult = new PutRewriterRequest("r8", content).validate();
+        assertNotNull(validationResult);
+        assertThat(validationResult.validationErrors(),
+                Matchers.contains(Matchers.containsString("'revision' must be a string")));
+    }
+
+    public void testThatEmptyRevisionIsRejected() {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", DummyOpenSearchRewriterFactory.class.getName());
+        content.put("config", new HashMap<String, Object>());
+        content.put("revision", " ");
+
+        final ActionRequestValidationException validationResult = new PutRewriterRequest("r8", content).validate();
+        assertNotNull(validationResult);
+        assertThat(validationResult.validationErrors(),
+                Matchers.contains(Matchers.containsString("'revision' must not be empty")));
+    }
+
     public void testStreamSerialization() throws IOException {
 
         final Map<String, Object> content = new HashMap<>();

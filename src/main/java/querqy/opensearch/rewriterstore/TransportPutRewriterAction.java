@@ -42,12 +42,14 @@ import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.tasks.Task;
+import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.IndicesAdminClient;
@@ -62,15 +64,18 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
 
     private final Client client;
     private final ClusterService clusterService;
+    private final ThreadPool threadPool;
     private final Settings settings;
     private boolean mappingsVersionChecked = false;
 
     @Inject
     public TransportPutRewriterAction(final TransportService transportService, final ActionFilters actionFilters,
-                                      final ClusterService clusterService, final Client client, final Settings settings)
+                                      final ClusterService clusterService, final ThreadPool threadPool,
+                                      final Client client, final Settings settings)
     {
         super(NAME, false, transportService, actionFilters, PutRewriterRequest::new);
         this.clusterService = clusterService;
+        this.threadPool = threadPool;
         this.client = client;
         this.settings = settings;
     }
@@ -92,25 +97,14 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
 
                     final Map<String, Object> properties = (Map<String, Object>) mappings.get(QUERQY_INDEX_NAME)
                             .getSourceAsMap().get("properties");
-                    if (!properties.containsKey("info_logging")) {
-                        try {
-                            update1To3(indicesClient);
-                            mappingsVersionChecked = true;
-                        } catch (final Exception e) {
-                            listener.onFailure(e);
-                            return;
-                        }
-
-                    } else if (!properties.containsKey(RewriterConfigMapping.CURRENT.getConfigStringProperty())) {
-                        try {
-                            update2To3(indicesClient);
-                            mappingsVersionChecked = true;
-                        } catch (final Exception e) {
-                            listener.onFailure(e);
-                            return;
-                        }
-
+                    try {
+                        updateMappings(indicesClient, properties);
+                        mappingsVersionChecked = true;
+                    } catch (final Exception e) {
+                        listener.onFailure(e);
+                        return;
                     }
+
                 }
                 try {
                     saveRewriter(task, request, listener);
@@ -152,54 +146,69 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
 
     }
 
-    protected void update1To3(final IndicesAdminClient indicesClient ) throws ExecutionException,
-            InterruptedException {
+    /**
+     * <p>Adds the properties that are missing in the mappings of the rewriter index, migrating the mappings of any
+     * earlier mapping version to {@link RewriterConfigMapping#CURRENT_MAPPING_VERSION}.</p>
+     *
+     * @param indicesClient The client for index operations
+     * @param existingProperties The properties that are currently mapped in the rewriter index
+     * @throws ExecutionException if updating the mappings fails
+     * @throws InterruptedException if updating the mappings is interrupted
+     */
+    protected void updateMappings(final IndicesAdminClient indicesClient, final Map<String, Object> existingProperties)
+            throws ExecutionException, InterruptedException {
+
+        final RewriterConfigMapping mapping = RewriterConfigMapping.CURRENT;
+
+        // property name -> mapping definition of that property
+        final Map<String, String> missingProperties = new LinkedHashMap<>();
+
+        if (!existingProperties.containsKey(mapping.getInfoLoggingProperty())) {
+            missingProperties.put(mapping.getInfoLoggingProperty(),
+                    "      \"" + mapping.getInfoLoggingProperty() + "\": {\n" +
+                    "        \"properties\": {\n" +
+                    "          \"sinks\": {\"type\" : \"keyword\" }\n" +
+                    "        }\n" +
+                    "      }");
+        }
+
+        if (!existingProperties.containsKey(mapping.getConfigStringProperty())) {
+            missingProperties.put(mapping.getConfigStringProperty(),
+                    "      \"" + mapping.getConfigStringProperty() + "\": {\n" +
+                    "        \"type\" : \"keyword\",\n" +
+                    "        \"doc_values\": false,\n" +
+                    "        \"index\": false\n" +
+                    "      }");
+        }
+
+        if (!existingProperties.containsKey(RewriterConfigMapping.PROP_REVISION)) {
+            missingProperties.put(RewriterConfigMapping.PROP_REVISION,
+                    "      \"" + RewriterConfigMapping.PROP_REVISION + "\": {\"type\" : \"keyword\" }");
+        }
+
+        if (!existingProperties.containsKey(RewriterConfigMapping.PROP_SAVED_AT)) {
+            missingProperties.put(RewriterConfigMapping.PROP_SAVED_AT,
+                    "      \"" + RewriterConfigMapping.PROP_SAVED_AT + "\": {\"type\" : \"date\" }");
+        }
+
+        if (missingProperties.isEmpty()) {
+            return;
+        }
+
         final PutMappingRequest request = new PutMappingRequest(QUERQY_INDEX_NAME).source(
                 "{\n" +
                         "    \"properties\": {\n" +
-                        "      \"info_logging\": {\n" +
-                        "        \"properties\": {\n" +
-                        "          \"sinks\": {\"type\" : \"keyword\" }\n" +
-                        "        }\n" +
-                        "      },\n" +
-                        "      \"config_v_003\": {\n" +
-                        "        \"type\" : \"keyword\",\n" +
-                        "        \"doc_values\": false,\n" +
-                        "        \"index\": false\n" +
-                        "      }" +
+                        String.join(",\n", missingProperties.values()) + "\n" +
                         "    }\n" +
                         "}", XContentType.JSON
         );
 
         if (!indicesClient.putMapping(request).get().isAcknowledged()) {
-            throw new IllegalStateException("Adding info_logging to mappings not " +
-                    "acknowledged");
+            throw new IllegalStateException("Adding properties " + missingProperties.keySet()
+                    + " to mappings not acknowledged");
         }
 
-        LOGGER.info("Added info_logging property and config_v_003 to index {}", QUERQY_INDEX_NAME);
-
-    }
-
-    protected void update2To3(final IndicesAdminClient indicesClient ) throws ExecutionException,
-            InterruptedException {
-        final PutMappingRequest request = new PutMappingRequest(QUERQY_INDEX_NAME).source(
-                "{\n" +
-                        "    \"properties\": {\n" +
-                        "      \"config_v_003\": {\n" +
-                        "        \"type\" : \"keyword\",\n" +
-                        "        \"doc_values\": false,\n" +
-                        "        \"index\": false\n" +
-                        "      }" +
-                        "    }\n" +
-                        "}", XContentType.JSON
-        );
-
-        if (!indicesClient.putMapping(request).get().isAcknowledged()) {
-            throw new IllegalStateException("Adding config_v_003 to mappings not " +
-                    "acknowledged");
-        }
-
-        LOGGER.info("Added config_v_003 property to index {}", QUERQY_INDEX_NAME);
+        LOGGER.info("Added properties {} to index {}", missingProperties.keySet(), QUERQY_INDEX_NAME);
 
     }
 
@@ -243,7 +252,9 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
     private IndexRequest buildIndexRequest(final Task parentTask, final PutRewriterRequest request) throws IOException {
 
         final IndexRequest indexRequest = client.prepareIndex(QUERQY_INDEX_NAME).setId(request.getRewriterId())
-                .setCreate(false).setSource(RewriterConfigMapping.toLuceneSource(request.getContent()))
+                .setCreate(false)
+                .setSource(RewriterConfigMapping.toLuceneSource(request.getContent(),
+                        threadPool.absoluteTimeInMillis()))
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).request();
         indexRequest.setParentTask(clusterService.localNode().getId(), parentTask.getId());
         return indexRequest;

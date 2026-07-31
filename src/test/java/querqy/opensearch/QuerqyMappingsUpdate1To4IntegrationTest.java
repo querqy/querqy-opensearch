@@ -40,7 +40,8 @@ import org.opensearch.transport.client.IndicesAdminClient;
 import querqy.opensearch.rewriterstore.PutRewriterAction;
 import querqy.opensearch.rewriterstore.PutRewriterRequest;
 
-public class QuerqyMappingsUpdate2To3IntegrationTest extends OpenSearchSingleNodeTestCase {
+
+public class QuerqyMappingsUpdate1To4IntegrationTest extends OpenSearchSingleNodeTestCase {
 
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
@@ -58,17 +59,12 @@ public class QuerqyMappingsUpdate2To3IntegrationTest extends OpenSearchSingleNod
     }
 
     @SuppressWarnings("unchecked")
-    public void testUpdate2To3() throws Exception {
+    public void testUpdate1To4() throws Exception {
 
-        final String v2Mapping = "{\n" +
+        final String v1Mapping = "{\n" +
                 "    \"properties\": {\n" +
                 "      \"class\": {\"type\": \"keyword\"},\n" +
                 "      \"type\": {\"type\": \"keyword\"},\n" +
-                "      \"info_logging\": {\n" +
-                "        \"properties\": {\n" +
-                "          \"sinks\": {\"type\" : \"keyword\" }\n" +
-                "        }\n" +
-                "      },\n" +
                 "      \"config\": {\n" +
                 "        \"type\" : \"keyword\",\n" +
                 "        \"index\": false\n" +
@@ -81,7 +77,7 @@ public class QuerqyMappingsUpdate2To3IntegrationTest extends OpenSearchSingleNod
 
         final CreateIndexRequestBuilder createIndexRequestBuilder = indicesClient.prepareCreate(QUERQY_INDEX_NAME);
         final CreateIndexRequest createIndexRequest = createIndexRequestBuilder
-                .setMapping(v2Mapping).setSettings(Settings.builder().put("number_of_replicas", 2))
+                .setMapping(v1Mapping).setSettings(Settings.builder().put("number_of_replicas", 2))
                 .request();
         indicesClient.create(createIndexRequest).get();
 
@@ -112,6 +108,9 @@ public class QuerqyMappingsUpdate2To3IntegrationTest extends OpenSearchSingleNod
         final Map<String, Object> config_v_003_mapping = (Map<String, Object>) properties.get("config_v_003");
         assertNotNull(config_v_003_mapping);
         assertEquals(false, config_v_003_mapping.get("doc_values"));
+
+        assertThat((Map<String, Object>) properties.get("revision"), hasEntry("type", "keyword"));
+        assertThat((Map<String, Object>) properties.get("saved_at"), hasEntry("type", "date"));
 
     }
 }

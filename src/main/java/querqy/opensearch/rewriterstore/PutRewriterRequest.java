@@ -86,6 +86,18 @@ public class PutRewriterRequest extends ActionRequest {
             }
         }
 
+        final Object revision = content.get(RewriterConfigMapping.PROP_REVISION);
+        if (revision != null) {
+            if (!(revision instanceof String)) {
+                return ValidateActions.addValidationError("'" + RewriterConfigMapping.PROP_REVISION
+                        + "' must be a string but was: " + revision.getClass().getSimpleName(), null);
+            }
+            if (((String) revision).trim().isEmpty()) {
+                return ValidateActions.addValidationError("'" + RewriterConfigMapping.PROP_REVISION
+                        + "' must not be empty", null);
+            }
+        }
+
         final List<String> errors = AccessController.doPrivileged(
                 () -> {
 

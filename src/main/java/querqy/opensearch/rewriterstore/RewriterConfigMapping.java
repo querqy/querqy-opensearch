@@ -30,18 +30,43 @@ import org.opensearch.core.xcontent.XContentParser;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 public abstract class RewriterConfigMapping {
 
-    public static final int CURRENT_MAPPING_VERSION = 3;
+    public static final int CURRENT_MAPPING_VERSION = 4;
 
     public static final String PROP_VERSION = "version";
     public static final String PROP_TYPE = "type";
+
+    /**
+     * An optional, user-supplied identifier of the rewriter configuration revision. It is stored in the rewriter
+     * document as it was supplied and it is not interpreted in any way.
+     */
+    public static final String PROP_REVISION = "revision";
+
+    /**
+     * A hash of the rewriter configuration payload. This property is never stored but always derived from the stored
+     * rewriter document - see {@link #computeConfigHash(String, Map)}.
+     */
+    public static final String PROP_CONFIG_HASH = "config_hash";
+
+    /**
+     * The point in time at which the rewriter configuration was saved, set by the node that received the
+     * configuration. Saved and returned as an ISO-8601 timestamp in UTC.
+     */
+    public static final String PROP_SAVED_AT = "saved_at";
+
+    private static final String CONFIG_HASH_ALGORITHM = "SHA-256";
 
     public static final RewriterConfigMapping CURRENT = new RewriterConfigMapping() {
 
@@ -51,24 +76,17 @@ public abstract class RewriterConfigMapping {
         }
 
         @Override
-        public final String getRewriterClassNameProperty() {
-            return "class";
+        public boolean isConfigStoredCanonically() {
+            return true;
         }
 
-        @Override
-        public String getInfoLoggingProperty() {
-            return "info_logging";
-        }
+    };
+
+    public static final RewriterConfigMapping V3_MAPPING = new RewriterConfigMapping() {
 
         @Override
-        public String getRewriterClassName(final String rewriterId, final Map<String, Object> source) {
-            return (String) source.get(getRewriterClassNameProperty());
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public Map<String, Object> getInfoLoggingConfig(final String rewriterId, final Map<String, Object> source) {
-            return (Map<String, Object>) source.get(getInfoLoggingProperty());
+        public String getConfigStringProperty() {
+            return "config_v_003";
         }
 
     };
@@ -80,39 +98,35 @@ public abstract class RewriterConfigMapping {
             return "config";
         }
 
-        @Override
-        public final String getRewriterClassNameProperty() {
-            return "class";
-        }
-
-        @Override
-        public String getInfoLoggingProperty() {
-            return "info_logging";
-        }
-
-        @Override
-        public String getRewriterClassName(final String rewriterId, final Map<String, Object> source) {
-            return (String) source.get(getRewriterClassNameProperty());
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public Map<String, Object> getInfoLoggingConfig(final String rewriterId, final Map<String, Object> source) {
-            return (Map<String, Object>) source.get(getInfoLoggingProperty());
-        }
-
     };
 
 
-
-
-
-    public abstract String getRewriterClassNameProperty();
     public abstract String getConfigStringProperty();
-    public abstract String getInfoLoggingProperty();
-    public abstract String getRewriterClassName(final String rewriterId, final Map<String, Object> source);
-    public abstract Map<String, Object> getInfoLoggingConfig(final String rewriterId, final Map<String, Object> source);
 
+    public String getRewriterClassNameProperty() {
+        return "class";
+    }
+
+    public String getInfoLoggingProperty() {
+        return "info_logging";
+    }
+
+    public String getRewriterClassName(final String rewriterId, final Map<String, Object> source) {
+        return (String) source.get(getRewriterClassNameProperty());
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getInfoLoggingConfig(final String rewriterId, final Map<String, Object> source) {
+        return (Map<String, Object>) source.get(getInfoLoggingProperty());
+    }
+
+    /**
+     * @return true iff this mapping stores the rewriter config in canonical form, which allows us to derive the config
+     * hash from the stored value without parsing it again.
+     */
+    public boolean isConfigStoredCanonically() {
+        return false;
+    }
 
 
     public static RewriterConfigMapping getMapping(final Map<String, Object> source) {
@@ -123,6 +137,10 @@ public abstract class RewriterConfigMapping {
             return PRE3_MAPPING;
         }
 
+        if (version == 3) {
+            return V3_MAPPING;
+        }
+
         if (version == CURRENT_MAPPING_VERSION) {
             return CURRENT;
         }
@@ -131,21 +149,40 @@ public abstract class RewriterConfigMapping {
 
     }
 
+    /**
+     * @param putRequestContent The payload of the request to save the rewriter
+     * @param savedAtMillis The point in time at which the rewriter is saved, in epoch millis, or null to save the
+     *                      rewriter without this information
+     * @return The document to save in the rewriter index
+     * @throws IOException if the rewriter config cannot be serialized
+     */
     @SuppressWarnings("unchecked")
-    public static Map<String, Object> toLuceneSource(final Map<String, Object> putRequestContent) throws IOException {
-        final Map<String, Object> source = new HashMap<>(putRequestContent.size() + 3);
+    public static Map<String, Object> toLuceneSource(final Map<String, Object> putRequestContent,
+                                                     final Long savedAtMillis) throws IOException {
+        final Map<String, Object> source = new HashMap<>(putRequestContent.size() + 5);
         source.put(PROP_TYPE, "rewriter");
         source.put(PROP_VERSION, CURRENT_MAPPING_VERSION);
         source.put(CURRENT.getRewriterClassNameProperty(), putRequestContent.get("class"));
+
+        if (savedAtMillis != null) {
+            source.put(PROP_SAVED_AT, toIsoInstant(savedAtMillis));
+        }
 
         final Map<String, Object> infoLoggingConfig = (Map<String, Object>) putRequestContent.get("info_logging");
         if (infoLoggingConfig != null) {
             source.put(CURRENT.getInfoLoggingProperty(), infoLoggingConfig);
         }
 
+        final Object revision = putRequestContent.get(PROP_REVISION);
+        if (revision != null) {
+            source.put(PROP_REVISION, revision.toString());
+        }
+
         final Map<String, Object> config = (Map<String, Object>) putRequestContent.get("config");
         if (config != null) {
-            final String jsonString = mapToJsonString(config);
+            // We store the config in canonical form so that the config hash can be derived from the stored value
+            // without parsing it again and so that it doesn't depend on map iteration order.
+            final String jsonString = toCanonicalJsonString(config);
             // See constraints in org.elasticsearch.index.mapper.KeywordFieldMapper.indexValue()
             source.put(CURRENT.getConfigStringProperty(), stringToSourceValue(jsonString, 32766));
         }
@@ -190,51 +227,199 @@ public abstract class RewriterConfigMapping {
 
     public Map<String, Object> getConfig(final String rewriterId, final Map<String, Object> source) {
 
+        final String configStr = getConfigString(source);
+
+        if (configStr == null) {
+            return Collections.emptyMap();
+        }
+
+        final XContentParser parser;
+        try {
+            parser = XContentHelper.createParser(null, null, new BytesArray(configStr), XContentType.JSON);
+        } catch (final IOException e) {
+            throw new OpenSearchException(e);
+        }
+        try {
+            return parser.map();
+        } catch (final IOException e) {
+            throw new ParsingException(parser.getTokenLocation(), "Could not load 'config' of rewriter " + rewriterId);
+        }
+
+    }
+
+    /**
+     * @param source The stored rewriter document
+     * @return The revision that was supplied by the user when the rewriter was saved, or null if the user didn't
+     * supply any revision information.
+     */
+    public String getRevision(final Map<String, Object> source) {
+        final Object revision = source.get(PROP_REVISION);
+        return revision == null ? null : revision.toString();
+    }
+
+    /**
+     * @param source The stored rewriter document
+     * @return The point in time at which the rewriter was saved, as an ISO-8601 timestamp in UTC, or null if the
+     * document doesn't carry this information - which is the case for rewriters that were saved before mapping
+     * version 4.
+     */
+    public String getSavedAt(final Map<String, Object> source) {
+
+        final Object savedAt = source.get(PROP_SAVED_AT);
+
+        if (savedAt == null) {
+            return null;
+        }
+
+        // We always save the timestamp as an ISO-8601 string but the date field type also accepts epoch millis,
+        // which is what we could see in a document that wasn't written by the rewriter API.
+        return (savedAt instanceof Number) ? toIsoInstant(((Number) savedAt).longValue()) : savedAt.toString();
+    }
+
+    private static String toIsoInstant(final long epochMillis) {
+        return Instant.ofEpochMilli(epochMillis).toString();
+    }
+
+    /**
+     * <p>Computes a hash over the configuration payload of a stored rewriter: the rewriter class, the rewriter config
+     * and the info logging config. {@link #PROP_REVISION} is not part of the hash.</p>
+     *
+     * <p>The hash is never stored but always derived from the stored document. This keeps it from becoming stale if a
+     * rewriter document is written without using the rewriter API - by bulk indexing, reindexing or restoring a
+     * snapshot, for example.</p>
+     *
+     * @param rewriterId The rewriter ID (used in error messages only)
+     * @param source The stored rewriter document
+     * @return The hash, as a lower-case hex string
+     */
+    public String computeConfigHash(final String rewriterId, final Map<String, Object> source) {
+
+        final StringBuilder hashInput = new StringBuilder(256);
+
+        try {
+
+            hashInput.append("{\"class\":").append(toCanonicalJsonString(getRewriterClassName(rewriterId, source)));
+
+            final String configString = getConfigString(source);
+            if (configString != null) {
+                hashInput.append(",\"config\":").append(isConfigStoredCanonically()
+                        ? configString
+                        : toCanonicalJsonString(getConfig(rewriterId, source)));
+            }
+
+            final Map<String, Object> infoLoggingConfig = getInfoLoggingConfig(rewriterId, source);
+            if (infoLoggingConfig != null) {
+                hashInput.append(",\"info_logging\":").append(toCanonicalJsonString(infoLoggingConfig));
+            }
+
+            hashInput.append('}');
+
+        } catch (final IOException e) {
+            throw new OpenSearchException("Could not compute the config hash of rewriter " + rewriterId, e);
+        }
+
+        return hash(hashInput.toString());
+    }
+
+    /**
+     * @param source The stored rewriter document
+     * @return The stored config as a JSON string, joining the parts of a config that had to be split up on saving, or
+     * null if this document doesn't have a config.
+     */
+    @SuppressWarnings("unchecked")
+    protected String getConfigString(final Map<String, Object> source) {
+
         final Object configStringValue = source.get(getConfigStringProperty());
+
         final String configStr;
         if (configStringValue == null) {
             configStr = null;
         } else if (configStringValue instanceof String) {
             configStr = ((String) configStringValue).trim();
-        } else if (configStringValue instanceof List || configStringValue.getClass().isArray()) {
+        } else if (configStringValue instanceof List) {
+            // this is what we get for a config that had to be split up when we read the document from the index
             configStr = String.join("", (Iterable<? extends CharSequence>) configStringValue).trim();
+        } else if (configStringValue instanceof String[]) {
+            // ... and this is what stringToSourceValue produces for such a config
+            configStr = String.join("", (String[]) configStringValue).trim();
         } else {
             throw new IllegalArgumentException("Unexpected config value class: " + configStringValue);
         }
 
-        final Map<String, Object> config;
-
-        if (configStr != null && configStr.length() > 0) {
-
-            final XContentParser parser;
-            try {
-                parser = XContentHelper.createParser(null, null, new BytesArray(configStr),
-                        XContentType.JSON);
-            } catch (final IOException e) {
-                throw new OpenSearchException(e);
-            }
-            try {
-                config = parser.map();
-            } catch (final IOException e) {
-                throw new ParsingException(parser.getTokenLocation(), "Could not load 'config' of rewriter "
-                        + rewriterId);
-            }
-
-        } else {
-            config = Collections.emptyMap();
-        }
-
-        return config;
+        return (configStr == null || configStr.isEmpty()) ? null : configStr;
     }
 
-    private static String mapToJsonString(final Map<String, Object> map) throws IOException {
+    /**
+     * Renders a value as a JSON string, sorting the properties of all (nested) objects by property name so that the
+     * output depends on the value alone and not on map iteration order.
+     *
+     * @param value The value to render
+     * @return The JSON representation of the value
+     * @throws IOException if the value cannot be rendered
+     */
+    static String toCanonicalJsonString(final Object value) throws IOException {
         try (final ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
             final XContentBuilder builder = new XContentBuilder(XContentType.JSON.xContent(), bos);
-            builder.value(map);
+            builder.value(canonicalize(value));
             builder.flush();
             builder.close();
             return new String(bos.toByteArray(), StandardCharsets.UTF_8);
         }
+    }
+
+    private static Object canonicalize(final Object value) {
+
+        if (value instanceof Map) {
+
+            final Map<String, Object> canonicalized = new TreeMap<>();
+            for (final Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                canonicalized.put(String.valueOf(entry.getKey()), canonicalize(entry.getValue()));
+            }
+            return canonicalized;
+
+        }
+
+        if (value instanceof Collection) {
+
+            final Collection<?> collection = (Collection<?>) value;
+            final List<Object> canonicalized = new ArrayList<>(collection.size());
+            for (final Object element : collection) {
+                canonicalized.add(canonicalize(element));
+            }
+            return canonicalized;
+
+        }
+
+        if (value instanceof Object[]) {
+
+            final Object[] array = (Object[]) value;
+            final List<Object> canonicalized = new ArrayList<>(array.length);
+            for (final Object element : array) {
+                canonicalized.add(canonicalize(element));
+            }
+            return canonicalized;
+
+        }
+
+        return value;
+    }
+
+    private static String hash(final String input) {
+
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance(CONFIG_HASH_ALGORITHM);
+        } catch (final NoSuchAlgorithmException e) {
+            throw new IllegalStateException(CONFIG_HASH_ALGORITHM + " is not available", e);
+        }
+
+        final byte[] bytes = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+
+        final StringBuilder hex = new StringBuilder(bytes.length * 2);
+        for (final byte b : bytes) {
+            hex.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
+        }
+        return hex.toString();
     }
 
 }

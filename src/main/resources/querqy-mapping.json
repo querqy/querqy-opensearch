@@ -3,6 +3,8 @@
       "class": {"type": "keyword"},
       "type": {"type": "keyword"},
       "version": {"type":  "integer"},
+      "revision": {"type": "keyword"},
+      "saved_at": {"type": "date"},
       "info_logging": {
         "properties": {
           "sinks": {"type" : "keyword" }
