@@ -44,6 +44,7 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
     public static final String CONF_RHS_QUERY_PARSER = "querqyParser";
     public static final String CONF_RULES = "rules";
     public static final String CONF_LOOKUP_PREPROCESSOR = "lookupPreprocessor";
+    public static final String CONF_BOOST_METHOD = "boostMethod";
 
     private static final SelectionStrategyFactory DEFAULT_SELECTION_STRATEGY_FACTORY =
             new ExpressionCriteriaSelectionStrategyFactory();
@@ -51,6 +52,8 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
     private static final QuerqyParserFactory DEFAULT_RHS_QUERY_PARSER = new WhiteSpaceQuerqyParserFactory();
 
     static final LookupPreprocessorType DEFAULT_LOOKUP_PREPROCESSOR_TYPE = LookupPreprocessorType.LOWERCASE;
+
+    static final BoostMethod DEFAULT_BOOST_METHOD = BoostMethod.ADDITIVE;
 
     private querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory delegate;
 
@@ -75,9 +78,13 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
                 .map(LookupPreprocessorType::fromString)
                 .orElse(DEFAULT_LOOKUP_PREPROCESSOR_TYPE);
 
+        final BoostMethod boostMethod = ConfigUtils
+                .getEnumArg(config, CONF_BOOST_METHOD, BoostMethod.class, String::toUpperCase)
+                .orElse(DEFAULT_BOOST_METHOD);
+
         try {
             delegate = new querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
-                    new StringReader(rules), allowBooleanInput, BoostMethod.ADDITIVE,
+                    new StringReader(rules), allowBooleanInput, boostMethod,
                     querqyParser, selectionStrategyFactories,
                     DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType);
         } catch (final IOException e) {
@@ -109,9 +116,19 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
         final LookupPreprocessorType lookupPreprocessorType = lookupPreprocessorTypeName
                 .map(LookupPreprocessorType::fromString)
                 .orElse(DEFAULT_LOOKUP_PREPROCESSOR_TYPE);
+
+        final BoostMethod boostMethod;
+        try {
+            boostMethod = ConfigUtils
+                    .getEnumArg(config, CONF_BOOST_METHOD, BoostMethod.class, String::toUpperCase)
+                    .orElse(DEFAULT_BOOST_METHOD);
+        } catch (final Exception e) {
+            return Collections.singletonList("Invalid attribute 'boostMethod': " + e.getMessage());
+        }
+
         try {
             new querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
-                    new StringReader(rules), allowBooleanInput, BoostMethod.ADDITIVE,querqyParser,
+                    new StringReader(rules), allowBooleanInput, boostMethod, querqyParser,
                     Collections.emptyMap(),
                     DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType);
         } catch (final IOException e) {
