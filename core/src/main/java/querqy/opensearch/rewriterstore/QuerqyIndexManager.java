@@ -25,11 +25,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Pure (client-free) logic for creating/migrating the {@code .opensearch-querqy} index mapping, shared by the full
- * plugin module's {@code TransportPutRewriterAction} (which applies it via the node-local {@code IndicesAdminClient})
- * and the {@code tool} module's HTTP-based equivalent (which has no {@code IndicesAdminClient}, only a REST client).
- * Keeping the computation here means both callers stay consistent with the mapping resource and field names defined
- * in {@code core}.
+ * Pure (client-free) logic for creating/migrating the {@code .opensearch-querqy} index mapping. {@code core} has no
+ * dependency on either caller: the full plugin module applies this via a node-local {@code IndicesAdminClient} (see
+ * its transport action for saving a rewriter), and the {@code tool} module's HTTP-based equivalent applies it via a
+ * REST client, since it has no {@code IndicesAdminClient}. Keeping the computation here means both callers stay
+ * consistent with the mapping resource and field names defined in {@code core}, without {@code core} needing to know
+ * about either of them.
  */
 public final class QuerqyIndexManager {
 

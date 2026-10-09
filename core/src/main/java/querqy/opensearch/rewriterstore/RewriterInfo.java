@@ -28,9 +28,10 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * The information about a stored rewriter that is returned by {@link GetRewriterAction}. Its properties are named
- * like the properties of the payload of a {@link PutRewriterRequest} so that the output can be fed back into a PUT
- * request, for example to copy a rewriter from one cluster to another.
+ * The information about a stored rewriter that is returned by the full plugin module's {@code GetRewriterAction}
+ * (not visible from {@code core}, which has no dependency on it). Its properties are named like the properties of
+ * the payload of a {@code PutRewriterRequest} so that the output can be fed back into a PUT request, for example to
+ * copy a rewriter from one cluster to another.
  */
 public class RewriterInfo implements Writeable, ToXContentObject {
 
