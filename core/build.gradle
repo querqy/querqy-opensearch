@@ -88,3 +88,7 @@ thirdPartyAudit.enabled = false
 forbiddenApis.ignoreFailures = true
 testingConventions.enabled = false
 loggerUsageCheck.enabled = false
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:-missing', '-quiet')
+}
