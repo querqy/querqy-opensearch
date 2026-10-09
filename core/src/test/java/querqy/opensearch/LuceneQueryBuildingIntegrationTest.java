@@ -38,7 +38,7 @@ public class LuceneQueryBuildingIntegrationTest extends OpenSearchSingleNodeTest
 
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
-        return Collections.singleton(QuerqyPlugin.class);
+        return Collections.singleton(QuerqyCorePlugin.class);
     }
 
     public void testThatQueryAnalyzerIsApplied() throws Exception {

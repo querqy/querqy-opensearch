@@ -32,10 +32,11 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import querqy.opensearch.query.MatchingQuery;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.query.Rewriter;
-import querqy.opensearch.rewriterstore.PutRewriterAction;
-import querqy.opensearch.rewriterstore.PutRewriterRequest;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -43,10 +44,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Covers two things not exercised by the other rewriter-store integration tests:
+ * Proves that {@link QuerqyCorePlugin} works standalone, with no {@code ActionPlugin} installed - the only way to
+ * write a rewriter config is a raw document write, exactly as it would be on a core-only/AWS install. Covers two
+ * things not exercised by the other rewriter-store integration tests (which all go through the REST
+ * {@code PutRewriterAction}, only available in the full plugin module):
  * <ul>
  *     <li>write-time validation of the combined class+config field ({@code config_v_005}), enforced even for a raw
- *     document write that bypasses {@code PutRewriterAction} entirely;</li>
+ *     document write;</li>
  *     <li>that documents written in an older format (mapping version 4: separate {@code class}/{@code config_v_003}
  *     fields) are still read correctly alongside documents in the new (version 5) combined-field format.</li>
  * </ul>
@@ -57,7 +61,7 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
 
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
-        return Collections.singleton(QuerqyPlugin.class);
+        return Collections.singleton(QuerqyCorePlugin.class);
     }
 
     @After
@@ -69,11 +73,20 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
         }
     }
 
-    /** Creates the rewriter index (with the current mapping, including the custom config_v_005 field type). */
+    /**
+     * Creates the rewriter index with the current mapping (including the custom config_v_005 field type) via the
+     * plain document/index-admin API - no ActionPlugin/PutRewriterAction involved, exactly as a core-only install
+     * would have to do it.
+     */
     private void ensureRewriterIndexExists() throws Exception {
-        final Map<String, Object> content = new HashMap<>();
-        content.put("class", DummyOpenSearchRewriterFactory.class.getName());
-        client().execute(PutRewriterAction.INSTANCE, new PutRewriterRequest("setup", content)).get();
+        client().admin().indices().prepareCreate(QUERQY_INDEX_NAME).setMapping(readMappingResource()).get();
+    }
+
+    private static String readMappingResource() throws IOException {
+        try (InputStream in = RewriterConfigFormatIntegrationTest.class.getClassLoader()
+                .getResourceAsStream("querqy-mapping.json")) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     public void testThatRawWriteWithInvalidConfigIsRejected() throws Exception {

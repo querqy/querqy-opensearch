@@ -46,7 +46,7 @@ import org.opensearch.test.AbstractQueryTestCase;
 import org.opensearch.test.TestGeoShapeFieldMapperPlugin;
 import org.junit.Before;
 
-import querqy.opensearch.QuerqyPlugin;
+import querqy.opensearch.QuerqyCorePlugin;
 import querqy.opensearch.QuerqyProcessor;
 import querqy.lucene.rewrite.DependentTermQueryBuilder;
 import querqy.lucene.rewrite.DocumentFrequencyCorrection;
@@ -80,7 +80,7 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
     // geo_shape field type
     @SuppressWarnings("deprecation")
     protected Collection<Class<? extends Plugin>> getPlugins() {
-        return Arrays.asList(TestGeoShapeFieldMapperPlugin.class, QuerqyPlugin.class);
+        return Arrays.asList(TestGeoShapeFieldMapperPlugin.class, QuerqyCorePlugin.class);
     }
 
     @Override
