@@ -24,6 +24,7 @@ import org.junit.After;
 import org.opensearch.action.search.SearchRequestBuilder;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.support.WriteRequest;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.index.mapper.MapperParsingException;
 import org.opensearch.plugins.Plugin;
@@ -32,11 +33,9 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import querqy.opensearch.query.MatchingQuery;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.query.Rewriter;
+import querqy.opensearch.rewriterstore.QuerqyIndexManager;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -59,9 +58,18 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
 
     private static final String INDEX_NAME = "test_index";
 
+    private static final String REFRESH_AFTER_WRITE = "500ms";
+
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
         return Collections.singleton(QuerqyCorePlugin.class);
+    }
+
+    @Override
+    protected Settings nodeSettings() {
+        return Settings.builder()
+                .put(RewriterShardContext.CACHE_REFRESH_AFTER_WRITE.getKey(), REFRESH_AFTER_WRITE)
+                .build();
     }
 
     @After
@@ -79,14 +87,8 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
      * would have to do it.
      */
     private void ensureRewriterIndexExists() throws Exception {
-        client().admin().indices().prepareCreate(QUERQY_INDEX_NAME).setMapping(readMappingResource()).get();
-    }
-
-    private static String readMappingResource() throws IOException {
-        try (InputStream in = RewriterConfigFormatIntegrationTest.class.getClassLoader()
-                .getResourceAsStream("querqy-mapping.json")) {
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        client().admin().indices().prepareCreate(QUERQY_INDEX_NAME)
+                .setMapping(QuerqyIndexManager.readMappingResource()).get();
     }
 
     public void testThatRawWriteWithInvalidConfigIsRejected() throws Exception {
@@ -171,6 +173,60 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
         assertRewritesKToC("v5_rewriter");
     }
 
+    /**
+     * A core-only install has no push-based reload action, so a shard's cached rewriter factory can only become
+     * stale and get refreshed in the background (see {@link RewriterShardContext#CACHE_REFRESH_AFTER_WRITE}). This
+     * proves a config change written directly to the index does take effect, but only after that refresh window -
+     * not synchronously with the write, and not instantly on the very next query either.
+     */
+    public void testThatConfigChangeIsPickedUpAsynchronouslyAfterRefreshInterval() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        writeCommonRulesRewriter("refresh_rewriter", "k =>\nSYNONYM: z"); // "z" matches neither doc
+        assertHitCount("refresh_rewriter", 1L); // first (cold-cache) load is synchronous
+
+        writeCommonRulesRewriter("refresh_rewriter", "k =>\nSYNONYM: c"); // now "c" would also match "a c"
+        Thread.sleep(600); // past the refresh window configured in nodeSettings()
+
+        // the new rule must apply eventually, without ever needing a restart or an explicit reload action (which
+        // doesn't exist in core, without ActionPlugin) - each poll both checks and (while still stale) re-triggers
+        // the background refresh, so this converges even if an earlier poll's refresh raced with the write above.
+        assertBusy(() -> assertHitCount("refresh_rewriter", 2L));
+    }
+
+    private void writeCommonRulesRewriter(final String rewriterId, final String rules) throws Exception {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory.class.getName());
+        final Map<String, Object> config = new HashMap<>();
+        config.put("rules", rules);
+        config.put("ignoreCase", true);
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        content.put("config", config);
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
+                .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    private void assertHitCount(final String rewriterId, final long expectedHits) throws Exception {
+
+        final QuerqyQueryBuilder querqyQuery = new QuerqyQueryBuilder(getInstanceFromNode(QuerqyProcessor.class));
+        querqyQuery.setRewriters(Collections.singletonList(new Rewriter(rewriterId)));
+        querqyQuery.setMatchingQuery(new MatchingQuery("a k"));
+        querqyQuery.setQueryFieldsAndBoostings(Arrays.asList("field1", "field2"));
+        querqyQuery.setMinimumShouldMatch("1");
+
+        final SearchRequestBuilder searchRequestBuilder = client().prepareSearch(INDEX_NAME);
+        searchRequestBuilder.setQuery(querqyQuery);
+
+        final SearchResponse response = client().search(searchRequestBuilder.request()).get();
+        assertEquals(expectedHits, response.getHits().getTotalHits().value());
+    }
+
     private void assertRewritesKToC(final String rewriterId) throws Exception {
 
         final QuerqyQueryBuilder querqyQuery = new QuerqyQueryBuilder(getInstanceFromNode(QuerqyProcessor.class));
@@ -187,12 +243,18 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
                 2L, response.getHits().getTotalHits().value());
     }
 
+    /**
+     * Only doc1 matches via the literal "a" clause alone (doc2 has no "a"); whether doc2 also matches hinges
+     * entirely on whatever "k" rewrites to actually matching doc2's content - this is what makes
+     * {@link #assertHitCount} and {@link #assertRewritesKToC} sensitive to the rewriter config actually being
+     * applied, not just to "a" trivially matching every doc under minimum_should_match=1.
+     */
     private void indexTestDocs() {
         client().admin().indices().prepareCreate(INDEX_NAME).get();
         client().prepareIndex(INDEX_NAME).setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
-                .setSource(doc("field1", "a k")).get();
+                .setSource(doc("field1", "a b", "field2", "a c")).get();
         client().prepareIndex(INDEX_NAME).setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
-                .setSource(doc("field1", "a c")).get();
+                .setSource(doc("field1", "b c")).get();
     }
 
     private static Map<String, Object> doc(final Object... kv) {

@@ -41,8 +41,6 @@ import org.opensearch.action.support.WriteRequest;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
 
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.settings.Settings;
@@ -55,7 +53,6 @@ import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.IndicesAdminClient;
 
 import java.io.IOException;
-import java.util.Scanner;
 import java.util.concurrent.ExecutionException;
 
 public class TransportPutRewriterAction extends HandledTransportAction<PutRewriterRequest, PutRewriterResponse> {
@@ -158,50 +155,14 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
     protected void updateMappings(final IndicesAdminClient indicesClient, final Map<String, Object> existingProperties)
             throws ExecutionException, InterruptedException {
 
-        final RewriterConfigMapping mapping = RewriterConfigMapping.CURRENT;
-
-        // property name -> mapping definition of that property
-        final Map<String, String> missingProperties = new LinkedHashMap<>();
-
-        if (!existingProperties.containsKey(mapping.getInfoLoggingProperty())) {
-            missingProperties.put(mapping.getInfoLoggingProperty(),
-                    "      \"" + mapping.getInfoLoggingProperty() + "\": {\n" +
-                    "        \"properties\": {\n" +
-                    "          \"sinks\": {\"type\" : \"keyword\" }\n" +
-                    "        }\n" +
-                    "      }");
-        }
-
-        if (!existingProperties.containsKey(RewriterConfigMapping.PROP_REVISION)) {
-            missingProperties.put(RewriterConfigMapping.PROP_REVISION,
-                    "      \"" + RewriterConfigMapping.PROP_REVISION + "\": {\"type\" : \"keyword\" }");
-        }
-
-        if (!existingProperties.containsKey(RewriterConfigMapping.PROP_SAVED_AT)) {
-            missingProperties.put(RewriterConfigMapping.PROP_SAVED_AT,
-                    "      \"" + RewriterConfigMapping.PROP_SAVED_AT + "\": {\"type\" : \"date\" }");
-        }
-
-        // mapping.getConfigStringProperty() is "config_v_005" (RewriterConfigMapping.CURRENT, mapping version 5):
-        // the combined class+config field, validated at write time by the querqy_rewriter_config field mapper.
-        if (!existingProperties.containsKey(mapping.getConfigStringProperty())) {
-            missingProperties.put(mapping.getConfigStringProperty(),
-                    "      \"" + mapping.getConfigStringProperty() + "\": {\n" +
-                    "        \"type\" : \"querqy_rewriter_config\"\n" +
-                    "      }");
-        }
+        final Map<String, String> missingProperties = QuerqyIndexManager.computeMissingProperties(existingProperties);
 
         if (missingProperties.isEmpty()) {
             return;
         }
 
-        final PutMappingRequest request = new PutMappingRequest(QUERQY_INDEX_NAME).source(
-                "{\n" +
-                        "    \"properties\": {\n" +
-                        String.join(",\n", missingProperties.values()) + "\n" +
-                        "    }\n" +
-                        "}", XContentType.JSON
-        );
+        final PutMappingRequest request = new PutMappingRequest(QUERQY_INDEX_NAME)
+                .source(QuerqyIndexManager.buildPutMappingBody(missingProperties), XContentType.JSON);
 
         if (!indicesClient.putMapping(request).get().isAcknowledged()) {
             throw new IllegalStateException("Adding properties " + missingProperties.keySet()
@@ -216,7 +177,7 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
 
         final CreateIndexRequestBuilder createIndexRequestBuilder = indicesClient.prepareCreate(QUERQY_INDEX_NAME);
         final int numReplicas = settings.getAsInt(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, DEFAULT_QUERQY_INDEX_NUM_REPLICAS);
-        return  createIndexRequestBuilder.setMapping(readUtf8Resource("querqy-mapping.json"))
+        return  createIndexRequestBuilder.setMapping(QuerqyIndexManager.readMappingResource())
                 .setSettings(Settings.builder().put("number_of_replicas", numReplicas))
                 .request();
     }
@@ -259,14 +220,5 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
         indexRequest.setParentTask(clusterService.localNode().getId(), parentTask.getId());
         return indexRequest;
     }
-
-
-    private static String readUtf8Resource(final String name) {
-        final Scanner scanner = new Scanner(TransportPutRewriterAction.class.getClassLoader().getResourceAsStream(name),
-                StandardCharsets.UTF_8).useDelimiter("\\A");
-        return scanner.hasNext() ? scanner.next() : "";
-    }
-
-
 
 }

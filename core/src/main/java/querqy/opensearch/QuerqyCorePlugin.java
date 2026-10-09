@@ -101,8 +101,11 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
 
     @Override
     public List<Setting<?>> getSettings() {
-        return Collections.singletonList(Setting.intSetting(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, 1, 0,
-                Setting.Property.NodeScope));
+        return Arrays.asList(
+                Setting.intSetting(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, 1, 0, Setting.Property.NodeScope),
+                RewriterShardContext.CACHE_EXPIRE_AFTER_WRITE,
+                RewriterShardContext.CACHE_EXPIRE_AFTER_READ,
+                RewriterShardContext.CACHE_REFRESH_AFTER_WRITE);
 
     }
 
