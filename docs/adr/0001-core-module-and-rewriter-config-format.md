@@ -51,9 +51,9 @@ phase implemented on the `issue179` branch.
    Unlike `config_v_003` (a real, if unindexed, Lucene keyword field, hence subject to
    Lucene's 32766-byte term-length limit), `config_v_005` uses the custom field type from the
    next point, which never creates a Lucene field at all - so, confirmed experimentally, that
-   limit no longer applies and a large config is stored as a single string, however large.
-   `toLuceneSource` therefore no longer chunks large configs on write; reading still tolerates
-   an already-chunked value (`String[]`/`List`) for documents written by older code.
+   particular limit no longer applies, and `toLuceneSource` no longer chunks large configs on
+   write (ordinary request-size limits still apply, of course). Reading still tolerates an
+   already-chunked value (`String[]`/`List`) for documents written by older code.
 
 3. **Write-time validation via a custom field mapper:** `core` registers a custom field type
    (via `MapperPlugin.getMappers()`) for `config_v_005` that validates the rewriter config

@@ -244,11 +244,12 @@ public abstract class RewriterConfigMapping {
         }
         final String jsonString = toCanonicalJsonString(combined);
         // Older mapping versions stored this as a real (index:false, doc_values:false) Lucene keyword field, which
-        // still enforced Lucene's 32766-byte term-length limit - hence stringToSourceValue() below, used to split
-        // such values. The config_v_005 field (CURRENT) uses a custom field type that never creates a Lucene field
-        // at all (validated at write time, otherwise _source-only), so that limit no longer applies and the value is
-        // stored as a single string, however large. Reading still supports an already-split value (for documents
-        // written by an older version of this code, or by V3_MAPPING/V4_MAPPING), see rejoinStoredString().
+        // still enforced Lucene's 32766-byte term-length limit - hence stringToSourceValue(), used to split such
+        // values (see its javadoc). The config_v_005 field (CURRENT) uses a custom field type that never creates a
+        // Lucene field at all (validated at write time, otherwise _source-only), so that particular limit no longer
+        // applies and the value is stored as a single string (ordinary request-size limits still apply, of course).
+        // Reading still supports an already-split value (for documents written by an older version of this code, or
+        // by V3_MAPPING/V4_MAPPING), see rejoinStoredString().
         source.put(CURRENT.getConfigStringProperty(), jsonString);
 
         return source;
