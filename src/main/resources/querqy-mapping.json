@@ -18,6 +18,9 @@
         "type" : "keyword",
         "doc_values": false,
         "index": false
+      },
+      "config_v_005": {
+        "type" : "querqy_rewriter_config"
       }
 
     }

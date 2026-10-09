@@ -172,15 +172,6 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
                     "      }");
         }
 
-        if (!existingProperties.containsKey(mapping.getConfigStringProperty())) {
-            missingProperties.put(mapping.getConfigStringProperty(),
-                    "      \"" + mapping.getConfigStringProperty() + "\": {\n" +
-                    "        \"type\" : \"keyword\",\n" +
-                    "        \"doc_values\": false,\n" +
-                    "        \"index\": false\n" +
-                    "      }");
-        }
-
         if (!existingProperties.containsKey(RewriterConfigMapping.PROP_REVISION)) {
             missingProperties.put(RewriterConfigMapping.PROP_REVISION,
                     "      \"" + RewriterConfigMapping.PROP_REVISION + "\": {\"type\" : \"keyword\" }");
@@ -189,6 +180,15 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
         if (!existingProperties.containsKey(RewriterConfigMapping.PROP_SAVED_AT)) {
             missingProperties.put(RewriterConfigMapping.PROP_SAVED_AT,
                     "      \"" + RewriterConfigMapping.PROP_SAVED_AT + "\": {\"type\" : \"date\" }");
+        }
+
+        // mapping.getConfigStringProperty() is "config_v_005" (RewriterConfigMapping.CURRENT, mapping version 5):
+        // the combined class+config field, validated at write time by the querqy_rewriter_config field mapper.
+        if (!existingProperties.containsKey(mapping.getConfigStringProperty())) {
+            missingProperties.put(mapping.getConfigStringProperty(),
+                    "      \"" + mapping.getConfigStringProperty() + "\": {\n" +
+                    "        \"type\" : \"querqy_rewriter_config\"\n" +
+                    "      }");
         }
 
         if (missingProperties.isEmpty()) {

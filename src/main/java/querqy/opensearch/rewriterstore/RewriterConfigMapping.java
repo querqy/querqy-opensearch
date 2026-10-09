@@ -43,7 +43,7 @@ import java.util.TreeMap;
 
 public abstract class RewriterConfigMapping {
 
-    public static final int CURRENT_MAPPING_VERSION = 4;
+    public static final int CURRENT_MAPPING_VERSION = 5;
 
     public static final String PROP_VERSION = "version";
     public static final String PROP_TYPE = "type";
@@ -68,7 +68,59 @@ public abstract class RewriterConfigMapping {
 
     private static final String CONFIG_HASH_ALGORITHM = "SHA-256";
 
+    /**
+     * Mapping version 5: class and config are combined into one canonical-JSON field
+     * ({@code config_v_005}, holding {@code {"class": ..., "config": {...}}}) instead of
+     * separate {@code class} and {@code config_v_003} fields. This lets a write-time
+     * validator (a custom field mapper, see {@code QuerqyIndexManager}) see class and config
+     * together. See the class and config of a document using this mapping must always be
+     * read through {@link #rejoinStoredString(Map, String)} first, since the stored value may
+     * have been split across multiple array elements by {@link #stringToSourceValue}.
+     */
     public static final RewriterConfigMapping CURRENT = new RewriterConfigMapping() {
+
+        @Override
+        public String getConfigStringProperty() {
+            return "config_v_005";
+        }
+
+        @Override
+        public boolean isConfigStoredCanonically() {
+            return true;
+        }
+
+        @Override
+        public String getRewriterClassName(final String rewriterId, final Map<String, Object> source) {
+            final Map<String, Object> combined = parseCombinedConfig(source);
+            return combined == null ? null : (String) combined.get("class");
+        }
+
+        @Override
+        protected String getConfigString(final Map<String, Object> source) {
+            final Map<String, Object> combined = parseCombinedConfig(source);
+            if (combined == null) {
+                return null;
+            }
+            final Object config = combined.get("config");
+            if (config == null) {
+                return null;
+            }
+            try {
+                return toCanonicalJsonString(config);
+            } catch (final IOException e) {
+                throw new OpenSearchException("Could not read config", e);
+            }
+        }
+
+    };
+
+    /**
+     * Mapping version 4: like {@link #V3_MAPPING}, but marks the stored config as canonical
+     * JSON (see {@link #isConfigStoredCanonically()}) and adds {@link #PROP_REVISION} and
+     * {@link #PROP_SAVED_AT}. Kept for reading documents written before mapping version 5;
+     * new documents are always written using {@link #CURRENT}.
+     */
+    public static final RewriterConfigMapping V4_MAPPING = new RewriterConfigMapping() {
 
         @Override
         public String getConfigStringProperty() {
@@ -141,6 +193,10 @@ public abstract class RewriterConfigMapping {
             return V3_MAPPING;
         }
 
+        if (version == 4) {
+            return V4_MAPPING;
+        }
+
         if (version == CURRENT_MAPPING_VERSION) {
             return CURRENT;
         }
@@ -162,7 +218,6 @@ public abstract class RewriterConfigMapping {
         final Map<String, Object> source = new HashMap<>(putRequestContent.size() + 5);
         source.put(PROP_TYPE, "rewriter");
         source.put(PROP_VERSION, CURRENT_MAPPING_VERSION);
-        source.put(CURRENT.getRewriterClassNameProperty(), putRequestContent.get("class"));
 
         if (savedAtMillis != null) {
             source.put(PROP_SAVED_AT, toIsoInstant(savedAtMillis));
@@ -178,14 +233,18 @@ public abstract class RewriterConfigMapping {
             source.put(PROP_REVISION, revision.toString());
         }
 
+        // Class and config are combined into a single canonical-JSON field so that a write-time validator can see
+        // both together. We store it in canonical form so that the config hash can be derived from the stored value
+        // without parsing it again and so that it doesn't depend on map iteration order.
+        final Map<String, Object> combined = new HashMap<>(2);
+        combined.put("class", putRequestContent.get("class"));
         final Map<String, Object> config = (Map<String, Object>) putRequestContent.get("config");
         if (config != null) {
-            // We store the config in canonical form so that the config hash can be derived from the stored value
-            // without parsing it again and so that it doesn't depend on map iteration order.
-            final String jsonString = toCanonicalJsonString(config);
-            // See constraints in org.elasticsearch.index.mapper.KeywordFieldMapper.indexValue()
-            source.put(CURRENT.getConfigStringProperty(), stringToSourceValue(jsonString, 32766));
+            combined.put("config", config);
         }
+        final String jsonString = toCanonicalJsonString(combined);
+        // See constraints in org.elasticsearch.index.mapper.KeywordFieldMapper.indexValue()
+        source.put(CURRENT.getConfigStringProperty(), stringToSourceValue(jsonString, 32766));
 
         return source;
     }
@@ -326,27 +385,62 @@ public abstract class RewriterConfigMapping {
      * @return The stored config as a JSON string, joining the parts of a config that had to be split up on saving, or
      * null if this document doesn't have a config.
      */
-    @SuppressWarnings("unchecked")
     protected String getConfigString(final Map<String, Object> source) {
+        return rejoinStoredString(source, getConfigStringProperty());
+    }
 
-        final Object configStringValue = source.get(getConfigStringProperty());
+    /**
+     * Reads the (possibly split-up) string value of the given property and rejoins it into a single string.
+     * Lucene doesn't allow keyword field values whose UTF-8-encoded length exceeds a certain byte length (see
+     * {@link #stringToSourceValue}), so a long string may have been split into an array on write; this method
+     * reassembles the original string regardless of which shape it comes back as.
+     *
+     * @param source The stored rewriter document
+     * @param property The property to read
+     * @return The rejoined string, or null if the property isn't present or is empty
+     */
+    @SuppressWarnings("unchecked")
+    protected static String rejoinStoredString(final Map<String, Object> source, final String property) {
 
-        final String configStr;
-        if (configStringValue == null) {
-            configStr = null;
-        } else if (configStringValue instanceof String) {
-            configStr = ((String) configStringValue).trim();
-        } else if (configStringValue instanceof List) {
-            // this is what we get for a config that had to be split up when we read the document from the index
-            configStr = String.join("", (Iterable<? extends CharSequence>) configStringValue).trim();
-        } else if (configStringValue instanceof String[]) {
-            // ... and this is what stringToSourceValue produces for such a config
-            configStr = String.join("", (String[]) configStringValue).trim();
+        final Object value = source.get(property);
+
+        final String str;
+        if (value == null) {
+            str = null;
+        } else if (value instanceof String) {
+            str = ((String) value).trim();
+        } else if (value instanceof List) {
+            // this is what we get for a value that had to be split up when we read the document from the index
+            str = String.join("", (Iterable<? extends CharSequence>) value).trim();
+        } else if (value instanceof String[]) {
+            // ... and this is what stringToSourceValue produces for such a value
+            str = String.join("", (String[]) value).trim();
         } else {
-            throw new IllegalArgumentException("Unexpected config value class: " + configStringValue);
+            throw new IllegalArgumentException("Unexpected value class: " + value);
         }
 
-        return (configStr == null || configStr.isEmpty()) ? null : configStr;
+        return (str == null || str.isEmpty()) ? null : str;
+    }
+
+    /**
+     * Parses the combined {@code {"class": ..., "config": {...}}} document stored under this mapping's
+     * {@link #getConfigStringProperty()} (mapping version 5 and later).
+     *
+     * @param source The stored rewriter document
+     * @return The parsed {@code {"class": ..., "config": {...}}} map, or null if the property isn't present
+     */
+    protected Map<String, Object> parseCombinedConfig(final Map<String, Object> source) {
+        final String combinedJson = rejoinStoredString(source, getConfigStringProperty());
+        if (combinedJson == null) {
+            return null;
+        }
+        final XContentParser parser;
+        try {
+            parser = XContentHelper.createParser(null, null, new BytesArray(combinedJson), XContentType.JSON);
+            return parser.map();
+        } catch (final IOException e) {
+            throw new OpenSearchException(e);
+        }
     }
 
     /**

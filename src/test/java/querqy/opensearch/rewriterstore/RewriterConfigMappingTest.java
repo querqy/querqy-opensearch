@@ -25,6 +25,7 @@ import static querqy.opensearch.rewriterstore.RewriterConfigMapping.PROP_TYPE;
 import static querqy.opensearch.rewriterstore.RewriterConfigMapping.PROP_VERSION;
 import static querqy.opensearch.rewriterstore.RewriterConfigMapping.PRE3_MAPPING;
 import static querqy.opensearch.rewriterstore.RewriterConfigMapping.V3_MAPPING;
+import static querqy.opensearch.rewriterstore.RewriterConfigMapping.V4_MAPPING;
 import static querqy.opensearch.rewriterstore.RewriterConfigMapping.getMapping;
 
 import org.opensearch.test.OpenSearchTestCase;
@@ -81,7 +82,8 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
         assertSame(PRE3_MAPPING, getMapping(Collections.emptyMap()));
         assertSame(V3_MAPPING, getMapping(Collections.singletonMap(PROP_VERSION, 3)));
-        assertSame(CURRENT, getMapping(Collections.singletonMap(PROP_VERSION, 4)));
+        assertSame(V4_MAPPING, getMapping(Collections.singletonMap(PROP_VERSION, 4)));
+        assertSame(CURRENT, getMapping(Collections.singletonMap(PROP_VERSION, CURRENT_MAPPING_VERSION)));
 
         expectThrows(IllegalArgumentException.class,
                 () -> getMapping(Collections.singletonMap(PROP_VERSION, CURRENT_MAPPING_VERSION + 1)));
@@ -98,10 +100,28 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
 
     public void testThatConfigIsStoredCanonically() throws IOException {
 
+        // mapping version 5 stores class and config combined in one canonical-JSON field
         final String stored = (String) toLuceneSource(putContent(config(), null))
                 .get(CURRENT.getConfigStringProperty());
 
-        assertEquals("{\"a\":{\"c\":3,\"d\":2},\"b\":1,\"list\":[\"x\",\"y\"]}", stored);
+        assertEquals("{\"class\":\"" + CLASS_NAME + "\",\"config\":{\"a\":{\"c\":3,\"d\":2},\"b\":1,\"list\":[\"x\",\"y\"]}}",
+                stored);
+    }
+
+    public void testThatClassAndConfigAreReadBackFromCombinedDocument() throws IOException {
+
+        final Map<String, Object> source = toLuceneSource(putContent(config(), null));
+
+        assertEquals(CLASS_NAME, getMapping(source).getRewriterClassName("r1", source));
+        assertEquals(config(), getMapping(source).getConfig("r1", source));
+    }
+
+    public void testThatClassIsReadBackWhenConfigIsAbsent() throws IOException {
+
+        final Map<String, Object> source = toLuceneSource(putContent(null, null));
+
+        assertEquals(CLASS_NAME, getMapping(source).getRewriterClassName("r1", source));
+        assertEquals(Collections.emptyMap(), getMapping(source).getConfig("r1", source));
     }
 
     public void testThatCanonicalConfigDoesNotDependOnPropertyOrder() throws IOException {
@@ -198,6 +218,23 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
         assertSame(V3_MAPPING, getMapping(v3Source));
         assertEquals(getMapping(v4Source).computeConfigHash("r1", v4Source),
                 getMapping(v3Source).computeConfigHash("r1", v3Source));
+    }
+
+    public void testThatConfigHashOfV4DocumentEqualsHashOfCurrentDocument() throws IOException {
+
+        final Map<String, Object> currentSource = toLuceneSource(putContent(config(), null));
+
+        // a document as it was saved by mapping version 4: class and config were stored in separate fields
+        final Map<String, Object> v4Source = new HashMap<>();
+        v4Source.put(PROP_TYPE, "rewriter");
+        v4Source.put(PROP_VERSION, 4);
+        v4Source.put("class", CLASS_NAME);
+        v4Source.put(V4_MAPPING.getConfigStringProperty(),
+                "{\"a\":{\"c\":3,\"d\":2},\"b\":1,\"list\":[\"x\",\"y\"]}");
+
+        assertSame(V4_MAPPING, getMapping(v4Source));
+        assertEquals(getMapping(currentSource).computeConfigHash("r1", currentSource),
+                getMapping(v4Source).computeConfigHash("r1", v4Source));
     }
 
     public void testThatConfigHashIsComputedForConfigThatHadToBeSplitUp() throws IOException {

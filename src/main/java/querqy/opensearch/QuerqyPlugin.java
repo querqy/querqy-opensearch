@@ -38,7 +38,9 @@ import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.index.IndexModule;
 import org.opensearch.index.query.QueryBuilder;
+import org.opensearch.index.mapper.Mapper;
 import org.opensearch.plugins.ActionPlugin;
+import org.opensearch.plugins.MapperPlugin;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.plugins.SearchPlugin;
 import org.opensearch.repositories.RepositoriesService;
@@ -50,6 +52,7 @@ import org.opensearch.transport.client.Client;
 import org.opensearch.watcher.ResourceWatcherService;
 import querqy.opensearch.infologging.Log4jSink;
 import querqy.opensearch.query.QuerqyQueryBuilder;
+import querqy.opensearch.rewriterstore.mapper.QuerqyRewriterConfigFieldMapper;
 import querqy.opensearch.rewriterstore.DeleteRewriterAction;
 import querqy.opensearch.rewriterstore.GetRewriterAction;
 import querqy.opensearch.rewriterstore.NodesClearRewriterCacheAction;
@@ -68,9 +71,10 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
-public class QuerqyPlugin extends Plugin implements SearchPlugin, ActionPlugin {
+public class QuerqyPlugin extends Plugin implements SearchPlugin, ActionPlugin, MapperPlugin {
 
 
     private final QuerqyProcessor querqyProcessor;
@@ -144,5 +148,11 @@ public class QuerqyPlugin extends Plugin implements SearchPlugin, ActionPlugin {
         return Collections.singletonList(Setting.intSetting(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, 1, 0,
                 Setting.Property.NodeScope));
 
+    }
+
+    @Override
+    public Map<String, Mapper.TypeParser> getMappers() {
+        return Collections.singletonMap(QuerqyRewriterConfigFieldMapper.CONTENT_TYPE,
+                new QuerqyRewriterConfigFieldMapper.TypeParser());
     }
 }
