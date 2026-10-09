@@ -196,6 +196,47 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
         assertBusy(() -> assertHitCount("refresh_rewriter", 2L));
     }
 
+    /**
+     * {@code RewriterConfigMapping.toLuceneSource} splits the combined class+config JSON into a {@code String[]}
+     * once it exceeds Lucene's 32766-byte keyword-field limit (see {@code stringToSourceValue}) - both the REST PUT
+     * action and the CLI tool go through that same method, so both get this for free. What's untested elsewhere is
+     * the other half: that a document actually stored that way is both accepted by the write-time field mapper
+     * (which must reconstruct the full value from the array before validating it) and correctly read back later via
+     * the normal query path (which must do the same reconstruction again, from a real GetResponse).
+     */
+    public void testThatLargeConfigIsSplitOnWriteAndReadBackCorrectly() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        final StringBuilder rules = new StringBuilder("k =>\nSYNONYM: c\n");
+        while (rules.length() < 40_000) {
+            rules.append("filler_term_").append(rules.length()).append(" =>\n  SYNONYM: irrelevant_term\n");
+        }
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory.class.getName());
+        final Map<String, Object> config = new HashMap<>();
+        config.put("rules", rules.toString());
+        config.put("ignoreCase", true);
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        content.put("config", config);
+
+        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
+        if (!(source.get("config_v_005") instanceof String[])) {
+            throw new IllegalStateException("Test assumptions are wrong: config was not split up");
+        }
+
+        // the write-time field mapper must reconstruct the full array value before it can validate it
+        client().prepareIndex(QUERQY_INDEX_NAME).setId("large_rewriter")
+                .setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+
+        // and a later read (a fresh GetResponse, not the Map we just built) must reconstruct it the same way
+        assertRewritesKToC("large_rewriter");
+    }
+
     private void writeCommonRulesRewriter(final String rewriterId, final String rules) throws Exception {
 
         final Map<String, Object> content = new HashMap<>();
