@@ -89,6 +89,14 @@ public abstract class RewriterConfigMapping {
             return true;
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @return the class name, or null if {@code config_v_005} is absent from {@code source} entirely, or present
+         * but without a {@code "class"} entry - the write-time field mapper rejects a new document in either state,
+         * so this is only reachable for a document written before that mapper existed, or written by some other
+         * means that bypassed it (e.g. bulk indexing, reindexing, or restoring a snapshot).
+         */
         @Override
         public String getRewriterClassName(final String rewriterId, final Map<String, Object> source) {
             final Map<String, Object> combined = parseCombinedConfig(source);
@@ -163,6 +171,15 @@ public abstract class RewriterConfigMapping {
         return "info_logging";
     }
 
+    /**
+     * @param rewriterId The rewriter ID (used by some overrides for error messages only)
+     * @param source The stored rewriter document
+     * @return The rewriter's class name, or null if {@code source} doesn't have a (non-empty) value under
+     * {@link #getRewriterClassNameProperty()} - this should not happen for a document written through the normal
+     * save path, but callers that need a usable class name (e.g. to instantiate the rewriter) must still check for
+     * it and fail clearly, since this method does not; callers that only describe or hash a stored document (e.g.
+     * {@link #computeConfigHash}, {@code RewriterInfo}) are designed to tolerate it instead.
+     */
     public String getRewriterClassName(final String rewriterId, final Map<String, Object> source) {
         return (String) source.get(getRewriterClassNameProperty());
     }
