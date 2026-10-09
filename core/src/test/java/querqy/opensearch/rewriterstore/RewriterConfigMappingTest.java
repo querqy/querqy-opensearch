@@ -237,33 +237,42 @@ public class RewriterConfigMappingTest extends OpenSearchTestCase {
                 getMapping(v4Source).computeConfigHash("r1", v4Source));
     }
 
-    public void testThatConfigHashIsComputedForConfigThatHadToBeSplitUp() throws IOException {
+    /**
+     * {@code toLuceneSource} no longer splits large configs on write (the config_v_005 field type never creates a
+     * Lucene field, so Lucene's 32766-byte term-length limit that justified the old split no longer applies - see
+     * {@link RewriterConfigMapping#toLuceneSource}). A document written by an older version of this code (or by
+     * {@link #V3_MAPPING}/{@link #V4_MAPPING}, which did need the split for their real keyword field) can still have
+     * an already-split value though, so reading - including hash computation - must keep tolerating that shape.
+     */
+    public void testThatConfigHashIsComputedForAnAlreadySplitUpConfig() throws IOException {
 
         final StringBuilder rules = new StringBuilder();
         while (rules.length() < 40000) {
             rules.append("k").append(rules.length()).append(" =>\n  SYNONYM: c\n");
         }
 
-        final Map<String, Object> source = toLuceneSource(
+        final Map<String, Object> unsplitSource = toLuceneSource(
                 putContent(Collections.singletonMap("rules", rules.toString()), null));
+        final String hashOfUnsplitConfig = CURRENT.computeConfigHash("r1", unsplitSource);
 
-        final Object configValue = source.get(CURRENT.getConfigStringProperty());
-        if (!(configValue instanceof String[])) {
+        final Object unsplitValue = unsplitSource.get(CURRENT.getConfigStringProperty());
+        if (!(unsplitValue instanceof String)) {
+            throw new IllegalStateException("Test assumptions are wrong: config was unexpectedly split up");
+        }
+        final Object splitValue = RewriterConfigMapping.stringToSourceValue((String) unsplitValue, 32766);
+        if (!(splitValue instanceof String[])) {
             throw new IllegalStateException("Test assumptions are wrong: config was not split up");
         }
 
-        final String hashOfSplitConfig = CURRENT.computeConfigHash("r1", source);
+        // the hash must not depend on whether an already-split value is presented as a String[] (as built here) or
+        // as a List (as it arrives when a document is read back from the index)...
+        final Map<String, Object> splitSource = new HashMap<>(unsplitSource);
+        splitSource.put(CURRENT.getConfigStringProperty(), splitValue);
+        assertEquals(hashOfUnsplitConfig, CURRENT.computeConfigHash("r1", splitSource));
 
-        // the hash must not depend on how the config was split up...
-        final Map<String, Object> unsplitSource = new HashMap<>(source);
-        unsplitSource.put(CURRENT.getConfigStringProperty(), String.join("", (String[]) configValue));
-        assertEquals(CURRENT.computeConfigHash("r1", unsplitSource), hashOfSplitConfig);
-
-        // ... and not on whether the document was just built or read back from the index, where the parts of the
-        // config arrive as a List
-        final Map<String, Object> sourceFromIndex = new HashMap<>(source);
-        sourceFromIndex.put(CURRENT.getConfigStringProperty(), Arrays.asList((String[]) configValue));
-        assertEquals(CURRENT.computeConfigHash("r1", sourceFromIndex), hashOfSplitConfig);
+        final Map<String, Object> sourceFromIndex = new HashMap<>(unsplitSource);
+        sourceFromIndex.put(CURRENT.getConfigStringProperty(), Arrays.asList((String[]) splitValue));
+        assertEquals(hashOfUnsplitConfig, CURRENT.computeConfigHash("r1", sourceFromIndex));
     }
 
     public void testThatConfigHashIsAHexEncodedSha256() throws IOException {

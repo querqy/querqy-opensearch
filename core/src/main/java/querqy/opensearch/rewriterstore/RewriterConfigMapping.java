@@ -243,8 +243,13 @@ public abstract class RewriterConfigMapping {
             combined.put("config", config);
         }
         final String jsonString = toCanonicalJsonString(combined);
-        // See constraints in org.elasticsearch.index.mapper.KeywordFieldMapper.indexValue()
-        source.put(CURRENT.getConfigStringProperty(), stringToSourceValue(jsonString, 32766));
+        // Older mapping versions stored this as a real (index:false, doc_values:false) Lucene keyword field, which
+        // still enforced Lucene's 32766-byte term-length limit - hence stringToSourceValue() below, used to split
+        // such values. The config_v_005 field (CURRENT) uses a custom field type that never creates a Lucene field
+        // at all (validated at write time, otherwise _source-only), so that limit no longer applies and the value is
+        // stored as a single string, however large. Reading still supports an already-split value (for documents
+        // written by an older version of this code, or by V3_MAPPING/V4_MAPPING), see rejoinStoredString().
+        source.put(CURRENT.getConfigStringProperty(), jsonString);
 
         return source;
     }

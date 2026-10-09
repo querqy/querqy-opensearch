@@ -30,37 +30,69 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@code RewriterConfigTool} sends the document body built by {@code RewriterConfigMapping.toLuceneSource(...)} to
- * the cluster as plain JSON (via Jackson, see {@code HttpQuerqyIndexManager.putRewriter}) - it has no special-case
- * code of its own for a config large enough to be split into a {@code String[]} (see
- * {@code RewriterConfigMapping#stringToSourceValue}, triggered above 32766 UTF-8 bytes of the combined
- * class+config JSON). This confirms that hand-off actually round-trips: Jackson must serialize the array as a JSON
- * array (not, say, call {@code toString()} on it), and parsing that JSON back must let the array elements be
- * rejoined into the original string the same way the cluster-side field mapper and config loader do.
+ * the cluster as plain JSON (via Jackson, see {@code HttpQuerqyIndexManager.putRewriter}) and has no special-case
+ * code of its own for a large config: the config_v_005 field type never creates a Lucene field (validated at write
+ * time, otherwise {@code _source}-only), so it has no 32766-byte term-length limit to respect, and
+ * {@code toLuceneSource} stores even a large combined class+config JSON as a single string.
  */
 public class LargeConfigSerializationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Test
-    @SuppressWarnings("unchecked")
-    public void testLargeConfigSurvivesJsonSerializationAsAnArray() throws Exception {
-
+    private static String largeRules() {
         final StringBuilder rules = new StringBuilder();
         while (rules.length() < 40_000) {
             rules.append("term_").append(rules.length()).append(" =>\n  SYNONYM: x\n");
         }
+        return rules.toString();
+    }
+
+    @Test
+    public void testLargeConfigSurvivesJsonSerializationAsASingleString() throws Exception {
+
+        final String rules = largeRules();
 
         final Map<String, Object> content = new HashMap<>();
         content.put("class", "querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory");
         final Map<String, Object> config = new HashMap<>();
-        config.put("rules", rules.toString());
+        config.put("rules", rules);
         content.put("config", config);
 
         final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
         final Object configV005 = source.get("config_v_005");
-        assertThat(configV005).as("test assumption: the config must actually be split").isInstanceOf(String[].class);
+        assertThat(configV005).as("a large config is no longer split on write").isInstanceOf(String.class);
 
         // this is exactly what HttpQuerqyIndexManager.putRewriter sends as the request body
+        final String json = MAPPER.writeValueAsString(source);
+
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> roundTripped = MAPPER.readValue(json, Map.class);
+        assertThat(roundTripped.get("config_v_005")).isEqualTo(configV005);
+    }
+
+    /**
+     * A document split by an older version of this code (or by a third party) must still be handled correctly if
+     * the tool ever reads one back - confirms Jackson round-trips an already-split value as a proper JSON array
+     * (not e.g. {@code toString()}'d), and that it rejoins to the original config.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testAlreadySplitConfigSurvivesJsonSerializationAsAnArray() throws Exception {
+
+        final String rules = largeRules();
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", "querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("rules", rules);
+        content.put("config", config);
+
+        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
+        final String unsplitValue = (String) source.get("config_v_005");
+        source.put("config_v_005", RewriterConfigMapping.stringToSourceValue(unsplitValue, 32766));
+        assertThat(source.get("config_v_005")).as("test assumption: the config must actually be split")
+                .isInstanceOf(String[].class);
+
         final String json = MAPPER.writeValueAsString(source);
 
         final Map<String, Object> roundTripped = MAPPER.readValue(json, Map.class);
@@ -71,11 +103,6 @@ public class LargeConfigSerializationTest {
                 .isInstanceOf(List.class);
 
         final String rejoined = String.join("", (List<String>) roundTrippedValue);
-
-        // rejoined is itself a JSON string (the canonical {"class":...,"config":{...}} document) - parse it to
-        // compare the actual "rules" value, since JSON-escaping (e.g. "\n") makes a raw substring match unreliable
-        final Map<String, Object> combined = MAPPER.readValue(rejoined, Map.class);
-        final Map<String, Object> rewrittenConfig = (Map<String, Object>) combined.get("config");
-        assertThat(rewrittenConfig.get("rules")).isEqualTo(rules.toString());
+        assertThat(rejoined).isEqualTo(unsplitValue);
     }
 }

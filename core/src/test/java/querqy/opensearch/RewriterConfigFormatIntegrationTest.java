@@ -197,17 +197,58 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
     }
 
     /**
-     * {@code RewriterConfigMapping.toLuceneSource} splits the combined class+config JSON into a {@code String[]}
-     * once it exceeds Lucene's 32766-byte keyword-field limit (see {@code stringToSourceValue}) - both the REST PUT
-     * action and the CLI tool go through that same method, so both get this for free. What's untested elsewhere is
-     * the other half: that a document actually stored that way is both accepted by the write-time field mapper
-     * (which must reconstruct the full value from the array before validating it) and correctly read back later via
-     * the normal query path (which must do the same reconstruction again, from a real GetResponse).
+     * The config_v_005 field type never creates a Lucene field (it's validated at write time, otherwise
+     * {@code _source}-only), so unlike the old config_v_003 keyword field, it has no 32766-byte term-length limit to
+     * respect - {@code RewriterConfigMapping.toLuceneSource} stores even a large combined class+config JSON as a
+     * single string (see its javadoc). A raw-HTTP writer (or the CLI tool) therefore never needs to chunk a large
+     * config itself.
      */
-    public void testThatLargeConfigIsSplitOnWriteAndReadBackCorrectly() throws Exception {
+    public void testThatLargeConfigRoundTripsAsASingleUnsplitString() throws Exception {
 
         ensureRewriterIndexExists();
         indexTestDocs();
+
+        final Map<String, Object> source = toLuceneSourceWithLargeRules();
+        if (!(source.get("config_v_005") instanceof String)) {
+            throw new IllegalStateException("Test assumptions are wrong: config was unexpectedly split up");
+        }
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId("large_rewriter")
+                .setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+
+        assertRewritesKToC("large_rewriter");
+    }
+
+    /**
+     * A document that was split into a {@code String[]} by an older version of this code (or that a third party
+     * wrote that way for whatever reason) must still be accepted and read correctly - the write-time field mapper
+     * and the config loader both reconstruct the full value from the array before using it.
+     */
+    public void testThatAnAlreadySplitLargeConfigStillRoundTripsCorrectly() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        final Map<String, Object> source = toLuceneSourceWithLargeRules();
+        final String unsplitValue = (String) source.get("config_v_005");
+        source.put("config_v_005", RewriterConfigMapping.stringToSourceValue(unsplitValue, 32766));
+        if (!(source.get("config_v_005") instanceof String[])) {
+            throw new IllegalStateException("Test assumptions are wrong: config was not split up");
+        }
+
+        // the write-time field mapper must reconstruct the full array value before it can validate it
+        client().prepareIndex(QUERQY_INDEX_NAME).setId("large_split_rewriter")
+                .setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+
+        // and a later read (a fresh GetResponse, not the Map we just built) must reconstruct it the same way
+        assertRewritesKToC("large_split_rewriter");
+    }
+
+    private Map<String, Object> toLuceneSourceWithLargeRules() throws Exception {
 
         final StringBuilder rules = new StringBuilder("k =>\nSYNONYM: c\n");
         while (rules.length() < 40_000) {
@@ -222,19 +263,7 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
         config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
         content.put("config", config);
 
-        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
-        if (!(source.get("config_v_005") instanceof String[])) {
-            throw new IllegalStateException("Test assumptions are wrong: config was not split up");
-        }
-
-        // the write-time field mapper must reconstruct the full array value before it can validate it
-        client().prepareIndex(QUERQY_INDEX_NAME).setId("large_rewriter")
-                .setSource(source)
-                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
-                .get();
-
-        // and a later read (a fresh GetResponse, not the Map we just built) must reconstruct it the same way
-        assertRewritesKToC("large_rewriter");
+        return RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
     }
 
     private void writeCommonRulesRewriter(final String rewriterId, final String rules) throws Exception {

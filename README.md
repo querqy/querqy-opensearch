@@ -63,7 +63,10 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   `info_logging`/`revision`).
 * **A raw document write**, e.g. `PUT .opensearch-querqy/_doc/common_rules` with a hand-built document - the index
   mapping validates the configuration at write time and rejects an invalid one, but building the document body
-  correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand.
+  correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand. A large config does
+  **not** need any special handling: just put `class` and `config` as plain JSON under a single `config_v_005` field,
+  e.g. `{"type": "rewriter", "version": 5, "config_v_005": "{\"class\":\"...\",\"config\":{...}}"}` - there is no
+  size limit to respect here, however large the configuration.
 
 **Freshness note**: without the REST API's push-based reload, a config change becomes visible on each node within
 `querqy.caches.rewriter.refresh_after_write` (default 30 seconds) of being written, not instantly - there is no
