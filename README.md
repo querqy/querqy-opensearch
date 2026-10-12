@@ -82,13 +82,17 @@ index doesn't exist yet, OpenSearch creates it automatically on the first write 
 mapping (`config_v_005` would become a plain `text`/`keyword` field), not the mapping that enables write-time
 validation. An invalid configuration would then be silently accepted instead of rejected. The CLI tool creates the
 index with the correct mapping automatically; to create it by hand instead, `PUT` the mapping bundled in the `core`
-module (`core/src/main/resources/querqy-mapping.json`) onto the index first:
+module (`core/src/main/resources/querqy-mapping.json`) onto the index first. The file holds only the mapping
+(`{"properties": ...}`), while the create-index API expects it under a `mappings` key, so wrap it (here with
+[jq](https://jqlang.github.io/jq/)) rather than sending the file as is - the create request would otherwise fail with
+`unknown key [properties] for create index`:
 
 ```shell
+jq '{mappings: .}' core/src/main/resources/querqy-mapping.json | \
 curl -X PUT "https://<host>:9200/.opensearch-querqy" \
     -H "Content-Type: application/json" \
     -u admin:'<password>' \
-    -d @core/src/main/resources/querqy-mapping.json
+    -d @-
 ```
 
 (Run this only once per cluster - a second attempt fails harmlessly with `resource_already_exists_exception` since
