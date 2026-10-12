@@ -18,11 +18,28 @@
 
 package querqy.opensearch.tool;
 
+import java.util.Locale;
+
 /**
- * Parses the {@code RewriterConfigTool} command line.
+ * Parses the {@code RewriterConfigTool} command line: an action verb ({@link Action}) followed by flags, e.g.
+ * {@code put --id common_rules --config-file ./common_rules.json --url https://host:9200}.
  */
 public final class CliArgs {
 
+    public enum Action {
+        PUT, GET, LIST, DELETE;
+
+        static Action fromString(final String s) {
+            try {
+                return Action.valueOf(s.toUpperCase(Locale.ROOT));
+            } catch (final IllegalArgumentException e) {
+                throw new IllegalArgumentException("Unknown action '" + s + "', expected one of: put, get, list, "
+                        + "delete");
+            }
+        }
+    }
+
+    public final Action action;
     public final String url;
     public final String id;
     public final String configFile;
@@ -33,9 +50,10 @@ public final class CliArgs {
     public final boolean insecure;
     public final boolean validateOnly;
 
-    private CliArgs(final String url, final String id, final String configFile, final String revision,
-                    final String username, final String password, final int replicas, final boolean insecure,
-                    final boolean validateOnly) {
+    private CliArgs(final Action action, final String url, final String id, final String configFile,
+                    final String revision, final String username, final String password, final int replicas,
+                    final boolean insecure, final boolean validateOnly) {
+        this.action = action;
         this.url = url;
         this.id = id;
         this.configFile = configFile;
@@ -49,6 +67,12 @@ public final class CliArgs {
 
     public static CliArgs parse(final String[] args) {
 
+        if (args.length == 0) {
+            throw new IllegalArgumentException("Missing action: expected one of put, get, list, delete");
+        }
+
+        final Action action = Action.fromString(args[0]);
+
         String url = null;
         String id = null;
         String configFile = null;
@@ -59,7 +83,7 @@ public final class CliArgs {
         boolean insecure = false;
         boolean validateOnly = false;
 
-        for (int i = 0; i < args.length; i++) {
+        for (int i = 1; i < args.length; i++) {
             switch (args[i]) {
                 case "--url":
                     url = requireValue(args, i++, "--url");
@@ -93,17 +117,38 @@ public final class CliArgs {
             }
         }
 
-        if (id == null) {
-            throw new IllegalArgumentException("--id is required");
-        }
-        if (configFile == null) {
-            throw new IllegalArgumentException("--config-file is required");
-        }
-        if (!validateOnly && url == null) {
-            throw new IllegalArgumentException("--url is required unless --validate-only is set");
+        switch (action) {
+            case PUT:
+                if (id == null) {
+                    throw new IllegalArgumentException("--id is required");
+                }
+                if (configFile == null) {
+                    throw new IllegalArgumentException("--config-file is required");
+                }
+                if (!validateOnly && url == null) {
+                    throw new IllegalArgumentException("--url is required unless --validate-only is set");
+                }
+                break;
+            case GET:
+            case DELETE:
+                if (id == null) {
+                    throw new IllegalArgumentException("--id is required");
+                }
+                if (url == null) {
+                    throw new IllegalArgumentException("--url is required");
+                }
+                break;
+            case LIST:
+                if (url == null) {
+                    throw new IllegalArgumentException("--url is required");
+                }
+                break;
+            default:
+                throw new IllegalStateException("Unhandled action: " + action);
         }
 
-        return new CliArgs(url, id, configFile, revision, username, password, replicas, insecure, validateOnly);
+        return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
+                validateOnly);
     }
 
     private static String requireValue(final String[] args, final int flagIndex, final String flagName) {

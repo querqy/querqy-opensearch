@@ -49,20 +49,29 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
 
 * **The `querqy-opensearch-tool` CLI** (module `tool`, built at
   `tool/build/distributions/querqy-opensearch-tool-<version>.zip` - unzip it and run `bin/querqy-opensearch-tool`, or
-  run it directly from a checkout via `./gradlew tool:run --args="..."`): validates the configuration locally (the
-  same checks the REST API applies) and then writes it to the index over HTTP, creating or migrating the index
-  mapping as needed:
+  run it directly from a checkout via `./gradlew tool:run --args="..."`). It mirrors the REST API's
+  `PUT`/`GET`/`DELETE` rewriter actions (plus listing) as four subcommands - `put`, `get`, `list`, `delete` - each
+  taking `--url` and, except for `list`, `--id`:
 
   ```shell
-  bin/querqy-opensearch-tool \
-      --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
+  bin/querqy-opensearch-tool put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
       [--revision r42] [--username admin --password '***'] [--insecure] [--validate-only]
+  bin/querqy-opensearch-tool get --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  bin/querqy-opensearch-tool list --url https://<host>:9200 [--username ... --password ...]
+  bin/querqy-opensearch-tool delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
   ```
 
-  `--config-file` holds the same JSON shape as the REST API's PUT body (`class`, `config`, optionally
-  `info_logging`/`revision`). The tool is deliberately lightweight (it depends on `opensearch-core`/`opensearch-x-content`
-  rather than the full OpenSearch server jar) since all it needs is the REST client and enough of `core` to validate a
-  config and build the document to write.
+  `put` validates the configuration locally (the same checks the REST API applies) before writing it, and creates or
+  migrates the index mapping as needed. `--config-file` holds the same JSON shape as the REST API's PUT body (`class`,
+  `config`, optionally `info_logging`/`revision`). `get`/`list` print the same information the REST API's `GET` does,
+  as JSON (`list` omits each rewriter's `config`, matching the REST API, since configs can be large). The tool is
+  deliberately lightweight (it depends on `opensearch-core`/`opensearch-x-content` rather than the full OpenSearch
+  server jar) since all it needs is the REST client and enough of `core` to validate a config and build the documents
+  it reads and writes.
+
+  **`delete` note:** unlike the REST API's `DELETE`, this cannot clear the deleted rewriter from every node's
+  in-memory cache (that's an `ActionPlugin`-only transport action, unavailable over plain HTTP) - each node notices
+  the deletion on its own within the same freshness window described below.
 * **A raw document write**, e.g. `PUT .opensearch-querqy/_doc/common_rules` with a hand-built document - the index
   mapping validates the configuration at write time and rejects an invalid one, but building the document body
   correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand. See the full worked

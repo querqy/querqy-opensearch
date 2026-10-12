@@ -25,9 +25,13 @@ import org.opensearch.client.Response;
 import org.opensearch.client.RestClient;
 import querqy.opensearch.rewriterstore.Constants;
 import querqy.opensearch.rewriterstore.QuerqyIndexManager;
+import querqy.opensearch.rewriterstore.RewriterInfo;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -73,14 +77,7 @@ final class HttpQuerqyIndexManager {
     private void migrateMappingIfNeeded() throws IOException {
 
         final Request getMapping = new Request("GET", INDEX_PATH + "/_mapping");
-        final String responseBody;
-        try {
-            responseBody = EntityUtils.toString(client.performRequest(getMapping).getEntity());
-        } catch (final org.apache.hc.core5.http.ParseException e) {
-            throw new IOException("Could not read mapping response", e);
-        }
-
-        final Map<String, Object> body = MAPPER.readValue(responseBody, Map.class);
+        final Map<String, Object> body = MAPPER.readValue(readBody(client.performRequest(getMapping)), Map.class);
         final Map<String, Object> indexBody = (Map<String, Object>) body.get(Constants.QUERQY_INDEX_NAME);
         final Map<String, Object> mappings = (Map<String, Object>) indexBody.get("mappings");
         final Map<String, Object> properties = (Map<String, Object>) mappings.getOrDefault("properties",
@@ -101,5 +98,71 @@ final class HttpQuerqyIndexManager {
         request.addParameter("refresh", "true");
         request.setJsonEntity(MAPPER.writeValueAsString(source));
         client.performRequest(request);
+    }
+
+    /**
+     * @return The {@link RewriterInfo} for the given rewriter, or {@code null} if it doesn't exist.
+     */
+    @SuppressWarnings("unchecked")
+    RewriterInfo getRewriter(final String rewriterId) throws IOException {
+
+        final Request request = new Request("GET", INDEX_PATH + "/_doc/" + rewriterId);
+        request.addParameter("ignore", "404"); // a missing document is a normal outcome here, not an error
+
+        final Map<String, Object> doc = MAPPER.readValue(readBody(client.performRequest(request)), Map.class);
+        if (!Boolean.TRUE.equals(doc.get("found"))) {
+            return null;
+        }
+
+        final Map<String, Object> source = (Map<String, Object>) doc.get("_source");
+        return RewriterInfo.fromSource(rewriterId, source, true);
+    }
+
+    /**
+     * @return Every stored rewriter, sorted by ID, without their config (matching the REST API's listing
+     * behavior - configs can be large). An empty list if the index doesn't exist yet.
+     */
+    @SuppressWarnings("unchecked")
+    List<RewriterInfo> listRewriters() throws IOException {
+
+        final Request request = new Request("POST", INDEX_PATH + "/_search");
+        request.addParameter("ignore", "404"); // a missing index means "no rewriters yet", not an error
+        request.setJsonEntity("{\"query\":{\"term\":{\"type\":\"rewriter\"}},\"size\":10000}");
+
+        final Map<String, Object> body = MAPPER.readValue(readBody(client.performRequest(request)), Map.class);
+        final Map<String, Object> hitsWrapper = (Map<String, Object>) body.get("hits");
+        if (hitsWrapper == null) {
+            return Collections.emptyList(); // missing-index response body has no "hits" wrapper at all
+        }
+
+        final List<Map<String, Object>> hits = (List<Map<String, Object>>) hitsWrapper.get("hits");
+        final List<RewriterInfo> rewriters = new ArrayList<>(hits.size());
+        for (final Map<String, Object> hit : hits) {
+            rewriters.add(RewriterInfo.fromSource((String) hit.get("_id"),
+                    (Map<String, Object>) hit.get("_source"), false));
+        }
+        rewriters.sort(Comparator.comparing(RewriterInfo::getRewriterId));
+        return rewriters;
+    }
+
+    /**
+     * @return {@code true} if a rewriter document existed and was deleted, {@code false} if it was already absent.
+     */
+    boolean deleteRewriter(final String rewriterId) throws IOException {
+
+        final Request request = new Request("DELETE", INDEX_PATH + "/_doc/" + rewriterId);
+        request.addParameter("refresh", "true");
+        request.addParameter("ignore", "404"); // deleting an already-absent document is not an error
+
+        final Map<String, Object> body = MAPPER.readValue(readBody(client.performRequest(request)), Map.class);
+        return "deleted".equals(body.get("result"));
+    }
+
+    private static String readBody(final Response response) throws IOException {
+        try {
+            return EntityUtils.toString(response.getEntity());
+        } catch (final org.apache.hc.core5.http.ParseException e) {
+            throw new IOException("Could not read response body", e);
+        }
     }
 }

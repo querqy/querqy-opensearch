@@ -34,8 +34,12 @@ import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.opensearch.client.ResponseException;
 import org.opensearch.client.RestClient;
 import org.opensearch.client.RestClientBuilder;
+import org.opensearch.common.xcontent.json.JsonXContent;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 import querqy.opensearch.OpenSearchRewriterFactory;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
+import querqy.opensearch.rewriterstore.RewriterInfo;
 
 import java.io.File;
 import java.io.IOException;
@@ -44,18 +48,26 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Validates a rewriter configuration and writes it directly to the {@code .opensearch-querqy} index over HTTP - the
- * AWS-compatible replacement for {@code PUT /_plugins/_querqy/rewriter/{id}}, since an install without
+ * Validates, lists, fetches, or deletes a rewriter configuration directly against the {@code .opensearch-querqy}
+ * index over HTTP - the AWS-compatible replacement for the REST rewriter API
+ * ({@code PUT}/{@code GET}/{@code DELETE /_plugins/_querqy/rewriter/{id}}), since an install without
  * {@code ActionPlugin} (e.g. querqy-opensearch-core on Amazon OpenSearch Service) has no REST action to do this.
  *
  * <pre>
- * java -jar querqy-opensearch-tool.jar \
- *     --url https://host:9200 --id my_rewriter --config-file ./my-rewriter.json \
+ * java -jar querqy-opensearch-tool.jar put --url https://host:9200 --id my_rewriter --config-file ./my-rewriter.json \
  *     [--revision r42] [--username admin --password '***'] [--replicas 1] [--insecure] [--validate-only]
+ * java -jar querqy-opensearch-tool.jar get --url https://host:9200 --id my_rewriter [--username ... --password ...]
+ * java -jar querqy-opensearch-tool.jar list --url https://host:9200 [--username ... --password ...]
+ * java -jar querqy-opensearch-tool.jar delete --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * </pre>
  *
- * {@code --config-file} holds the same JSON shape as the REST PUT request body: {@code class}, {@code config}, and
- * optionally {@code info_logging}/{@code revision}.
+ * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
+ * {@code config}, and optionally {@code info_logging}/{@code revision}.
+ *
+ * <p><b>Delete note:</b> unlike the REST API's {@code DELETE}, this cannot clear the deleted rewriter from every
+ * node's in-memory cache (that's an {@code ActionPlugin}-only transport action, unavailable over plain HTTP) - each
+ * node notices the deletion on its own, within roughly {@code querqy.caches.rewriter.refresh_after_write} (default
+ * 30s), the same freshness caveat that already applies to a {@code put}.</p>
  */
 public final class RewriterConfigTool {
 
@@ -69,6 +81,9 @@ public final class RewriterConfigTool {
             for (final String error : e.errors) {
                 System.err.println("  - " + error);
             }
+            System.exit(1);
+        } catch (final RewriterNotFoundException e) {
+            System.err.println(e.getMessage());
             System.exit(1);
         } catch (final ResponseException e) {
             System.err.println("The cluster rejected the request:");
@@ -89,8 +104,27 @@ public final class RewriterConfigTool {
         }
     }
 
-    @SuppressWarnings("unchecked")
     static void run(final CliArgs args) throws IOException {
+        switch (args.action) {
+            case PUT:
+                runPut(args);
+                break;
+            case GET:
+                runGet(args);
+                break;
+            case LIST:
+                runList(args);
+                break;
+            case DELETE:
+                runDelete(args);
+                break;
+            default:
+                throw new IllegalStateException("Unhandled action: " + args.action);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void runPut(final CliArgs args) throws IOException {
 
         final Map<String, Object> content = MAPPER.readValue(new File(args.configFile), Map.class);
 
@@ -114,9 +148,56 @@ public final class RewriterConfigTool {
         }
 
         System.out.println("Saved rewriter '" + args.id + "'.");
+        printFreshnessNote();
+    }
+
+    private static void runGet(final CliArgs args) throws IOException {
+        try (RestClient client = buildClient(args)) {
+            final RewriterInfo info = new HttpQuerqyIndexManager(client).getRewriter(args.id);
+            if (info == null) {
+                throw new RewriterNotFoundException("Rewriter '" + args.id + "' not found.");
+            }
+            System.out.println(toJson(info));
+        }
+    }
+
+    private static void runList(final CliArgs args) throws IOException {
+        try (RestClient client = buildClient(args)) {
+            final List<RewriterInfo> rewriters = new HttpQuerqyIndexManager(client).listRewriters();
+            System.out.println(toJson(rewriters));
+        }
+    }
+
+    private static void runDelete(final CliArgs args) throws IOException {
+        try (RestClient client = buildClient(args)) {
+            final boolean deleted = new HttpQuerqyIndexManager(client).deleteRewriter(args.id);
+            System.out.println(deleted
+                    ? "Deleted rewriter '" + args.id + "'."
+                    : "Rewriter '" + args.id + "' was already absent.");
+        }
+        printFreshnessNote();
+    }
+
+    private static void printFreshnessNote() {
         System.out.println("Note: on an install without the full plugin's REST API (e.g. core-only/AWS), this "
                 + "change can take up to querqy.caches.rewriter.refresh_after_write (default 30s) to take effect on "
-                + "each node - there is no push-based reload without ActionPlugin.");
+                + "each node - there is no push-based reload/cache-clear without ActionPlugin.");
+    }
+
+    private static String toJson(final RewriterInfo info) throws IOException {
+        final XContentBuilder builder = JsonXContent.contentBuilder();
+        info.toXContent(builder, ToXContent.EMPTY_PARAMS);
+        return builder.toString();
+    }
+
+    private static String toJson(final List<RewriterInfo> infos) throws IOException {
+        final XContentBuilder builder = JsonXContent.contentBuilder();
+        builder.startArray();
+        for (final RewriterInfo info : infos) {
+            info.toXContent(builder, ToXContent.EMPTY_PARAMS);
+        }
+        builder.endArray();
+        return builder.toString();
     }
 
     /**
@@ -189,9 +270,16 @@ public final class RewriterConfigTool {
     }
 
     private static void printUsage() {
-        System.err.println("Usage: java -jar querqy-opensearch-tool.jar --url <url> --id <rewriterId> "
+        System.err.println("Usage:");
+        System.err.println("  java -jar querqy-opensearch-tool.jar put --url <url> --id <rewriterId> "
                 + "--config-file <file> [--revision <revision>] [--username <user> --password <password>] "
                 + "[--replicas <n>] [--insecure] [--validate-only]");
+        System.err.println("  java -jar querqy-opensearch-tool.jar get --url <url> --id <rewriterId> "
+                + "[--username <user> --password <password>] [--insecure]");
+        System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> "
+                + "[--username <user> --password <password>] [--insecure]");
+        System.err.println("  java -jar querqy-opensearch-tool.jar delete --url <url> --id <rewriterId> "
+                + "[--username <user> --password <password>] [--insecure]");
     }
 
     static final class ValidationFailedException extends RuntimeException {
@@ -200,6 +288,12 @@ public final class RewriterConfigTool {
         ValidationFailedException(final List<String> errors) {
             super("Invalid rewriter configuration: " + errors);
             this.errors = errors;
+        }
+    }
+
+    static final class RewriterNotFoundException extends RuntimeException {
+        RewriterNotFoundException(final String message) {
+            super(message);
         }
     }
 }
