@@ -63,15 +63,65 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   `info_logging`/`revision`).
 * **A raw document write**, e.g. `PUT .opensearch-querqy/_doc/common_rules` with a hand-built document - the index
   mapping validates the configuration at write time and rejects an invalid one, but building the document body
-  correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand. A large config does
-  **not** need to be chunked up: just put `class` and `config` as plain JSON under a single `config_v_005` field,
-  e.g. `{"type": "rewriter", "version": 5, "config_v_005": "{\"class\":\"...\",\"config\":{...}}"}` - normal HTTP
-  request-size limits still apply, but there is no Lucene field-length limit to work around here.
+  correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand. See the full worked
+  example below.
 
 **Freshness note**: without the REST API's push-based reload, a config change becomes visible on each node within
 `querqy.caches.rewriter.refresh_after_write` (default 30 seconds) of being written, not instantly - there is no
 explicit "reload" action to call. This does not apply to the full `opensearch-querqy` plugin, which still reloads
 immediately after a `PUT` via the REST API.
+
+### Example: writing a rewriter config document directly
+
+**The document ID is the rewriter ID.** Whatever ID you index the document under is the ID you later pass to the
+`querqy` query's `rewriters` list (just as `common_rules` is both the document ID and the rewriter name in the REST
+API examples elsewhere in this README). There is no separate "name" field.
+
+**The `.opensearch-querqy` index must already exist with the correct mapping before you do a raw write.** If the
+index doesn't exist yet, OpenSearch creates it automatically on the first write - but with a *dynamically guessed*
+mapping (`config_v_005` would become a plain `text`/`keyword` field), not the mapping that enables write-time
+validation. An invalid configuration would then be silently accepted instead of rejected. The CLI tool creates the
+index with the correct mapping automatically; to create it by hand instead, `PUT` the mapping bundled in the `core`
+module (`core/src/main/resources/querqy-mapping.json`) onto the index first:
+
+```shell
+curl -X PUT "https://<host>:9200/.opensearch-querqy" \
+    -H "Content-Type: application/json" \
+    -u admin:'<password>' \
+    -d @core/src/main/resources/querqy-mapping.json
+```
+
+(Run this only once per cluster - a second attempt fails harmlessly with `resource_already_exists_exception` since
+the index already exists by then.)
+
+With the index in place, here is a complete `common_rules` configuration with a single synonym rule (`laptop` should
+also match documents containing `macbook`), written directly as a document:
+
+```shell
+curl -X PUT "https://<host>:9200/.opensearch-querqy/_doc/common_rules?refresh=true" \
+    -H "Content-Type: application/json" \
+    -u admin:'<password>' \
+    -d '{
+  "type": "rewriter",
+  "version": 5,
+  "config_v_005": "{\"class\":\"querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory\",\"config\":{\"rules\":\"laptop =>\\nSYNONYM: macbook\"}}"
+}'
+```
+
+A few things worth noting about this document:
+* `type` and `version` are always `"rewriter"` and `5` (the current rewriter-config mapping version) respectively.
+* `config_v_005` holds the rewriter's `class` and `config` combined into **one JSON string** (not a nested JSON
+  object) - this is what the write-time validator reads to resolve and validate the rewriter. The rules text itself
+  uses a literal newline between the match and the instruction (`laptop =>` then `SYNONYM: macbook` on the next
+  line), which is why it appears as `\\n` here: once for the inner JSON string, once more because that whole inner
+  JSON document is itself embedded as a string value in the outer document.
+* `refresh=true` makes the write visible to search immediately, which is convenient when trying this out manually;
+  omit it in a script that writes many rewriters back to back.
+
+If `config_v_005` doesn't parse as `{"class": ..., "config": {...}}`, if `class` isn't an allow-listed rewriter
+class, or if `validateConfiguration` rejects the `config`, the `PUT` above fails with a mapping/parsing error
+instead of silently storing a broken rewriter - that only holds once the index has the correct mapping, as described
+above.
 
 ## Additional resources
 A comprehensive documentation can be found here: [Querqy documentation](https://docs.querqy.org/querqy/index.html)
