@@ -137,6 +137,65 @@ public class QuerqyQueryBuilderTest extends AbstractQueryTestCase<QuerqyQueryBui
 
     }
 
+    public void testWriteReadStreamForRefreshConfig() throws IOException {
+
+        final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
+        writeQuerqyQueryBuilder.setMatchingQuery(new MatchingQuery("minimum query string"));
+        writeQuerqyQueryBuilder.setQueryFieldsAndBoostings(Collections.singletonList("f0^6.4"));
+        writeQuerqyQueryBuilder.setRefreshConfig(RefreshMode.CHECK);
+        writeQuerqyQueryBuilder.setRewriters(Arrays.asList(
+                new Rewriter("common1"), // inherits the query-level default (CHECK)
+                new Rewriter("wordbreak", null, RefreshMode.NO))); // overrides it
+
+        final BytesStreamOutput out = new BytesStreamOutput();
+        writeQuerqyQueryBuilder.writeTo(out);
+        out.flush();
+        out.close();
+
+        final QuerqyQueryBuilder readQuerqyQueryBuilder = new QuerqyQueryBuilder(out.bytes().streamInput(),
+                querqyProcessor);
+
+        assertEqualBuilders(writeQuerqyQueryBuilder, readQuerqyQueryBuilder);
+        assertEquals(RefreshMode.CHECK, readQuerqyQueryBuilder.getRefreshConfig());
+        assertEquals(RefreshMode.NO, readQuerqyQueryBuilder.getRewriters().get(1).getRefreshMode());
+
+        assertEquals(RefreshMode.CHECK,
+                readQuerqyQueryBuilder.effectiveRefreshMode(readQuerqyQueryBuilder.getRewriters().get(0)));
+        assertEquals(RefreshMode.NO,
+                readQuerqyQueryBuilder.effectiveRefreshMode(readQuerqyQueryBuilder.getRewriters().get(1)));
+    }
+
+    public void testWriteReadJsonForRefreshConfig() throws IOException {
+
+        final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);
+        writeQuerqyQueryBuilder.setMatchingQuery(new MatchingQuery("minimum query string"));
+        writeQuerqyQueryBuilder.setQueryFieldsAndBoostings(Collections.singletonList("f0^6.4"));
+        writeQuerqyQueryBuilder.setRefreshConfig(RefreshMode.FORCE);
+        writeQuerqyQueryBuilder.setRewriters(Collections.singletonList(new Rewriter("common1")));
+
+        final ByteArrayOutputStream os = new ByteArrayOutputStream();
+
+        final XContentBuilder xContentBuilder = new XContentBuilder(JsonXContent.jsonXContent, os);
+        xContentBuilder.startObject();
+        writeQuerqyQueryBuilder.doXContent(xContentBuilder, null);
+        xContentBuilder.endObject();
+        xContentBuilder.flush();
+        xContentBuilder.close();
+
+        final QuerqyQueryBuilder readQuerqyQueryBuilder = fromJsonInnerObject(os.toByteArray());
+        assertEqualBuilders(writeQuerqyQueryBuilder, readQuerqyQueryBuilder);
+        assertEquals(RefreshMode.FORCE, readQuerqyQueryBuilder.getRefreshConfig());
+    }
+
+    public void testRefreshConfigDefaultsToNoWhenAbsent() {
+
+        final QuerqyQueryBuilder queryBuilder = new QuerqyQueryBuilder(querqyProcessor);
+        assertNull(queryBuilder.getRefreshConfig());
+
+        final Rewriter rewriter = new Rewriter("common1");
+        assertEquals(RefreshMode.NO, queryBuilder.effectiveRefreshMode(rewriter));
+    }
+
     public void testQueryBuildingIsDelegatedToQuerqyProcessor() throws Exception {
 
         final QuerqyQueryBuilder writeQuerqyQueryBuilder = new QuerqyQueryBuilder(querqyProcessor);

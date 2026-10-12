@@ -114,4 +114,70 @@ public class RewriterTest extends OpenSearchTestCase {
         assertTrue(rewriter1.isFragment());
 
     }
+
+    public void testStreamSerializationWithRefreshMode() throws IOException {
+
+        final Rewriter rewriter1 = new Rewriter("rewriter_1", null, RefreshMode.CHECK);
+
+        final BytesStreamOutput output = new BytesStreamOutput();
+        rewriter1.writeTo(output);
+        output.flush();
+
+        final Rewriter rewriter2 = new Rewriter(output.bytes().streamInput());
+        assertEquals(rewriter1, rewriter2);
+        assertEquals(rewriter1.hashCode(), rewriter2.hashCode());
+        assertEquals(RefreshMode.CHECK, rewriter2.getRefreshMode());
+    }
+
+    public void testStreamSerializationWithoutRefreshMode() throws IOException {
+
+        final Rewriter rewriter1 = new Rewriter("rewriter_1");
+        assertNull(rewriter1.getRefreshMode());
+
+        final BytesStreamOutput output = new BytesStreamOutput();
+        rewriter1.writeTo(output);
+        output.flush();
+
+        final Rewriter rewriter2 = new Rewriter(output.bytes().streamInput());
+        assertNull(rewriter2.getRefreshMode());
+        assertEquals(rewriter1, rewriter2);
+    }
+
+    public void testToJsonWithRefreshModeOnly() throws IOException {
+
+        // a rewriter with a refresh_config override but no params must still use the object form, not the bare
+        // string shorthand
+        final Rewriter rewriter1 = new Rewriter("some_rewriter", null, RefreshMode.FORCE);
+        assertFalse(rewriter1.isFragment());
+
+        final XContentBuilder builder = XContentFactory.jsonBuilder();
+        rewriter1.toXContent(builder, ToXContent.EMPTY_PARAMS);
+        final XContentParser parser = JSON.xContent().createParser(
+                EMPTY,
+                IGNORE_DEPRECATIONS,
+                BytesReference.bytes(builder).streamInput());
+        parser.nextToken();
+
+        final Rewriter rewriter2 = Rewriter.PARSER.parse(parser, null);
+
+        assertEquals(rewriter1, rewriter2);
+        assertEquals(RefreshMode.FORCE, rewriter2.getRefreshMode());
+    }
+
+    public void testBareStringRewriterHasNoRefreshModeOverride() throws IOException {
+
+        final XContentBuilder builder = XContentFactory.jsonBuilder();
+        builder.value("some_rewriter");
+        final XContentParser parser = JSON.xContent().createParser(
+                EMPTY,
+                IGNORE_DEPRECATIONS,
+                BytesReference.bytes(builder).streamInput());
+        parser.nextToken();
+
+        final Rewriter rewriter = Rewriter.PARSER.parse(parser, null);
+
+        assertEquals("some_rewriter", rewriter.getName());
+        assertNull(rewriter.getRefreshMode());
+        assertTrue(rewriter.isFragment());
+    }
 }

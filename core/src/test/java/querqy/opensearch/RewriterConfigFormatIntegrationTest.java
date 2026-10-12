@@ -33,6 +33,7 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import querqy.opensearch.query.MatchingQuery;
 import querqy.opensearch.query.QuerqyQueryBuilder;
+import querqy.opensearch.query.RefreshMode;
 import querqy.opensearch.query.Rewriter;
 import querqy.opensearch.rewriterstore.QuerqyIndexManager;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
@@ -41,6 +42,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -233,6 +235,87 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
     }
 
     /**
+     * Unlike the default ({@link RefreshMode#NO}, see {@link #testThatConfigChangeIsPickedUpAsynchronouslyAfterRefreshInterval}),
+     * {@link RefreshMode#CHECK} must see a config change on the very next query - no sleep/{@code assertBusy}
+     * polling needed, since it blocks synchronously on a check-and-reload for that one query.
+     */
+    public void testThatCheckModePicksUpChangeOnTheVeryNextQuery() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        writeCommonRulesRewriter("check_rewriter", "k =>\nSYNONYM: z"); // "z" matches neither doc
+        assertHitCount("check_rewriter", 1L); // cold-cache load, caches the factory
+
+        writeCommonRulesRewriter("check_rewriter", "k =>\nSYNONYM: c"); // now "c" would also match "a c"
+
+        assertEquals(2L, searchUsingRewriters(Collections.singletonList(new Rewriter("check_rewriter")),
+                RefreshMode.CHECK).getHits().getTotalHits().value());
+    }
+
+    /** Same as {@link #testThatCheckModePicksUpChangeOnTheVeryNextQuery}, for {@link RefreshMode#FORCE}. */
+    public void testThatForceModePicksUpChangeOnTheVeryNextQuery() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        writeCommonRulesRewriter("force_rewriter", "k =>\nSYNONYM: z");
+        assertHitCount("force_rewriter", 1L);
+
+        writeCommonRulesRewriter("force_rewriter", "k =>\nSYNONYM: c");
+
+        assertEquals(2L, searchUsingRewriters(Collections.singletonList(new Rewriter("force_rewriter")),
+                RefreshMode.FORCE).getHits().getTotalHits().value());
+    }
+
+    /**
+     * {@link RefreshMode#CHECK} must still behave correctly (not break, not double-apply anything) when nothing
+     * has actually changed since the rewriter was last loaded - it should just confirm that and keep serving the
+     * already-correct result.
+     */
+    public void testThatCheckModeStillWorksWhenNothingChanged() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        writeCommonRulesRewriter("unchanged_rewriter", "k =>\nSYNONYM: c");
+        assertHitCount("unchanged_rewriter", 2L); // cold-cache load
+
+        // no write in between - CHECK should find the document unchanged and keep working correctly
+        assertEquals(2L, searchUsingRewriters(Collections.singletonList(new Rewriter("unchanged_rewriter")),
+                RefreshMode.CHECK).getHits().getTotalHits().value());
+    }
+
+    /**
+     * A rewriter entry's own {@code refresh_config} (the {@link Rewriter#getRefreshMode()} override) must take
+     * precedence over the query-level default ({@link QuerqyQueryBuilder#getRefreshConfig()}), in both directions.
+     */
+    public void testThatPerRewriterRefreshConfigOverridesQueryDefault() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        writeCommonRulesRewriter("override_rewriter", "k =>\nSYNONYM: z");
+        assertHitCount("override_rewriter", 1L); // cold-cache load
+
+        writeCommonRulesRewriter("override_rewriter", "k =>\nSYNONYM: c");
+
+        // query-level default is CHECK, but this rewriter's own entry overrides it to NO - must NOT pick up the
+        // change on this query (stays stale, exactly like the default-NO async behavior)
+        final long staleHits = searchUsingRewriters(
+                Collections.singletonList(new Rewriter("override_rewriter", null, RefreshMode.NO)),
+                RefreshMode.CHECK).getHits().getTotalHits().value();
+        assertEquals(1L, staleHits);
+
+        // the opposite: query-level default is NO, but this rewriter's own entry overrides it to CHECK - must pick
+        // up the change on this query
+        final long freshHits = searchUsingRewriters(
+                Collections.singletonList(new Rewriter("override_rewriter", null, RefreshMode.CHECK)),
+                RefreshMode.NO).getHits().getTotalHits().value();
+        assertEquals(2L, freshHits);
+    }
+
+    /**
      * The config_v_005 field type never creates a Lucene field (it's validated at write time, otherwise
      * {@code _source}-only), so unlike the old config_v_003 keyword field, it has no 32766-byte term-length limit to
      * respect - {@code RewriterConfigMapping.toLuceneSource} stores even a large combined class+config JSON as a
@@ -324,9 +407,17 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
     }
 
     private SearchResponse searchUsingRewriter(final String rewriterId) throws Exception {
+        return searchUsingRewriters(Collections.singletonList(new Rewriter(rewriterId)), null);
+    }
+
+    private SearchResponse searchUsingRewriters(final List<Rewriter> rewriters, final RefreshMode refreshConfig)
+            throws Exception {
 
         final QuerqyQueryBuilder querqyQuery = new QuerqyQueryBuilder(getInstanceFromNode(QuerqyProcessor.class));
-        querqyQuery.setRewriters(Collections.singletonList(new Rewriter(rewriterId)));
+        querqyQuery.setRewriters(rewriters);
+        if (refreshConfig != null) {
+            querqyQuery.setRefreshConfig(refreshConfig);
+        }
         querqyQuery.setMatchingQuery(new MatchingQuery("a k"));
         querqyQuery.setQueryFieldsAndBoostings(Arrays.asList("field1", "field2"));
         querqyQuery.setMinimumShouldMatch("1");

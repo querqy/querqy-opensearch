@@ -34,10 +34,18 @@ public class Rewriter implements NamedWriteable, ToXContent {
 
     public static final String NAME = "rewriter";
 
+    private static final String FIELD_REFRESH_CONFIG = "refresh_config";
+
     public static ContextParser<Void, Rewriter> PARSER = new RewriterParser();
 
     private String name = null;
     private Map<String, Object> params = null;
+
+    /**
+     * Overrides the query-level {@code refresh_config} (see {@link QuerqyQueryBuilder#getRefreshConfig()}) for this
+     * one rewriter; {@code null} means "inherit the query's default".
+     */
+    private RefreshMode refreshMode = null;
 
     public Rewriter(final StreamInput in) throws IOException {
         name = in.readString();
@@ -45,6 +53,8 @@ public class Rewriter implements NamedWriteable, ToXContent {
         if (hasParams) {
             params = in.readMap();
         }
+        final String strRefreshMode = in.readOptionalString();
+        refreshMode = strRefreshMode == null ? null : RefreshMode.valueOf(strRefreshMode);
     }
 
     public Rewriter(final String name) {
@@ -52,11 +62,16 @@ public class Rewriter implements NamedWriteable, ToXContent {
     }
 
     public Rewriter(final String name, final Map<String, Object> params) {
+        this(name, params, null);
+    }
+
+    public Rewriter(final String name, final Map<String, Object> params, final RefreshMode refreshMode) {
         if (name == null) {
             throw new IllegalArgumentException("Missing rewriter name");
         }
         this.name = name;
         this.params = params;
+        this.refreshMode = refreshMode;
     }
 
     @Override
@@ -73,15 +88,19 @@ public class Rewriter implements NamedWriteable, ToXContent {
         } else {
             out.writeBoolean(false);
         }
+        out.writeOptionalString(refreshMode == null ? null : refreshMode.name());
     }
 
     @Override
     public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
-        if (this.params != null) {
+        if (this.params != null || this.refreshMode != null) {
             builder.startObject();
             builder.field("name", name);
             if (this.params != null && !this.params.isEmpty()) {
                 builder.field("params", this.params);
+            }
+            if (this.refreshMode != null) {
+                builder.field(FIELD_REFRESH_CONFIG, this.refreshMode.name());
             }
             builder.endObject();
         } else {
@@ -92,7 +111,7 @@ public class Rewriter implements NamedWriteable, ToXContent {
 
     @Override
     public boolean isFragment() {
-        return params == null;
+        return params == null && refreshMode == null;
     }
 
     @Override
@@ -101,13 +120,14 @@ public class Rewriter implements NamedWriteable, ToXContent {
         if (!(o instanceof Rewriter)) return false;
         Rewriter rewriter = (Rewriter) o;
         return Objects.equals(name, rewriter.name) &&
-                Objects.equals(params, rewriter.params);
+                Objects.equals(params, rewriter.params) &&
+                Objects.equals(refreshMode, rewriter.refreshMode);
     }
 
     @Override
     public int hashCode() {
 
-        return Objects.hash(name, params);
+        return Objects.hash(name, params, refreshMode);
     }
 
     public String getName() {
@@ -126,6 +146,18 @@ public class Rewriter implements NamedWriteable, ToXContent {
         this.params = params;
     }
 
+    /**
+     * @return The {@code refresh_config} mode that overrides the query's default for this rewriter specifically, or
+     * {@code null} if this rewriter doesn't override the query's default.
+     */
+    public RefreshMode getRefreshMode() {
+        return refreshMode;
+    }
+
+    public void setRefreshMode(final RefreshMode refreshMode) {
+        this.refreshMode = refreshMode;
+    }
+
     public static class RewriterParser implements ContextParser<Void, Rewriter> {
 
         @Override
@@ -135,7 +167,11 @@ public class Rewriter implements NamedWriteable, ToXContent {
             if (token == XContentParser.Token.START_OBJECT) {
 
                 final Map<String, Object> definition = parser.map();
-                return new Rewriter((String) definition.get("name"), (Map<String, Object>) definition.get("params"));
+                final Object refreshConfig = definition.get(FIELD_REFRESH_CONFIG);
+                final RefreshMode refreshMode = refreshConfig == null
+                        ? null : RefreshMode.fromString(refreshConfig.toString());
+                return new Rewriter((String) definition.get("name"), (Map<String, Object>) definition.get("params"),
+                        refreshMode);
 
             } else if (token == XContentParser.Token.VALUE_STRING) {
                 return new Rewriter(parser.text(), null);

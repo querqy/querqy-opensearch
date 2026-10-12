@@ -82,6 +82,51 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
 explicit "reload" action to call. This does not apply to the full `opensearch-querqy` plugin, which still reloads
 immediately after a `PUT` via the REST API.
 
+### Forcing an immediate refresh from a query (`refresh_config`)
+
+The up-to-30-second window above is fine for most use cases, but it can get in the way when someone is interactively
+tuning a rewriter's configuration (e.g. from a relevance-tuning tool) and wants to see the effect of a change on the
+very next query. The `querqy` query accepts an optional `refresh_config` parameter for this:
+
+```json
+{
+  "query": {
+    "querqy": {
+      "matching_query": { "query": "laptop" },
+      "query_fields": ["title", "description"],
+      "rewriters": ["common_rules"],
+      "refresh_config": "check"
+    }
+  }
+}
+```
+
+Three values are supported:
+* **`no`** (default) - today's behavior: use the cached rewriter, refreshing it in the background if it's stale.
+  Never adds latency.
+* **`check`** - block to check whether the stored config has changed (by comparing the document's sequence
+  number/primary term) and only reload it if it has; otherwise reuse the cached rewriter as-is.
+* **`force`** - block and always reload the rewriter from the index, whether it changed or not.
+
+`refresh_config` can also be set per rewriter, overriding the query-level default for just that one, by using the
+object form of a `rewriters` entry instead of a bare string:
+
+```json
+"rewriters": [
+  { "name": "common_rules", "refresh_config": "force" },
+  "other_rewriter"
+]
+```
+
+Here, `common_rules` always reloads while `other_rewriter` falls back to the query-level `refresh_config` (or `no`
+if that's absent too).
+
+**Cost caveat**: `check` and `force` each cost one blocking read against the `.opensearch-querqy` index *per shard*
+of the index being searched, on every query that uses them (`check` only saves the cost of re-parsing the config
+when nothing changed - it still pays the same round trip as `force`). This is fine for a human trying out config
+changes at low query volume, but `check`/`force` should not be used as a blanket default for production search
+traffic - leave `refresh_config` at its default (`no`) there and let the existing async refresh handle it.
+
 ### Example: writing a rewriter config document directly
 
 **The document ID is the rewriter ID.** Whatever ID you index the document under is the ID you later pass to the

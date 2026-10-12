@@ -59,6 +59,7 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
 
     private static final ParseField FIELD_REWRITERS = new ParseField("rewriters");
     private static final ParseField FIELD_INFO_LOGGING = new ParseField("info_logging");
+    private static final ParseField FIELD_REFRESH_CONFIG = new ParseField("refresh_config");
 
     private static final ObjectParser<QuerqyQueryBuilder, Void> PARSER = new ObjectParser<>(NAME,
             QuerqyQueryBuilder::new);
@@ -74,6 +75,7 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
         PARSER.declareObject(QuerqyQueryBuilder::setMatchingQuery, MatchingQuery.PARSER, FIELD_MATCHING_QUERY);
         PARSER.declareObject(QuerqyQueryBuilder::setBoostingQueries, BoostingQueries.PARSER, FIELD_BOOSTING_QUERIES);
         PARSER.declareObject(QuerqyQueryBuilder::setInfoLoggingSpec, InfoLoggingSpec.PARSER, FIELD_INFO_LOGGING);
+        PARSER.declareString((qb, s) -> qb.setRefreshConfig(RefreshMode.fromString(s)), FIELD_REFRESH_CONFIG);
     }
 
 
@@ -92,6 +94,9 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
     private QuerqyProcessor querqyProcessor;
 
     private InfoLoggingSpec infoLoggingSpec;
+
+    /** The query-wide default {@link RefreshMode}; {@code null} (the wire-absent case) means {@link RefreshMode#NO}. */
+    private RefreshMode refreshConfig;
 
     public QuerqyQueryBuilder() {
         super();
@@ -126,6 +131,9 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
             rewriters.add(new Rewriter(in));
         }
         infoLoggingSpec = in.readOptionalWriteable(InfoLoggingSpec::new);
+
+        final String strRefreshConfig = in.readOptionalString();
+        refreshConfig = strRefreshConfig == null ? null : RefreshMode.valueOf(strRefreshConfig);
     }
 
     @Override
@@ -143,6 +151,7 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
             rewriter.writeTo(out);
         }
         out.writeOptionalWriteable(infoLoggingSpec);
+        out.writeOptionalString(refreshConfig == null ? null : refreshConfig.name());
     }
 
     @Override
@@ -188,6 +197,10 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
 
         if (infoLoggingSpec != null) {
             builder.field(FIELD_INFO_LOGGING.getPreferredName(), infoLoggingSpec);
+        }
+
+        if (refreshConfig != null) {
+            builder.field(FIELD_REFRESH_CONFIG.getPreferredName(), refreshConfig.name());
         }
 
         builder.endObject();
@@ -244,13 +257,14 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
                 && Objects.equals(this.fieldBoostModel, other.fieldBoostModel)
                 && Objects.equals(this.boostingQueries, other.boostingQueries)
                 && Objects.equals(this.infoLoggingSpec, other.infoLoggingSpec)
+                && Objects.equals(this.refreshConfig, other.refreshConfig)
                 ;
     }
 
     @Override
     protected int doHashCode() {
         return Objects.hash(matchingQuery, queryFields, generated, minimumShouldMatch,
-                rewriters, tieBreaker, fieldBoostModel, boostingQueries, infoLoggingSpec);
+                rewriters, tieBreaker, fieldBoostModel, boostingQueries, infoLoggingSpec, refreshConfig);
     }
 
     /**
@@ -348,5 +362,29 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
 
     public void setInfoLoggingSpec(final InfoLoggingSpec infoLoggingSpec) {
         this.infoLoggingSpec = infoLoggingSpec;
+    }
+
+    /**
+     * @return The query-wide default {@link RefreshMode}, or {@code null} if the query didn't set one (treat as
+     * {@link RefreshMode#NO}). A rewriter entry's own {@link Rewriter#getRefreshMode()}, when present, overrides
+     * this for that rewriter specifically.
+     */
+    public RefreshMode getRefreshConfig() {
+        return refreshConfig;
+    }
+
+    public void setRefreshConfig(final RefreshMode refreshConfig) {
+        this.refreshConfig = refreshConfig;
+    }
+
+    /**
+     * @return The effective {@link RefreshMode} for the given rewriter: its own override if set, otherwise the
+     * query's default ({@link #getRefreshConfig()}), otherwise {@link RefreshMode#NO}.
+     */
+    public RefreshMode effectiveRefreshMode(final Rewriter rewriter) {
+        if (rewriter.getRefreshMode() != null) {
+            return rewriter.getRefreshMode();
+        }
+        return refreshConfig != null ? refreshConfig : RefreshMode.NO;
     }
 }

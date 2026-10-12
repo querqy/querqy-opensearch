@@ -49,7 +49,7 @@ public class RewriterShardContexts implements IndexEventListener {
         shardContexts = new ConcurrentHashMap<>();
     }
 
-    public RewriteChainAndLogging getRewriteChain(final List<String> rewriterIds,
+    public RewriteChainAndLogging getRewriteChain(final List<RewriterRef> rewriterRefs,
                                                   final QueryShardContext context) {
 
         final ShardId shardId = new ShardId(context.getFullyQualifiedIndex(), context.getShardId());
@@ -59,7 +59,7 @@ public class RewriterShardContexts implements IndexEventListener {
             shardContext = loadShardContext(shardId, context);
         }
 
-        return shardContext.getRewriteChain(rewriterIds);
+        return shardContext.getRewriteChain(rewriterRefs);
     }
 
     protected synchronized RewriterShardContext loadShardContext(final ShardId shardId,

@@ -32,6 +32,7 @@ import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.index.IndexService;
 import org.opensearch.indices.InvalidTypeNameException;
 import org.opensearch.transport.client.Client;
+import querqy.opensearch.query.RefreshMode;
 import querqy.opensearch.rewriterstore.LoadRewriterConfig;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 import querqy.rewrite.RewriteChain;
@@ -99,18 +100,42 @@ public class RewriterShardContext {
         LOGGER.info("Context loaded for shard {} {}", shardId, shardId.getIndex());
     }
 
-    public RewriteChainAndLogging getRewriteChain(final List<String> rewriterIds) {
-        final List<RewriterFactory> rewriterFactories = new ArrayList<>(rewriterIds.size());
+    /**
+     * @param rewriterRefs The rewriters to look up, each with the {@link RefreshMode} that applies to it for this
+     *                     one query (see {@code QuerqyQueryBuilder#effectiveRefreshMode}). A rewriter not yet cached
+     *                     on this shard is always loaded synchronously regardless of its mode, since there's nothing
+     *                     to compare against or avoid - the mode only matters once something is already cached:
+     *                     {@link RefreshMode#NO} behaves exactly as before (serve the cached value, refresh it
+     *                     asynchronously in the background if stale); {@link RefreshMode#CHECK} and
+     *                     {@link RefreshMode#FORCE} both block this call on one round trip to the index, the former
+     *                     skipping the rebuild if nothing actually changed.
+     */
+    public RewriteChainAndLogging getRewriteChain(final List<RewriterRef> rewriterRefs) {
+        final List<RewriterFactory> rewriterFactories = new ArrayList<>(rewriterRefs.size());
         final Set<String> loggingEnabledRewriters = new HashSet<>();
 
-        for (final String id : rewriterIds) {
+        for (final RewriterRef ref : rewriterRefs) {
 
+            final String id = ref.getRewriterId();
             RewriterFactoryAndLogging factoryAndLogging = factories.get(id);
+
             if (factoryAndLogging == null) {
                 factoryAndLogging = loadFactory(id, false);
             } else {
-                maybeRefreshAsync(id, factoryAndLogging);
+                switch (ref.getRefreshMode()) {
+                    case FORCE:
+                        factoryAndLogging = loadFactory(id, true);
+                        break;
+                    case CHECK:
+                        factoryAndLogging = checkAndReloadIfChanged(id, factoryAndLogging);
+                        break;
+                    case NO:
+                    default:
+                        maybeRefreshAsync(id, factoryAndLogging);
+                        break;
+                }
             }
+
             rewriterFactories.add(factoryAndLogging.rewriterFactory);
             if (factoryAndLogging.loggingEnabled) {
                 loggingEnabledRewriters.add(id);
@@ -181,6 +206,37 @@ public class RewriterShardContext {
         });
     }
 
+    /**
+     * Implements {@link RefreshMode#CHECK}: blocks on one round trip to the index (same cost as
+     * {@link RefreshMode#FORCE}/{@link #loadFactory(String, boolean)} with {@code forceLoad=true}), but only rebuilds
+     * the rewriter if its document's sequence number/primary term actually changed since it was last loaded - cheaper
+     * than {@code FORCE} when nothing changed, at the same network cost. If the document has been deleted, evicts the
+     * cache entry and throws {@link ResourceNotFoundException}, consistent with the async-refresh path.
+     */
+    private RewriterFactoryAndLogging checkAndReloadIfChanged(final String rewriterId,
+                                                               final RewriterFactoryAndLogging current) {
+
+        final GetResponse response;
+        try {
+            response = client.prepareGet(QUERQY_INDEX_NAME, rewriterId).execute().get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new OpenSearchException("Could not check rewriter " + rewriterId, e);
+        }
+
+        if (!response.isExists()) {
+            factories.invalidate(rewriterId);
+            throw new ResourceNotFoundException("Rewriter not found: " + rewriterId);
+        }
+
+        if (response.getSeqNo() == current.seqNo && response.getPrimaryTerm() == current.primaryTerm) {
+            return current; // unchanged - skip rebuilding the rewriter
+        }
+
+        final RewriterFactoryAndLogging fresh = buildFactoryAndLogging(rewriterId, response);
+        factories.put(rewriterId, fresh);
+        return fresh;
+    }
+
     public synchronized RewriterFactoryAndLogging loadFactory(final String rewriterId, final boolean forceLoad) {
 
         RewriterFactoryAndLogging factoryAndLogging = factories.get(rewriterId);
@@ -236,7 +292,7 @@ public class RewriterShardContext {
         final RewriterFactory factory = OpenSearchRewriterFactory.loadConfiguredInstance(loadConfig)
                 .createRewriterFactory(indexService.getShard(shardId.id()));
 
-        return new RewriterFactoryAndLogging(factory, loggingEnabled);
+        return new RewriterFactoryAndLogging(factory, loggingEnabled, response.getSeqNo(), response.getPrimaryTerm());
     }
 
 
@@ -244,11 +300,18 @@ public class RewriterShardContext {
         public final RewriterFactory rewriterFactory;
         public final boolean loggingEnabled;
         final long loadedAtNanos;
+        /** The stored document's sequence number/primary term at load time - used by {@link RefreshMode#CHECK} to
+         * tell whether the document has changed since, without re-parsing the rewriter when it hasn't. */
+        final long seqNo;
+        final long primaryTerm;
 
-        public RewriterFactoryAndLogging(final RewriterFactory rewriterFactory, final boolean loggingEnabled) {
+        public RewriterFactoryAndLogging(final RewriterFactory rewriterFactory, final boolean loggingEnabled,
+                                         final long seqNo, final long primaryTerm) {
             this.rewriterFactory = rewriterFactory;
             this.loggingEnabled = loggingEnabled;
             this.loadedAtNanos = System.nanoTime();
+            this.seqNo = seqNo;
+            this.primaryTerm = primaryTerm;
         }
     }
 }

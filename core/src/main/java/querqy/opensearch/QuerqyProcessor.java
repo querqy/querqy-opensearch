@@ -66,8 +66,12 @@ public class QuerqyProcessor {
 
         } else {
 
+            final List<RewriterRef> rewriterRefs = rewriters.stream()
+                    .map(rewriter -> new RewriterRef(rewriter.getName(), queryBuilder.effectiveRefreshMode(rewriter)))
+                    .collect(Collectors.toList());
+
             final RewriteChainAndLogging rewriteChainAndLogging = rewriterShardContexts.getRewriteChain(
-                    rewriters.stream().map(Rewriter::getName).collect(Collectors.toList()), context);
+                    rewriterRefs, context);
 
             rewriteChain = rewriteChainAndLogging.rewriteChain;
             final InfoLoggingSpec infoLoggingSpec = queryBuilder.getInfoLoggingSpec();
