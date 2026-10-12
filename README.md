@@ -60,7 +60,9 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   ```
 
   `--config-file` holds the same JSON shape as the REST API's PUT body (`class`, `config`, optionally
-  `info_logging`/`revision`).
+  `info_logging`/`revision`). The tool is deliberately lightweight (it depends on `opensearch-core`/`opensearch-x-content`
+  rather than the full OpenSearch server jar) since all it needs is the REST client and enough of `core` to validate a
+  config and build the document to write.
 * **A raw document write**, e.g. `PUT .opensearch-querqy/_doc/common_rules` with a hand-built document - the index
   mapping validates the configuration at write time and rejects an invalid one, but building the document body
   correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand. See the full worked

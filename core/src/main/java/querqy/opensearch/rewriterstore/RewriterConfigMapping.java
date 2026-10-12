@@ -21,8 +21,6 @@ package querqy.opensearch.rewriterstore;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.OpenSearchException;
 import org.opensearch.core.common.ParsingException;
-import org.opensearch.core.common.bytes.BytesArray;
-import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
@@ -317,7 +315,7 @@ public abstract class RewriterConfigMapping {
 
         final XContentParser parser;
         try {
-            parser = XContentHelper.createParser(null, null, new BytesArray(configStr), XContentType.JSON);
+            parser = XContentType.JSON.xContent().createParser(null, null, configStr.getBytes(StandardCharsets.UTF_8));
         } catch (final IOException e) {
             throw new OpenSearchException(e);
         }
@@ -459,7 +457,8 @@ public abstract class RewriterConfigMapping {
         }
         final XContentParser parser;
         try {
-            parser = XContentHelper.createParser(null, null, new BytesArray(combinedJson), XContentType.JSON);
+            parser = XContentType.JSON.xContent().createParser(null, null,
+                    combinedJson.getBytes(StandardCharsets.UTF_8));
             return parser.map();
         } catch (final IOException e) {
             throw new OpenSearchException(e);
