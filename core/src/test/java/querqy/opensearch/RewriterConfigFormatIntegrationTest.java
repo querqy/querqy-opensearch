@@ -21,6 +21,7 @@ package querqy.opensearch;
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
 
 import org.junit.After;
+import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.search.SearchRequestBuilder;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.support.WriteRequest;
@@ -197,6 +198,41 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
     }
 
     /**
+     * A rewriter deleted directly from the index (no ActionPlugin, so no explicit delete+cache-clear action) must
+     * eventually stop being served from a shard's cache - the async refresh must evict it on noticing it's gone,
+     * rather than treating "document no longer exists" the same as a transient refresh failure and serving the
+     * deleted rewriter's stale factory forever.
+     */
+    public void testThatDeletedRewriterIsEvictedAfterAsyncRefresh() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+
+        writeCommonRulesRewriter("deleted_rewriter", "k =>\nSYNONYM: c");
+        assertHitCount("deleted_rewriter", 2L); // cold-cache load, caches the factory
+
+        client().prepareDelete(QUERQY_INDEX_NAME, "deleted_rewriter")
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+
+        Thread.sleep(600); // past the refresh window configured in nodeSettings()
+
+        // each poll both checks and (while still cached-stale) re-triggers the background refresh; once that
+        // refresh notices the document is gone, the entry is evicted and the next query must fail loudly instead
+        // of continuing to serve the deleted rewriter forever
+        assertBusy(() -> {
+            final Exception e = expectThrows(Exception.class, () -> searchUsingRewriter("deleted_rewriter"));
+            Throwable cause = e;
+            while (cause.getCause() != null && !(cause instanceof ResourceNotFoundException)) {
+                cause = cause.getCause();
+            }
+            assertTrue("Expected a ResourceNotFoundException in the cause chain but got: " + e,
+                    cause instanceof ResourceNotFoundException);
+            assertEquals("Rewriter not found: deleted_rewriter", cause.getMessage());
+        });
+    }
+
+    /**
      * The config_v_005 field type never creates a Lucene field (it's validated at write time, otherwise
      * {@code _source}-only), so unlike the old config_v_003 keyword field, it has no 32766-byte term-length limit to
      * respect - {@code RewriterConfigMapping.toLuceneSource} stores even a large combined class+config JSON as a
@@ -283,6 +319,11 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
     }
 
     private void assertHitCount(final String rewriterId, final long expectedHits) throws Exception {
+        final SearchResponse response = searchUsingRewriter(rewriterId);
+        assertEquals(expectedHits, response.getHits().getTotalHits().value());
+    }
+
+    private SearchResponse searchUsingRewriter(final String rewriterId) throws Exception {
 
         final QuerqyQueryBuilder querqyQuery = new QuerqyQueryBuilder(getInstanceFromNode(QuerqyProcessor.class));
         querqyQuery.setRewriters(Collections.singletonList(new Rewriter(rewriterId)));
@@ -293,8 +334,7 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
         final SearchRequestBuilder searchRequestBuilder = client().prepareSearch(INDEX_NAME);
         searchRequestBuilder.setQuery(querqyQuery);
 
-        final SearchResponse response = client().search(searchRequestBuilder.request()).get();
-        assertEquals(expectedHits, response.getHits().getTotalHits().value());
+        return client().search(searchRequestBuilder.request()).get();
     }
 
     private void assertRewritesKToC(final String rewriterId) throws Exception {

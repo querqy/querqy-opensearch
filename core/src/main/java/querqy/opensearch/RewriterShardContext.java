@@ -138,8 +138,11 @@ public class RewriterShardContext {
     /**
      * If {@code current} is older than {@link #CACHE_REFRESH_AFTER_WRITE} and no refresh of this rewriter is already
      * in flight, kicks off a non-blocking reload from the index. The cached value keeps being served as-is while the
-     * refresh is in flight; on success the cache is updated, on failure the previous version is kept and the failure
-     * is logged - the calling search thread is never blocked by this.
+     * refresh is in flight. On success the cache is updated; if the rewriter document has been deleted, the cache
+     * entry is evicted instead (so the next lookup fails clearly with "not found", as it would for an id that was
+     * never cached, rather than going on serving a deleted rewriter forever); on any other failure (e.g. a transient
+     * connectivity problem, or a replacement document that fails to parse/validate) the previous version is kept and
+     * the failure is logged. The calling search thread is never blocked by any of this.
      */
     private void maybeRefreshAsync(final String rewriterId, final RewriterFactoryAndLogging current) {
 
@@ -157,7 +160,12 @@ public class RewriterShardContext {
             @Override
             public void onResponse(final GetResponse response) {
                 try {
-                    factories.put(rewriterId, buildFactoryAndLogging(rewriterId, response));
+                    if (response.isExists()) {
+                        factories.put(rewriterId, buildFactoryAndLogging(rewriterId, response));
+                    } else {
+                        LOGGER.info("Rewriter {} no longer exists in the index, evicting from cache", rewriterId);
+                        factories.invalidate(rewriterId);
+                    }
                 } catch (final Exception e) {
                     LOGGER.error("Could not refresh rewriter " + rewriterId + ", keeping previous version", e);
                 } finally {
