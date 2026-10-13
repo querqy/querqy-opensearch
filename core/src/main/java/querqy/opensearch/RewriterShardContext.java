@@ -105,7 +105,8 @@ public class RewriterShardContext {
         this.asyncRefreshEnabled = asyncRefreshEnabled;
         factories = Caches.buildCache(CACHE_EXPIRE_AFTER_WRITE.get(settings), CACHE_EXPIRE_AFTER_READ.get(settings));
         refreshAfterWriteNanos = CACHE_REFRESH_AFTER_WRITE.get(settings).nanos();
-        LOGGER.info("Context loaded for shard {} {}", shardId, shardId.getIndex());
+        LOGGER.info("Context loaded for shard {} {}. Async refresh enabled: {}", shardId, shardId.getIndex(),
+                asyncRefreshEnabled);
     }
 
     /**
