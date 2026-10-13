@@ -44,9 +44,24 @@ public class RewriterShardContexts implements IndexEventListener {
     private IndicesService indicesService;
     private Settings settings;
 
+    private volatile boolean asyncRefreshEnabled = true;
+
     public RewriterShardContexts(final Settings settings) {
         this.settings = settings;
         shardContexts = new ConcurrentHashMap<>();
+    }
+
+    /**
+     * Turns off the async refresh-after-write check (see {@link RewriterShardContext#CACHE_REFRESH_AFTER_WRITE})
+     * on every shard context this node creates from now on. Async refresh exists only to pick up changes when
+     * there is no push-based reload (e.g. a core-only install on Amazon OpenSearch Service); called once by
+     * {@code QuerqyPlugin} (the full, {@code ActionPlugin} install), where push-based reload already keeps every
+     * node's cache fresh immediately after every write, making the background check redundant - and, since it
+     * writes to the same cache with no version check, a source of an unguarded race against the push-based
+     * reload path.
+     */
+    public void disableAsyncRefresh() {
+        asyncRefreshEnabled = false;
     }
 
     public RewriteChainAndLogging getRewriteChain(final List<RewriterRef> rewriterRefs,
@@ -68,7 +83,7 @@ public class RewriterShardContexts implements IndexEventListener {
 
         if (shardContext == null) {
             shardContext = new RewriterShardContext(shardId, indicesService.indexService(shardId.getIndex()),  settings,
-                    context.getClient());
+                    context.getClient(), asyncRefreshEnabled);
             shardContexts.put(shardId, shardContext);
         }
 

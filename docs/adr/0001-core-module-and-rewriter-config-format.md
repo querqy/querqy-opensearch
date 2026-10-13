@@ -67,7 +67,19 @@ phase implemented on the `issue179` branch.
    reload (`ActionPlugin`-only), `RewriterShardContext`'s per-shard cache gains a
    `refresh_after_write` setting (default 30s): a stale cache entry is still served
    immediately, with a non-blocking background refresh kicked off via the async `Client` API.
-   Only the very first (cold-cache) load for a given rewriter id still blocks, as today.
+   Only the very first (cold-cache) load for a given rewriter id still blocks, as today. This
+   scoping to "installs without push-based reload" is enforced in code, not just stated here:
+   `QuerqyPlugin` (the full, `ActionPlugin` install) calls
+   `RewriterShardContexts#disableAsyncRefresh()` on construction, since on that install
+   push-based reload already keeps every node's cache fresh immediately after every write,
+   making the background check redundant — and, since both write to the same cache with no
+   version check between them, a source of an unguarded race (a delayed background refresh
+   reading a pre-write version of a document could otherwise overwrite a cache entry a
+   concurrent push-based reload had just installed). The one accepted tradeoff: a node that
+   misses a push notification no longer has a passive fallback back to a fresh cache for that
+   rewriter — it needs another write event for it, a restart, or an explicit `refresh_config:
+   check`/`force` query (unaffected by this, since it's a separate, caller-opted-in synchronous
+   path) to recover.
 
 ## Consequences
 

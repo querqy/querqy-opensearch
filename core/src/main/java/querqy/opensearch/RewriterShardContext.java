@@ -72,6 +72,12 @@ public class RewriterShardContext {
      * what lets an install without push-based reload (no {@code ActionPlugin}, e.g. on AWS OpenSearch Service) pick
      * up a config written directly to the index without needing a node restart, without ever blocking a search
      * request past the very first (cold-cache) load of a given rewriter. Default 30s.
+     * <p>
+     * This setting (and the async-refresh mechanism entirely) has no effect on the full plugin ({@code
+     * ActionPlugin} install): {@code QuerqyPlugin} disables it via {@link RewriterShardContexts#disableAsyncRefresh()}
+     * since push-based reload already keeps every node's cache fresh immediately after every write there, making
+     * the background check redundant - and, since it writes to the same cache with no version check, a source of
+     * an unguarded race against the push-based reload path.
      */
     public static final Setting<TimeValue> CACHE_REFRESH_AFTER_WRITE = Setting.timeSetting(
             "querqy.caches.rewriter.refresh_after_write",
@@ -86,15 +92,17 @@ public class RewriterShardContext {
     final IndexService indexService;
     final ShardId shardId;
     final long refreshAfterWriteNanos;
+    final boolean asyncRefreshEnabled;
 
     /** Rewriter ids currently being refreshed in the background, to avoid firing duplicate concurrent refreshes. */
     private final Set<String> refreshing = ConcurrentHashMap.newKeySet();
 
     public RewriterShardContext(final ShardId shardId, final IndexService indexService, final Settings settings,
-                                final Client client) {
+                                final Client client, final boolean asyncRefreshEnabled) {
         this.indexService = indexService;
         this.shardId = shardId;
         this.client = client;
+        this.asyncRefreshEnabled = asyncRefreshEnabled;
         factories = Caches.buildCache(CACHE_EXPIRE_AFTER_WRITE.get(settings), CACHE_EXPIRE_AFTER_READ.get(settings));
         refreshAfterWriteNanos = CACHE_REFRESH_AFTER_WRITE.get(settings).nanos();
         LOGGER.info("Context loaded for shard {} {}", shardId, shardId.getIndex());
@@ -106,9 +114,10 @@ public class RewriterShardContext {
      *                     on this shard is always loaded synchronously regardless of its mode, since there's nothing
      *                     to compare against or avoid - the mode only matters once something is already cached:
      *                     {@link RefreshMode#NO} behaves exactly as before (serve the cached value, refresh it
-     *                     asynchronously in the background if stale); {@link RefreshMode#CHECK} and
-     *                     {@link RefreshMode#FORCE} both block this call on one round trip to the index, the former
-     *                     skipping the rebuild if nothing actually changed.
+     *                     asynchronously in the background if stale and {@code asyncRefreshEnabled}); {@link
+     *                     RefreshMode#CHECK} and {@link RefreshMode#FORCE} both block this call on one round trip to
+     *                     the index, the former skipping the rebuild if nothing actually changed, regardless of
+     *                     {@code asyncRefreshEnabled}.
      */
     public RewriteChainAndLogging getRewriteChain(final List<RewriterRef> rewriterRefs) {
         final List<RewriterFactory> rewriterFactories = new ArrayList<>(rewriterRefs.size());
@@ -131,7 +140,9 @@ public class RewriterShardContext {
                         break;
                     case NO:
                     default:
-                        maybeRefreshAsync(id, factoryAndLogging);
+                        if (asyncRefreshEnabled) {
+                            maybeRefreshAsync(id, factoryAndLogging);
+                        }
                         break;
                 }
             }

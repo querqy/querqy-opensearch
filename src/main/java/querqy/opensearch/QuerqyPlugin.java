@@ -60,6 +60,10 @@ public class QuerqyPlugin extends QuerqyCorePlugin implements ActionPlugin {
 
     public QuerqyPlugin(final Settings settings) {
         super(settings);
+        // push-based reload (below) already keeps every node's cache fresh immediately after every write, making
+        // core's async refresh-after-write check redundant here - and, since both write to the same cache with no
+        // version check between them, a source of an unguarded race between the two paths.
+        rewriterShardContexts.disableAsyncRefresh();
     }
 
     @Override
