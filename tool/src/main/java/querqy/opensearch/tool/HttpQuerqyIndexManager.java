@@ -66,7 +66,8 @@ final class HttpQuerqyIndexManager {
     }
 
     private void createIndex(final int numReplicas) throws IOException {
-        final String body = "{\"settings\":{\"number_of_replicas\":" + numReplicas + "},\"mappings\":"
+        final String body = "{\"settings\":{\"number_of_shards\":" + Constants.QUERQY_INDEX_NUM_SHARDS
+                + ",\"number_of_replicas\":" + numReplicas + "},\"mappings\":"
                 + QuerqyIndexManager.readMappingResource() + "}";
         final Request request = new Request("PUT", INDEX_PATH);
         request.setJsonEntity(body);

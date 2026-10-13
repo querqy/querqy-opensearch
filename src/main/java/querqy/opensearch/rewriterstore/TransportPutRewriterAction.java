@@ -21,6 +21,7 @@ package querqy.opensearch.rewriterstore;
 import static org.opensearch.core.action.ActionListener.wrap;
 import static querqy.opensearch.rewriterstore.Constants.DEFAULT_QUERQY_INDEX_NUM_REPLICAS;
 import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NUM_SHARDS;
 import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
 import static querqy.opensearch.rewriterstore.PutRewriterAction.NAME;
 
@@ -178,7 +179,9 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
         final CreateIndexRequestBuilder createIndexRequestBuilder = indicesClient.prepareCreate(QUERQY_INDEX_NAME);
         final int numReplicas = settings.getAsInt(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, DEFAULT_QUERQY_INDEX_NUM_REPLICAS);
         return  createIndexRequestBuilder.setMapping(QuerqyIndexManager.readMappingResource())
-                .setSettings(Settings.builder().put("number_of_replicas", numReplicas))
+                .setSettings(Settings.builder()
+                        .put("number_of_shards", QUERQY_INDEX_NUM_SHARDS)
+                        .put("number_of_replicas", numReplicas))
                 .request();
     }
 

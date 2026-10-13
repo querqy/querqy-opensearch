@@ -136,14 +136,22 @@ API examples elsewhere in this README). There is no separate "name" field.
 index doesn't exist yet, OpenSearch creates it automatically on the first write - but with a *dynamically guessed*
 mapping (`config_v_005` would become a plain `text`/`keyword` field), not the mapping that enables write-time
 validation. An invalid configuration would then be silently accepted instead of rejected. The CLI tool creates the
-index with the correct mapping automatically; to create it by hand instead, `PUT` the mapping bundled in the `core`
-module (`core/src/main/resources/querqy-mapping.json`) onto the index first. The file holds only the mapping
-(`{"properties": ...}`), while the create-index API expects it under a `mappings` key, so wrap it (here with
-[jq](https://jqlang.github.io/jq/)) rather than sending the file as is - the create request would otherwise fail with
-`unknown key [properties] for create index`:
+index with the correct mapping (and the settings below) automatically; to create it by hand instead, `PUT` both the
+mapping bundled in the `core` module (`core/src/main/resources/querqy-mapping.json`) *and* explicit settings onto the
+index first. The file holds only the mapping (`{"properties": ...}`), while the create-index API expects it under a
+`mappings` key alongside a `settings` key, so wrap it (here with [jq](https://jqlang.github.io/jq/)) rather than
+sending the file as is - the create request would otherwise fail with `unknown key [properties] for create index`.
+
+Always set `number_of_shards` explicitly rather than relying on the cluster's default: `.opensearch-querqy` holds at
+most a few hundred small documents, and a `GET`/`PUT` by rewriter ID always routes to exactly one shard regardless of
+count, so more than one shard buys nothing here - only allocation overhead. This especially matters on managed
+offerings like Amazon OpenSearch Service, whose default differs from self-managed OpenSearch's default of 1. Also set
+`number_of_replicas` to at least 1 so the index is replicated and survives the loss of a single node (assuming your
+cluster has 2 or more nodes - OpenSearch never places a primary and its replica on the same node):
 
 ```shell
-jq '{mappings: .}' core/src/main/resources/querqy-mapping.json | \
+jq '{settings: {number_of_shards: 1, number_of_replicas: 1}, mappings: .}' \
+    core/src/main/resources/querqy-mapping.json | \
 curl -X PUT "https://<host>:9200/.opensearch-querqy" \
     -H "Content-Type: application/json" \
     -u admin:'<password>' \
