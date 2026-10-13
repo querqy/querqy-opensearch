@@ -102,8 +102,7 @@ very next query. The `querqy` query accepts an optional `refresh_config` paramet
 ```
 
 Three values are supported:
-* **`no`** (default) - today's behavior: use the cached rewriter, refreshing it in the background if it's stale.
-  Never adds latency.
+* **`no`** (default) - use the cached rewriter, refreshing it in the background if it's stale. Never adds latency.
 * **`check`** - block to check whether the stored config has changed (by comparing the document's sequence
   number/primary term) and only reload it if it has; otherwise reuse the cached rewriter as-is.
 * **`force`** - block and always reload the rewriter from the index, whether it changed or not.
