@@ -15,7 +15,7 @@ depends entirely on `ActionPlugin` for its rewriter-management REST API
 (`PUT/GET/DELETE /_plugins/_querqy/rewriter/{id}`) and for cluster-wide push-based reload
 after a write, so it cannot be installed on AWS OpenSearch Service as-is.
 
-AWS also only ever hosts odd minor OpenSearch versions (3.7, 3.9, ...) for custom plugins,
+AWS also only ever hosts odd minor OpenSearch versions (3.5, 3.7, 3.9, ...) for custom plugins,
 so AWS-targeted work branches from the latest odd-minor release tag
 (`opensearch-querqy-1.2.os3.7.0`) rather than `main` (currently on 3.8); it will be merged
 forward into `main` separately.
