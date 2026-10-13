@@ -20,6 +20,8 @@ apply plugin: 'java'
 apply plugin: 'jacoco'
 apply plugin: 'idea'
 apply plugin: 'opensearch.opensearchplugin'
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
 
 base {
     archivesName = 'querqy-opensearch-core'
@@ -91,4 +93,92 @@ loggerUsageCheck.enabled = false
 
 tasks.withType(Javadoc).configureEach {
     options.addStringOption('Xdoclint:-missing', '-quiet')
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifact(tasks.named("bundlePlugin")) {
+                builtBy(tasks.named("bundlePlugin"))
+            }
+
+            groupId = 'org.querqy'
+            artifactId = 'querqy-opensearch-core'
+            version = "$version"
+
+            from components.java
+
+            versionMapping {
+                usage('java-api') {
+                    fromResolutionOf('runtimeClasspath')
+                }
+                usage('java-runtime') {
+                    fromResolutionResult()
+                }
+            }
+
+            pom {
+                name = 'Querqy Opensearch Core'
+                description = 'Core module of the Querqy OpenSearch plugin - the querqy query, the rewriters, and ' +
+                        'index-based rewriter config management, but no ActionPlugin REST/transport API. ' +
+                        'Installable where ActionPlugin is unsupported, e.g. Amazon OpenSearch Service.'
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'jope'
+                        name = 'Johannes Peter'
+                        email = 'johannesdaniel.peter@gmx.de'
+                        url = 'https://github.com/querqy/querqy-opensearch'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'sonatype'
+            url = 'https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/'
+            credentials(PasswordCredentials)
+        }
+    }
+}
+
+signing {
+    def signingKey = findProperty("signingKey")
+    def signingPassword = findProperty("signingPassword")
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign publishing.publications.mavenJava
+}
+
+tasks.named("signMavenJavaPublication") {
+    dependsOn(tasks.named("bundlePlugin"))
+}
+
+// opensearch.opensearchplugin (via its bundled org.opensearch.gradle.PublishPlugin, applied unconditionally as
+// part of opensearch.opensearchplugin - there is no way to opt out) always creates its own extra "nebula"
+// MavenPublication here too (coordinates org.opensearch:opensearch-querqy, derived from this project's raw Gradle
+// group and opensearchplugin{}'s `name`) alongside our own "mavenJava" one below - its own publish tasks are
+// already disabled above, but the publication object itself still exists. That makes root's own generated POM
+// fail entirely when resolving its dependency on :core ("Publishing is not able to resolve a dependency on a
+// project with multiple publications that have different coordinates") - Gradle's cross-project publication
+// resolver indexes publications as they're added and does not un-index one that's later removed from the
+// container, so removing "nebula" here does not fix that resolver's view (confirmed empirically) - but mutating
+// an existing publication's own properties does get picked up correctly. So instead of removing "nebula", force
+// its coordinates to be identical to "mavenJava"'s: Gradle only objects to DIFFERENT coordinates, not to two
+// publications sharing the same one.
+//
+// This must happen only once every project in the whole build has fully finished configuring itself (including
+// its own afterEvaluate callbacks) - root's own cross-project dependency resolution (used to generate its POM's
+// <dependency> entry on :core) reads :core's publications before this project's own afterEvaluate chain
+// completes, so a plain `afterEvaluate` here is too early; `gradle.projectsEvaluated` is not.
+gradle.projectsEvaluated {
+    publishing.publications.mavenJava.artifactId = 'querqy-opensearch-core'
+    publishing.publications.nebula.groupId = 'org.querqy'
+    publishing.publications.nebula.artifactId = 'querqy-opensearch-core'
 }
