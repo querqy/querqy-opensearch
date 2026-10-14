@@ -50,7 +50,7 @@ dependencies {
     // (<10 KB) separate artifact - it's not part of opensearch-core/opensearch-x-content.
     implementation "org.opensearch:opensearch-secure-sm:${rootProject.ext.opensearch_version}"
     implementation "org.opensearch.client:opensearch-rest-client:${rootProject.ext.opensearch_version}"
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.1'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
     testImplementation('junit:junit:4.13.2')
     testImplementation('org.mockito:mockito-core:5.23.0')
     testImplementation('org.assertj:assertj-core:3.27.7')
