@@ -31,9 +31,11 @@ import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.index.query.QueryShardContext;
+import querqy.json.JsonProvider;
 import querqy.lucene.rewrite.infologging.InfoLogging;
 import querqy.lucene.rewrite.infologging.InfoLoggingContext;
 import querqy.opensearch.infologging.OpenSearchInfoLoggingContext;
+import querqy.opensearch.json.XContentJsonProvider;
 import querqy.opensearch.infologging.InfoLoggingSpecProvider;
 import querqy.opensearch.query.BoostingQueries;
 import querqy.opensearch.query.Generated;
@@ -548,6 +550,11 @@ public class DismaxSearchEngineRequestAdapter implements LuceneSearchEngineReque
     @Override
     public Optional<InfoLoggingContext> getInfoLoggingContext() {
         return Optional.ofNullable(infoLoggingContext);
+    }
+
+    @Override
+    public JsonProvider getJsonProvider() {
+        return XContentJsonProvider.INSTANCE;
     }
 
     /**

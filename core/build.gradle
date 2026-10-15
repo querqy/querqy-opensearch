@@ -27,6 +27,12 @@ base {
     archivesName = 'querqy-opensearch-core'
 }
 
+// Needed to resolve the locally mvn-installed org.querqy:querqy-core/querqy-lucene SNAPSHOT jars; additive -
+// does not replace whatever opensearch.opensearchplugin's convention plugin already configures.
+repositories {
+    mavenLocal()
+}
+
 // The opensearchplugin{} block below intentionally sets the same plugin `name` as the root project (so the two
 // can't be installed side by side, per design) - but the opensearch.opensearchplugin convention plugin ties the
 // `jar` task's archive name to that same `name`, which would make :core's jar collide (same filename) with root's
@@ -47,11 +53,29 @@ opensearchplugin {
 }
 
 dependencies {
-    api('org.querqy:querqy-lucene:5.12.lucene1040.0')
-    api('org.querqy:querqy-core:4.2.0')
-    api('com.fasterxml.jackson.core:jackson-databind:2.22.3')
-    api('com.fasterxml.jackson.core:jackson-annotations:2.22')
+    // querqy-core/querqy-lucene no longer depend on Jackson in production code (querqy.json.JsonProvider SPI) -
+    // this module supplies its own XContent-backed implementation (see querqy.opensearch.json.XContentJsonProvider),
+    // so no Jackson dependency is declared here anymore. This is what actually lets this AWS-installable module
+    // pass AWS OpenSearch Service's plugin-upload CVE scanner, which previously kept flagging the Jackson version
+    // pinned below.
+    api('org.querqy:querqy-lucene:5.13.lucene1050.0-SNAPSHOT')
+    api('org.querqy:querqy-core:4.3.0-SNAPSHOT')
+    // querqy-core's PropertyParser/InstructionsProperties configure json-path with their own
+    // querqy.json.jsonpath.QuerqyJsonPathProvider/QuerqyJsonPathMappingProvider (not json-smart, not
+    // Jackson) for the pluggable JsonProvider/MappingProvider SPI - but json-path 3.0.0 ALSO has a hard,
+    // non-pluggable internal dependency on net.minidev.json.parser.JSONParser: its own filter-expression
+    // grammar (com.jayway.jsonpath.internal.filter.ValueNode, core JsonPath code exercised regardless of
+    // which JsonProvider is configured) uses it directly to recognize array/object literal
+    // tokens inside predicates (e.g. the "in" operator's "[...]" argument, as used in
+    // InstructionsPropertiesTest/CommonRules selection-strategy filters). Confirmed empirically: removing
+    // net.minidev:json-smart/accessors-smart from this classpath makes such a filter throw
+    // NoClassDefFoundError: net/minidev/json/parser/ParseException at runtime. So these stay, even though
+    // our own code never references JsonSmartJsonProvider/JsonSmartMappingProvider directly (those two
+    // specific classes are still stripped from the bundled json-path jar below - that part is safe, since
+    // nothing loads them; only the json-smart/accessors-smart *library* itself is genuinely required).
     implementation('com.jayway.jsonpath:json-path:3.0.0')
+    runtimeOnly('net.minidev:json-smart:2.6.0')
+    runtimeOnly('net.minidev:accessors-smart:2.6.0')
     runtimeOnly('org.slf4j:slf4j-api:2.0.17')
     implementation('org.ow2.asm:asm:9.10.1')
     testImplementation('junit:junit:4.13.2')
@@ -65,6 +89,34 @@ test {
     finalizedBy jacocoTestReport
     include "**/*Test.class"
     systemProperty 'tests.security.manager', 'false'
+}
+
+// AWS OpenSearch Service's plugin-upload scanner appears to scan every bundled class file for Jackson
+// references, not just which jars are present. json-path's own jar ships several alternative, unused
+// JsonProvider/MappingProvider backends (Gson, Jakarta, Jettison, Jackson, json-smart) alongside the one
+// querqy-core actually uses (querqy.json.jsonpath.QuerqyJsonPathProvider/QuerqyJsonPathMappingProvider,
+// which has no third-party JSON library dependency of its own) - the unused ones reference Jackson/
+// json-smart classes in their own bytecode even though nothing ever loads them, which a bytecode-level
+// scan could still flag. Repackage json-path into a copy with just those unused classes stripped, and
+// bundle that copy into the plugin zip instead of the stock jar.
+def jsonPathJarFile = { configurations.runtimeClasspath.files.find { it.name.startsWith('json-path-') } }
+
+tasks.register('jsonPathWithoutUnusedProviders', Jar) {
+    archiveBaseName.set('json-path-slim')
+    archiveVersion.set('3.0.0')
+    destinationDirectory.set(layout.buildDirectory.dir('filtered-deps'))
+    from({ zipTree(jsonPathJarFile()) }) {
+        exclude 'com/jayway/jsonpath/spi/json/Jackson*.class'
+        exclude 'com/jayway/jsonpath/spi/mapper/Jackson*.class'
+        exclude 'com/jayway/jsonpath/spi/json/JsonSmartJsonProvider*.class'
+        exclude 'com/jayway/jsonpath/spi/mapper/JsonSmartMappingProvider*.class'
+    }
+}
+
+tasks.named('bundlePlugin') {
+    dependsOn('jsonPathWithoutUnusedProviders')
+    exclude 'json-path-3.0.0.jar'
+    from(tasks.named('jsonPathWithoutUnusedProviders'))
 }
 
 configurations.all {

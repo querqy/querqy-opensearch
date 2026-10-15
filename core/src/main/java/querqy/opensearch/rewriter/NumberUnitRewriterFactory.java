@@ -19,7 +19,9 @@
 package querqy.opensearch.rewriter;
 
 import org.opensearch.index.shard.IndexShard;
+import querqy.json.JsonProvider;
 import querqy.opensearch.OpenSearchRewriterFactory;
+import querqy.opensearch.json.XContentJsonProvider;
 import querqy.opensearch.rewriter.numberunit.NumberUnitQueryCreatorOpenSearch;
 import querqy.rewrite.RewriterFactory;
 
@@ -31,6 +33,8 @@ import java.util.Map;
 public class NumberUnitRewriterFactory extends OpenSearchRewriterFactory {
 
     private static final String KEY_CONFIG_PROPERTY = "config";
+
+    private static final JsonProvider JSON_PROVIDER = XContentJsonProvider.INSTANCE;
 
     private querqy.rewriter.numberunit.NumberUnitRewriterFactory delegate;
 
@@ -49,7 +53,7 @@ public class NumberUnitRewriterFactory extends OpenSearchRewriterFactory {
 
         try {
             this.delegate = new querqy.rewriter.numberunit.NumberUnitRewriterFactory(
-                    rewriterId, (String) numberUnitConfig, NumberUnitQueryCreatorOpenSearch::new);
+                    rewriterId, (String) numberUnitConfig, NumberUnitQueryCreatorOpenSearch::new, JSON_PROVIDER);
         } catch (IOException e) {
             // checked in this::validateConfiguration
         }
@@ -63,7 +67,7 @@ public class NumberUnitRewriterFactory extends OpenSearchRewriterFactory {
             return Collections.singletonList("Property 'config' not or not properly configured");
         }
 
-        return querqy.rewriter.numberunit.NumberUnitRewriterFactory.validateConfiguration((String) numberUnitConfig);
+        return querqy.rewriter.numberunit.NumberUnitRewriterFactory.validateConfiguration((String) numberUnitConfig, JSON_PROVIDER);
     }
 
 }
