@@ -20,8 +20,10 @@ package querqy.opensearch.rewriter;
 
 import org.opensearch.OpenSearchException;
 import org.opensearch.index.shard.IndexShard;
+import querqy.json.JsonProvider;
 import querqy.opensearch.ConfigUtils;
 import querqy.opensearch.OpenSearchRewriterFactory;
+import querqy.opensearch.json.XContentJsonProvider;
 import querqy.rewrite.RewriterFactory;
 import querqy.rewriter.commonrules.QuerqyParserFactory;
 import querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory;
@@ -49,6 +51,8 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
             new ExpressionCriteriaSelectionStrategyFactory();
 
     private static final QuerqyParserFactory DEFAULT_RHS_QUERY_PARSER = new WhiteSpaceQuerqyParserFactory();
+
+    private static final JsonProvider JSON_PROVIDER = XContentJsonProvider.INSTANCE;
 
     static final LookupPreprocessorType DEFAULT_LOOKUP_PREPROCESSOR_TYPE = LookupPreprocessorType.LOWERCASE;
 
@@ -79,7 +83,7 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
             delegate = new querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
                     new StringReader(rules), allowBooleanInput, BoostMethod.ADDITIVE,
                     querqyParser, selectionStrategyFactories,
-                    DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType);
+                    DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType, JSON_PROVIDER);
         } catch (final IOException e) {
             throw new OpenSearchException(e);
         }
@@ -113,7 +117,7 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
             new querqy.rewriter.commonrules.SimpleCommonRulesRewriterFactory(rewriterId,
                     new StringReader(rules), allowBooleanInput, BoostMethod.ADDITIVE,querqyParser,
                     Collections.emptyMap(),
-                    DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType);
+                    DEFAULT_SELECTION_STRATEGY_FACTORY, false, lookupPreprocessorType, JSON_PROVIDER);
         } catch (final IOException e) {
             return Collections.singletonList("Cannot create rewriter: " + e.getMessage());
         }
