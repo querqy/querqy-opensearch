@@ -65,7 +65,7 @@ repositories {
 allprojects {
     group = "org.opensearch"
 
-    version = "1.2.os" + (opensearch_version - "-SNAPSHOT")
+    version = "2.0.os" + (opensearch_version - "-SNAPSHOT")
 
     if (isSnapshot) {
         version += "-SNAPSHOT"
@@ -84,13 +84,7 @@ allprojects {
 }
 
 dependencies {
-    api('org.querqy:querqy-lucene:5.12.lucene1040.0')
-    api("org.querqy:querqy-core:4.2.0")
-    api('com.fasterxml.jackson.core:jackson-databind:2.22.1')
-    api('com.fasterxml.jackson.core:jackson-annotations:2.22')
-    implementation('com.jayway.jsonpath:json-path:3.0.0')
-    runtimeOnly("org.slf4j:slf4j-api:2.0.17")
-    implementation("org.ow2.asm:asm:9.10.1")
+    api project(':core')
     testImplementation('junit:junit:4.13.2')
     testImplementation('org.mockito:mockito-core:5.23.0')
     testImplementation('org.assertj:assertj-core:3.27.7')

@@ -1,0 +1,142 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Copyright 2026 Querqy for OpenSearch Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package querqy.opensearch;
+
+import static org.hamcrest.collection.IsMapContaining.hasEntry;
+import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.junit.After;
+
+import org.opensearch.action.admin.indices.create.CreateIndexRequest;
+import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
+import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest;
+import org.opensearch.cluster.metadata.MappingMetadata;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.index.IndexNotFoundException;
+import org.opensearch.plugins.Plugin;
+import org.opensearch.test.OpenSearchSingleNodeTestCase;
+import org.opensearch.transport.client.IndicesAdminClient;
+import querqy.opensearch.rewriterstore.GetRewriterAction;
+import querqy.opensearch.rewriterstore.GetRewriterRequest;
+import querqy.opensearch.rewriterstore.PutRewriterAction;
+import querqy.opensearch.rewriterstore.PutRewriterRequest;
+import querqy.opensearch.rewriterstore.RewriterInfo;
+
+/**
+ * Verifies that a rewriter index created under mapping version 4 (separate {@code class} and
+ * {@code config_v_003} fields) is migrated to mapping version 5 (combined {@code config_v_005} field,
+ * validated at write time) the next time a rewriter is saved, and that reading the newly-saved (v5) document back
+ * still works correctly.
+ */
+public class QuerqyMappingsUpdate4To5IntegrationTest extends OpenSearchSingleNodeTestCase {
+
+    @Override
+    protected Collection<Class<? extends Plugin>> getPlugins() {
+        return Collections.singleton(QuerqyPlugin.class);
+    }
+
+    @After
+    public void deleteRewriterIndex() {
+        try {
+            client().admin().indices().prepareDelete(QUERQY_INDEX_NAME).get();
+        } catch (final IndexNotFoundException e) {
+            // Ignore
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testUpdate4To5() throws Exception {
+
+        final String v4Mapping = "{\n" +
+                "    \"properties\": {\n" +
+                "      \"class\": {\"type\": \"keyword\"},\n" +
+                "      \"type\": {\"type\": \"keyword\"},\n" +
+                "      \"version\": {\"type\":  \"integer\"},\n" +
+                "      \"revision\": {\"type\": \"keyword\"},\n" +
+                "      \"saved_at\": {\"type\": \"date\"},\n" +
+                "      \"info_logging\": {\n" +
+                "        \"properties\": {\n" +
+                "          \"sinks\": {\"type\" : \"keyword\" }\n" +
+                "        }\n" +
+                "      },\n" +
+                "      \"config\": {\n" +
+                "        \"type\" : \"keyword\",\n" +
+                "        \"index\": false\n" +
+                "      },\n" +
+                "      \"config_v_003\": {\n" +
+                "        \"type\" : \"keyword\",\n" +
+                "        \"doc_values\": false,\n" +
+                "        \"index\": false\n" +
+                "      }\n" +
+                "\n" +
+                "    }\n" +
+                "}";
+
+        final IndicesAdminClient indicesClient = client().admin().indices();
+
+        final CreateIndexRequestBuilder createIndexRequestBuilder = indicesClient.prepareCreate(QUERQY_INDEX_NAME);
+        final CreateIndexRequest createIndexRequest = createIndexRequestBuilder
+                .setMapping(v4Mapping).setSettings(Settings.builder().put("number_of_replicas", 2))
+                .request();
+        indicesClient.create(createIndexRequest).get();
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory.class.getName());
+        content.put("revision", "release-2026-07-29");
+
+        final Map<String, Object> config = new HashMap<>();
+        config.put("rules", "k =>\nSYNONYM: c\n@_log: \"msg1\"");
+        config.put("ignoreCase", true);
+        config.put("querqyParser", querqy.rewriter.commonrules.WhiteSpaceQuerqyParserFactory.class.getName());
+        content.put("config", config);
+
+        client().execute(PutRewriterAction.INSTANCE, new PutRewriterRequest("common_rules", content)).get();
+
+        final GetMappingsRequest getMappingsRequest = new GetMappingsRequest().indices(QUERQY_INDEX_NAME);
+        final Map<String, MappingMetadata> mappings = indicesClient
+                .getMappings(getMappingsRequest).get().getMappings();
+        final Map<String, Object> properties = (Map<String, Object>) mappings.get(QUERQY_INDEX_NAME)
+                .getSourceAsMap().get("properties");
+        assertNotNull(properties);
+
+        final Map<String, Object> config_v_005_mapping = (Map<String, Object>) properties.get("config_v_005");
+        assertNotNull(config_v_005_mapping);
+        assertEquals("querqy_rewriter_config", config_v_005_mapping.get("type"));
+
+        assertThat((Map<String, Object>) properties.get("revision"), hasEntry("type", "keyword"));
+        assertThat((Map<String, Object>) properties.get("saved_at"), hasEntry("type", "date"));
+
+        // the newly-written (v5) document must read back correctly: class, config, revision, saved_at and a valid
+        // config hash
+        final RewriterInfo rewriter = client()
+                .execute(GetRewriterAction.INSTANCE, new GetRewriterRequest("common_rules")).get().getRewriter();
+
+        assertEquals(querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory.class.getName(),
+                rewriter.getRewriterClassName());
+        assertEquals("release-2026-07-29", rewriter.getRevision());
+        assertNotNull(rewriter.getSavedAt());
+        assertTrue("Not a SHA-256 hex string: " + rewriter.getConfigHash(),
+                rewriter.getConfigHash().matches("[0-9a-f]{64}"));
+    }
+}

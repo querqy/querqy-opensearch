@@ -1,0 +1,61 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Copyright 2026 Querqy for OpenSearch Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+apply plugin: 'java'
+apply plugin: 'application'
+
+base {
+    archivesName = 'querqy-opensearch-tool'
+}
+
+application {
+    applicationName = 'querqy-opensearch-tool'
+    mainClass = 'querqy.opensearch.tool.RewriterConfigTool'
+}
+
+// :tool is a plain CLI, not an OpenSearch plugin, so it doesn't apply opensearch.opensearchplugin and therefore
+// doesn't inherit that convention plugin's repository wiring - declare it explicitly.
+repositories {
+    mavenLocal()
+    maven { url = "https://aws.oss.sonatype.org/content/repositories/snapshots" }
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':core')
+    // :core's own dependency on the OpenSearch server jar isn't `api`, so it doesn't propagate transitively here -
+    // :tool needs OpenSearch types directly to compile against OpenSearchRewriterFactory/RewriterConfigMapping's API
+    // surface. It only ever touches lightweight X-Content/exception types (never IndexShard or any other
+    // server-only class), so opensearch-core + opensearch-x-content (~400 KB combined) are enough - no need for the
+    // full org.opensearch:opensearch server jar (~18 MB, pulling in 14 Lucene modules, log4j-core, protobuf, jna,
+    // jts, etc., none of which this CLI's validate-and-push code path ever uses).
+    implementation "org.opensearch:opensearch-core:${rootProject.ext.opensearch_version}"
+    implementation "org.opensearch:opensearch-x-content:${rootProject.ext.opensearch_version}"
+    // OpenSearchRewriterFactory.loadInstance(...) calls AccessController.doPrivileged(...) from this small
+    // (<10 KB) separate artifact - it's not part of opensearch-core/opensearch-x-content.
+    implementation "org.opensearch:opensearch-secure-sm:${rootProject.ext.opensearch_version}"
+    implementation "org.opensearch.client:opensearch-rest-client:${rootProject.ext.opensearch_version}"
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
+    testImplementation('junit:junit:4.13.2')
+    testImplementation('org.mockito:mockito-core:5.23.0')
+    testImplementation('org.assertj:assertj-core:3.27.7')
+}
+
+test {
+    useJUnit()
+}
