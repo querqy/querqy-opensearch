@@ -174,4 +174,15 @@ public class HttpQuerqyIndexManagerTest {
                         && "404".equals(request.getParameters().get("ignore"))
                         && "true".equals(request.getParameters().get("refresh"))));
     }
+
+    @Test
+    public void testRequestSignerIsInvokedBeforeEveryRequest() throws Exception {
+
+        final RestClient client = clientReturning("{\"found\":false}");
+        final RequestSigner signer = mock(RequestSigner.class);
+
+        new HttpQuerqyIndexManager(client, signer).getRewriter("r1");
+
+        verify(signer).sign(any(Request.class));
+    }
 }

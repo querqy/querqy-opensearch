@@ -49,10 +49,15 @@ public final class CliArgs {
     public final int replicas;
     public final boolean insecure;
     public final boolean validateOnly;
+    public final boolean sigv4;
+    public final String awsRegion;
+    public final String awsService;
+    public final String awsProfile;
 
     private CliArgs(final Action action, final String url, final String id, final String configFile,
                     final String revision, final String username, final String password, final int replicas,
-                    final boolean insecure, final boolean validateOnly) {
+                    final boolean insecure, final boolean validateOnly, final boolean sigv4, final String awsRegion,
+                    final String awsService, final String awsProfile) {
         this.action = action;
         this.url = url;
         this.id = id;
@@ -63,6 +68,10 @@ public final class CliArgs {
         this.replicas = replicas;
         this.insecure = insecure;
         this.validateOnly = validateOnly;
+        this.sigv4 = sigv4;
+        this.awsRegion = awsRegion;
+        this.awsService = awsService;
+        this.awsProfile = awsProfile;
     }
 
     public static CliArgs parse(final String[] args) {
@@ -82,6 +91,10 @@ public final class CliArgs {
         int replicas = 1;
         boolean insecure = false;
         boolean validateOnly = false;
+        boolean sigv4 = false;
+        String awsRegion = null;
+        String awsService = "es";
+        String awsProfile = null;
 
         for (int i = 1; i < args.length; i++) {
             switch (args[i]) {
@@ -112,9 +125,35 @@ public final class CliArgs {
                 case "--validate-only":
                     validateOnly = true;
                     break;
+                case "--sigv4":
+                    sigv4 = true;
+                    break;
+                case "--aws-region":
+                    awsRegion = requireValue(args, i++, "--aws-region");
+                    break;
+                case "--aws-service":
+                    awsService = requireValue(args, i++, "--aws-service");
+                    break;
+                case "--aws-profile":
+                    awsProfile = requireValue(args, i++, "--aws-profile");
+                    break;
                 default:
                     throw new IllegalArgumentException("Unknown argument: " + args[i]);
             }
+        }
+
+        if (sigv4 && username != null) {
+            throw new IllegalArgumentException("Specify either --sigv4 or --username/--password, not both.");
+        }
+        if (!sigv4 && awsRegion != null) {
+            throw new IllegalArgumentException("--aws-region requires --sigv4");
+        }
+        if (!sigv4 && awsProfile != null) {
+            throw new IllegalArgumentException("--aws-profile requires --sigv4");
+        }
+        awsService = awsService.toLowerCase(Locale.ROOT);
+        if (!awsService.equals("es") && !awsService.equals("aoss")) {
+            throw new IllegalArgumentException("--aws-service must be 'es' or 'aoss', got '" + awsService + "'");
         }
 
         switch (action) {
@@ -148,7 +187,7 @@ public final class CliArgs {
         }
 
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
-                validateOnly);
+                validateOnly, sigv4, awsRegion, awsService, awsProfile);
     }
 
     private static String requireValue(final String[] args, final int flagIndex, final String flagName) {
