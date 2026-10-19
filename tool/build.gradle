@@ -31,7 +31,6 @@ application {
 // :tool is a plain CLI, not an OpenSearch plugin, so it doesn't apply opensearch.opensearchplugin and therefore
 // doesn't inherit that convention plugin's repository wiring - declare it explicitly.
 repositories {
-    mavenLocal()
     maven { url = "https://aws.oss.sonatype.org/content/repositories/snapshots" }
     mavenCentral()
 }
