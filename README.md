@@ -69,6 +69,25 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   server jar) since all it needs is the REST client and enough of `core` to validate a config and build the documents
   it reads and writes.
 
+  **Authentication:** every subcommand accepts either `--username <user> --password <password>` (plain HTTP Basic
+  Auth, e.g. for a cluster with an internal user database) or `--sigv4` (AWS SigV4 request signing, for an Amazon
+  OpenSearch Service domain or OpenSearch Serverless collection whose access policy requires IAM) - the two are
+  mutually exclusive. `--sigv4` takes AWS credentials from the AWS SDK's standard credentials provider chain: most
+  simply, the environment variables `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN` for
+  temporary credentials, e.g. from `aws sts assume-role` or SSO), or a named profile in `~/.aws/credentials` -
+  select one explicitly with `--aws-profile <name>`, or implicitly via the `AWS_PROFILE` environment variable; an
+  EC2/ECS/EKS instance role also works automatically with no credentials configured at all. `--aws-region <region>`
+  defaults to the `AWS_REGION` environment variable or the profile's configured region (set `--aws-region`
+  explicitly if neither is available). `--aws-service` defaults to `es` (managed OpenSearch Service domains); set
+  it to `aoss` for OpenSearch Serverless, which only supports IAM auth:
+
+  ```shell
+  bin/querqy-opensearch-tool list --url https://<domain-endpoint> --sigv4 \
+      [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
+  ```
+
+  `--insecure` (skip TLS certificate/hostname verification) is independent of the auth mode and works with either.
+
   **`delete` note:** unlike the REST API's `DELETE`, this cannot clear the deleted rewriter from every node's
   in-memory cache (that's an `ActionPlugin`-only transport action, unavailable over plain HTTP) - each node notices
   the deletion on its own within the same freshness window described below.

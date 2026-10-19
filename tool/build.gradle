@@ -50,6 +50,12 @@ dependencies {
     implementation "org.opensearch:opensearch-secure-sm:${rootProject.ext.opensearch_version}"
     implementation "org.opensearch.client:opensearch-rest-client:${rootProject.ext.opensearch_version}"
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
+    // AWS SigV4 request signing for IAM-authenticated Amazon OpenSearch Service domains / OpenSearch
+    // Serverless collections (--sigv4). Only the auth+regions modules are needed for Aws4Signer plus the
+    // standard credentials/region provider chains - not the full AWS SDK, and no per-service client.
+    implementation platform('software.amazon.awssdk:bom:2.55.6')
+    implementation 'software.amazon.awssdk:auth'
+    implementation 'software.amazon.awssdk:regions'
     testImplementation('junit:junit:4.13.2')
     testImplementation('org.mockito:mockito-core:5.23.0')
     testImplementation('org.assertj:assertj-core:3.27.7')

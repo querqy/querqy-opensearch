@@ -40,6 +40,12 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import querqy.opensearch.OpenSearchRewriterFactory;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 import querqy.opensearch.rewriterstore.RewriterInfo;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
 
 import java.io.File;
 import java.io.IOException;
@@ -63,6 +69,18 @@ import java.util.Map;
  *
  * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
  * {@code config}, and optionally {@code info_logging}/{@code revision}.
+ *
+ * <p><b>AWS IAM auth:</b> pass {@code --sigv4} instead of {@code --username}/{@code --password} to sign every
+ * request with AWS SigV4, for an Amazon OpenSearch Service domain or OpenSearch Serverless collection whose
+ * access policy requires IAM rather than (or in addition to) an internal user database. Credentials come from
+ * the standard AWS provider chain (env vars, shared config/credentials file, EC2/ECS/EKS instance role) or, with
+ * {@code --aws-profile}, a specific named profile. {@code --aws-region} defaults to whatever the AWS SDK's
+ * region provider chain resolves; {@code --aws-service} defaults to {@code es} (managed domains) and should be
+ * set to {@code aoss} for OpenSearch Serverless, the only auth mode Serverless supports:
+ * <pre>
+ * java -jar querqy-opensearch-tool.jar list --url https://host.region.es.amazonaws.com --sigv4 \
+ *     [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
+ * </pre>
  *
  * <p><b>Delete note:</b> unlike the REST API's {@code DELETE}, this cannot clear the deleted rewriter from every
  * node's in-memory cache (that's an {@code ActionPlugin}-only transport action, unavailable over plain HTTP) - each
@@ -98,6 +116,11 @@ public final class RewriterConfigTool {
             System.err.println();
             printUsage();
             System.exit(2);
+        } catch (final SdkClientException e) {
+            System.err.println("Could not resolve AWS credentials/region for --sigv4: " + e.getMessage());
+            System.err.println("Check --aws-region/--aws-profile and your AWS credentials (env vars, shared "
+                    + "config/credentials file, or an EC2/ECS/EKS instance role).");
+            System.exit(1);
         } catch (final Exception e) {
             System.err.println("Error: " + e.getMessage());
             System.exit(1);
@@ -141,8 +164,9 @@ public final class RewriterConfigTool {
 
         final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
 
-        try (RestClient client = buildClient(args)) {
-            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client);
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
             indexManager.ensureIndexExists(args.replicas);
             indexManager.putRewriter(args.id, source);
         }
@@ -152,8 +176,9 @@ public final class RewriterConfigTool {
     }
 
     private static void runGet(final CliArgs args) throws IOException {
-        try (RestClient client = buildClient(args)) {
-            final RewriterInfo info = new HttpQuerqyIndexManager(client).getRewriter(args.id);
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final RewriterInfo info = new HttpQuerqyIndexManager(client, buildSigner(args, host)).getRewriter(args.id);
             if (info == null) {
                 throw new RewriterNotFoundException("Rewriter '" + args.id + "' not found.");
             }
@@ -162,15 +187,19 @@ public final class RewriterConfigTool {
     }
 
     private static void runList(final CliArgs args) throws IOException {
-        try (RestClient client = buildClient(args)) {
-            final List<RewriterInfo> rewriters = new HttpQuerqyIndexManager(client).listRewriters();
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final List<RewriterInfo> rewriters = new HttpQuerqyIndexManager(client, buildSigner(args, host))
+                    .listRewriters();
             System.out.println(toJson(rewriters));
         }
     }
 
     private static void runDelete(final CliArgs args) throws IOException {
-        try (RestClient client = buildClient(args)) {
-            final boolean deleted = new HttpQuerqyIndexManager(client).deleteRewriter(args.id);
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final boolean deleted = new HttpQuerqyIndexManager(client, buildSigner(args, host))
+                    .deleteRewriter(args.id);
             System.out.println(deleted
                     ? "Deleted rewriter '" + args.id + "'."
                     : "Rewriter '" + args.id + "' was already absent.");
@@ -224,14 +253,16 @@ public final class RewriterConfigTool {
         }
     }
 
-    private static RestClient buildClient(final CliArgs args) {
-
-        final HttpHost host;
+    private static HttpHost parseHost(final CliArgs args) {
         try {
-            host = HttpHost.create(args.url);
+            return HttpHost.create(args.url);
         } catch (final java.net.URISyntaxException e) {
             throw new IllegalArgumentException("Invalid --url '" + args.url + "': " + e.getMessage());
         }
+    }
+
+    private static RestClient buildClient(final CliArgs args, final HttpHost host) {
+
         final RestClientBuilder builder = RestClient.builder(host);
 
         if (args.username != null || args.insecure) {
@@ -253,6 +284,23 @@ public final class RewriterConfigTool {
         return builder.build();
     }
 
+    private static RequestSigner buildSigner(final CliArgs args, final HttpHost host) {
+
+        if (!args.sigv4) {
+            return RequestSigner.NONE;
+        }
+
+        final Region region = args.awsRegion != null
+                ? Region.of(args.awsRegion)
+                : DefaultAwsRegionProviderChain.builder().build().getRegion();
+
+        final AwsCredentialsProvider credentialsProvider = args.awsProfile != null
+                ? ProfileCredentialsProvider.builder().profileName(args.awsProfile).build()
+                : DefaultCredentialsProvider.create();
+
+        return new Sigv4RequestSigner(host, region, args.awsService, credentialsProvider);
+    }
+
     private static void configureInsecureSsl(final HttpAsyncClientBuilder httpClientBuilder) {
         try {
             final javax.net.ssl.SSLContext sslContext = SSLContextBuilder.create()
@@ -270,16 +318,17 @@ public final class RewriterConfigTool {
     }
 
     private static void printUsage() {
+        final String authOptions = "[--username <user> --password <password> | --sigv4 [--aws-region <region>] "
+                + "[--aws-service es|aoss] [--aws-profile <profile>]] [--insecure]";
         System.err.println("Usage:");
         System.err.println("  java -jar querqy-opensearch-tool.jar put --url <url> --id <rewriterId> "
-                + "--config-file <file> [--revision <revision>] [--username <user> --password <password>] "
-                + "[--replicas <n>] [--insecure] [--validate-only]");
+                + "--config-file <file> [--revision <revision>] " + authOptions + " [--replicas <n>] "
+                + "[--validate-only]");
         System.err.println("  java -jar querqy-opensearch-tool.jar get --url <url> --id <rewriterId> "
-                + "[--username <user> --password <password>] [--insecure]");
-        System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> "
-                + "[--username <user> --password <password>] [--insecure]");
+                + authOptions);
+        System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> " + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar delete --url <url> --id <rewriterId> "
-                + "[--username <user> --password <password>] [--insecure]");
+                + authOptions);
     }
 
     static final class ValidationFailedException extends RuntimeException {

@@ -161,4 +161,54 @@ public class CliArgsTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("--id");
     }
+
+    @Test
+    public void testSigv4DefaultsToAwsServiceEs() {
+        final CliArgs args = CliArgs.parse(new String[] { "list", "--url", "https://localhost:9200", "--sigv4" });
+
+        assertThat(args.sigv4).isTrue();
+        assertThat(args.awsService).isEqualTo("es");
+        assertThat(args.awsRegion).isNull();
+        assertThat(args.awsProfile).isNull();
+    }
+
+    @Test
+    public void testSigv4ParsesRegionServiceAndProfile() {
+        final CliArgs args = CliArgs.parse(new String[] {
+                "list", "--url", "https://localhost:9200", "--sigv4",
+                "--aws-region", "us-east-1", "--aws-service", "AOSS", "--aws-profile", "my-profile"
+        });
+
+        assertThat(args.awsRegion).isEqualTo("us-east-1");
+        assertThat(args.awsService).isEqualTo("aoss"); // normalized to lower case
+        assertThat(args.awsProfile).isEqualTo("my-profile");
+    }
+
+    @Test
+    public void testSigv4AndUsernameAreMutuallyExclusive() {
+        assertThatThrownBy(() -> CliArgs.parse(new String[] {
+                "list", "--url", "https://localhost:9200", "--sigv4", "--username", "admin"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--sigv4");
+    }
+
+    @Test
+    public void testAwsRegionRequiresSigv4() {
+        assertThatThrownBy(() -> CliArgs.parse(new String[] {
+                "list", "--url", "https://localhost:9200", "--aws-region", "us-east-1"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--aws-region");
+    }
+
+    @Test
+    public void testAwsProfileRequiresSigv4() {
+        assertThatThrownBy(() -> CliArgs.parse(new String[] {
+                "list", "--url", "https://localhost:9200", "--aws-profile", "my-profile"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--aws-profile");
+    }
+
+    @Test
+    public void testRejectsInvalidAwsService() {
+        assertThatThrownBy(() -> CliArgs.parse(new String[] {
+                "list", "--url", "https://localhost:9200", "--sigv4", "--aws-service", "s3"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--aws-service");
+    }
 }
