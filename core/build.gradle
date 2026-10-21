@@ -1,0 +1,230 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Copyright 2026 Querqy for OpenSearch Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+apply plugin: 'java'
+apply plugin: 'jacoco'
+apply plugin: 'idea'
+apply plugin: 'opensearch.opensearchplugin'
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
+
+base {
+    archivesName = 'querqy-opensearch-core'
+}
+
+// The opensearchplugin{} block below intentionally sets the same plugin `name` as the root project (so the two
+// can't be installed side by side, per design) - but the opensearch.opensearchplugin convention plugin ties the
+// `jar` task's archive name to that same `name`, which would make :core's jar collide (same filename) with root's
+// own jar when root's bundlePlugin copies both into one zip. Force the jar's own archive name back after the
+// convention plugin's own afterEvaluate has run, so the two are never filename-identical.
+afterEvaluate {
+    tasks.named('jar') {
+        archiveBaseName.set('querqy-opensearch-core')
+    }
+}
+
+opensearchplugin {
+    name = 'opensearch-querqy'
+    description = 'Query rewriting plugin (core: no ActionPlugin, installable where it is unsupported, e.g. Amazon OpenSearch Service)'
+    classname = 'querqy.opensearch.QuerqyCorePlugin'
+    licenseFile = rootProject.file('LICENSE.txt')
+    noticeFile = rootProject.file('NOTICE.txt')
+}
+
+dependencies {
+    // querqy-core/querqy-lucene no longer depend on Jackson in production code (querqy.json.JsonProvider SPI) -
+    // this module supplies its own XContent-backed implementation (see querqy.opensearch.json.XContentJsonProvider),
+    // so no Jackson dependency is declared here anymore. This is what actually lets this AWS-installable module
+    // pass AWS OpenSearch Service's plugin-upload CVE scanner, which previously kept flagging the Jackson version
+    // pinned below.
+    api('org.querqy:querqy-lucene:5.13.lucene1050.0')
+    api('org.querqy:querqy-core:4.3.0')
+    // querqy-core's PropertyParser/InstructionsProperties configure json-path with their own
+    // querqy.json.jsonpath.QuerqyJsonPathProvider/QuerqyJsonPathMappingProvider (not json-smart, not
+    // Jackson) for the pluggable JsonProvider/MappingProvider SPI - but json-path 3.0.0 ALSO has a hard,
+    // non-pluggable internal dependency on net.minidev.json.parser.JSONParser: its own filter-expression
+    // grammar (com.jayway.jsonpath.internal.filter.ValueNode, core JsonPath code exercised regardless of
+    // which JsonProvider is configured) uses it directly to recognize array/object literal
+    // tokens inside predicates (e.g. the "in" operator's "[...]" argument, as used in
+    // InstructionsPropertiesTest/CommonRules selection-strategy filters). Confirmed empirically: removing
+    // net.minidev:json-smart/accessors-smart from this classpath makes such a filter throw
+    // NoClassDefFoundError: net/minidev/json/parser/ParseException at runtime. So these stay, even though
+    // our own code never references JsonSmartJsonProvider/JsonSmartMappingProvider directly (those two
+    // specific classes are still stripped from the bundled json-path jar below - that part is safe, since
+    // nothing loads them; only the json-smart/accessors-smart *library* itself is genuinely required).
+    implementation('com.jayway.jsonpath:json-path:3.0.0')
+    runtimeOnly('net.minidev:json-smart:2.6.0')
+    runtimeOnly('net.minidev:accessors-smart:2.6.0')
+    runtimeOnly('org.slf4j:slf4j-api:2.0.17')
+    implementation('org.ow2.asm:asm:9.10.1')
+    testImplementation('junit:junit:4.13.2')
+    testImplementation('org.mockito:mockito-core:5.23.0')
+    testImplementation('org.assertj:assertj-core:3.27.7')
+    testImplementation "org.opensearch:opensearch-agent-bootstrap:${rootProject.ext.opensearch_version}"
+}
+
+test {
+    useJUnit()
+    finalizedBy jacocoTestReport
+    include "**/*Test.class"
+    systemProperty 'tests.security.manager', 'false'
+}
+
+// AWS OpenSearch Service's plugin-upload scanner appears to scan every bundled class file for Jackson
+// references, not just which jars are present. json-path's own jar ships several alternative, unused
+// JsonProvider/MappingProvider backends (Gson, Jakarta, Jettison, Jackson, json-smart) alongside the one
+// querqy-core actually uses (querqy.json.jsonpath.QuerqyJsonPathProvider/QuerqyJsonPathMappingProvider,
+// which has no third-party JSON library dependency of its own) - the unused ones reference Jackson/
+// json-smart classes in their own bytecode even though nothing ever loads them, which a bytecode-level
+// scan could still flag. Repackage json-path into a copy with just those unused classes stripped, and
+// bundle that copy into the plugin zip instead of the stock jar.
+def jsonPathJarFile = { configurations.runtimeClasspath.files.find { it.name.startsWith('json-path-') } }
+
+tasks.register('jsonPathWithoutUnusedProviders', Jar) {
+    archiveBaseName.set('json-path-slim')
+    archiveVersion.set('3.0.0')
+    destinationDirectory.set(layout.buildDirectory.dir('filtered-deps'))
+    from({ zipTree(jsonPathJarFile()) }) {
+        exclude 'com/jayway/jsonpath/spi/json/Jackson*.class'
+        exclude 'com/jayway/jsonpath/spi/mapper/Jackson*.class'
+        exclude 'com/jayway/jsonpath/spi/json/JsonSmartJsonProvider*.class'
+        exclude 'com/jayway/jsonpath/spi/mapper/JsonSmartMappingProvider*.class'
+    }
+}
+
+tasks.named('bundlePlugin') {
+    dependsOn('jsonPathWithoutUnusedProviders')
+    exclude 'json-path-3.0.0.jar'
+    from(tasks.named('jsonPathWithoutUnusedProviders'))
+}
+
+configurations.all {
+    resolutionStrategy.force 'junit:junit:4.13.2'
+    resolutionStrategy.force 'org.mockito:mockito-core:5.23.0'
+}
+
+// Applying opensearch.opensearchplugin a second time in this build re-creates these convention tasks scoped to
+// :core; disable them here exactly as the root project already does, so ./gradlew build doesn't fail on checks that
+// only make sense for a release of the full plugin.
+licenseHeaders.enabled = true
+validateNebulaPom.enabled = false
+generatePomFileForNebulaPublication.enabled = false
+generateMetadataFileForNebulaPublication.enabled = false
+publishNebulaPublicationToMavenLocal.enabled = false
+tasks.whenTaskAdded { task ->
+    if (task.name.contains("publishNebulaPublicationToSonatypeRepository")) {
+        task.enabled = false
+    }
+}
+dependencyLicenses.enabled = false
+thirdPartyAudit.enabled = false
+forbiddenApis.ignoreFailures = true
+testingConventions.enabled = false
+loggerUsageCheck.enabled = false
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:-missing', '-quiet')
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifact(tasks.named("bundlePlugin")) {
+                builtBy(tasks.named("bundlePlugin"))
+            }
+
+            groupId = 'org.querqy'
+            artifactId = 'querqy-opensearch-core'
+            version = "$version"
+
+            from components.java
+
+            versionMapping {
+                usage('java-api') {
+                    fromResolutionOf('runtimeClasspath')
+                }
+                usage('java-runtime') {
+                    fromResolutionResult()
+                }
+            }
+
+            pom {
+                name = 'Querqy Opensearch Core'
+                description = 'Core module of the Querqy OpenSearch plugin - the querqy query, the rewriters, and ' +
+                        'index-based rewriter config management, but no ActionPlugin REST/transport API. ' +
+                        'Installable where ActionPlugin is unsupported, e.g. Amazon OpenSearch Service.'
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'jope'
+                        name = 'Johannes Peter'
+                        email = 'johannesdaniel.peter@gmx.de'
+                        url = 'https://github.com/querqy/querqy-opensearch'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'sonatype'
+            url = 'https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/'
+            credentials(PasswordCredentials)
+        }
+    }
+}
+
+signing {
+    def signingKey = findProperty("signingKey")
+    def signingPassword = findProperty("signingPassword")
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign publishing.publications.mavenJava
+}
+
+tasks.named("signMavenJavaPublication") {
+    dependsOn(tasks.named("bundlePlugin"))
+}
+
+// opensearch.opensearchplugin (via its bundled org.opensearch.gradle.PublishPlugin, applied unconditionally as
+// part of opensearch.opensearchplugin - there is no way to opt out) always creates its own extra "nebula"
+// MavenPublication here too (coordinates org.opensearch:opensearch-querqy, derived from this project's raw Gradle
+// group and opensearchplugin{}'s `name`) alongside our own "mavenJava" one below - its own publish tasks are
+// already disabled above, but the publication object itself still exists. That makes root's own generated POM
+// fail entirely when resolving its dependency on :core ("Publishing is not able to resolve a dependency on a
+// project with multiple publications that have different coordinates") - Gradle's cross-project publication
+// resolver indexes publications as they're added and does not un-index one that's later removed from the
+// container, so removing "nebula" here does not fix that resolver's view (confirmed empirically) - but mutating
+// an existing publication's own properties does get picked up correctly. So instead of removing "nebula", force
+// its coordinates to be identical to "mavenJava"'s: Gradle only objects to DIFFERENT coordinates, not to two
+// publications sharing the same one.
+//
+// This must happen only once every project in the whole build has fully finished configuring itself (including
+// its own afterEvaluate callbacks) - root's own cross-project dependency resolution (used to generate its POM's
+// <dependency> entry on :core) reads :core's publications before this project's own afterEvaluate chain
+// completes, so a plain `afterEvaluate` here is too early; `gradle.projectsEvaluated` is not.
+gradle.projectsEvaluated {
+    publishing.publications.mavenJava.artifactId = 'querqy-opensearch-core'
+    publishing.publications.nebula.groupId = 'org.querqy'
+    publishing.publications.nebula.artifactId = 'querqy-opensearch-core'
+}
