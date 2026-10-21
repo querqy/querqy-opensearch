@@ -33,13 +33,17 @@ import org.opensearch.index.mapper.Mapper;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.plugins.MapperPlugin;
 import org.opensearch.plugins.Plugin;
+import org.opensearch.plugins.SearchPipelinePlugin;
 import org.opensearch.plugins.SearchPlugin;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.script.ScriptService;
+import org.opensearch.search.pipeline.Processor;
+import org.opensearch.search.pipeline.SearchRequestProcessor;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 import org.opensearch.watcher.ResourceWatcherService;
 import querqy.opensearch.infologging.Log4jSink;
+import querqy.opensearch.pipeline.QuerqyRewriteRequestProcessor;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.rewriterstore.mapper.QuerqyRewriterConfigFieldMapper;
 
@@ -57,7 +61,7 @@ import java.util.function.Supplier;
  * {@code opensearchplugin} block). {@code querqy.opensearch.QuerqyPlugin} (the full plugin module) extends this
  * class and adds the REST/transport API back for self-managed deployments.
  */
-public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlugin {
+public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlugin, SearchPipelinePlugin {
 
     protected final QuerqyProcessor querqyProcessor;
     protected final RewriterShardContexts rewriterShardContexts;
@@ -113,5 +117,13 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
     public Map<String, Mapper.TypeParser> getMappers() {
         return Collections.singletonMap(QuerqyRewriterConfigFieldMapper.CONTENT_TYPE,
                 new QuerqyRewriterConfigFieldMapper.TypeParser());
+    }
+
+    @Override
+    public Map<String, Processor.Factory<SearchRequestProcessor>> getRequestProcessors(
+            final SearchPipelinePlugin.Parameters parameters) {
+        return Collections.singletonMap(QuerqyRewriteRequestProcessor.TYPE,
+                new QuerqyRewriteRequestProcessor.Factory(parameters.client, parameters.env.settings(),
+                        querqyProcessor));
     }
 }
