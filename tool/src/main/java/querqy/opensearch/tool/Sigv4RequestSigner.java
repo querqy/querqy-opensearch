@@ -69,7 +69,9 @@ final class Sigv4RequestSigner implements RequestSigner {
                 .uri(toUri(request))
                 .contentStreamProvider(() -> new ByteArrayInputStream(body));
         for (final Map.Entry<String, String> param : request.getParameters().entrySet()) {
-            builder.putRawQueryParameter(param.getKey(), param.getValue());
+            if (isSignableQueryParameter(param.getKey())) {
+                builder.putRawQueryParameter(param.getKey(), param.getValue());
+            }
         }
 
         final SdkHttpFullRequest signed = signer.sign(builder.build(), Aws4SignerParams.builder()
@@ -87,6 +89,18 @@ final class Sigv4RequestSigner implements RequestSigner {
             }
         }
         request.setOptions(options.build());
+    }
+
+    /**
+     * {@code ignore} is a client-side-only directive (which response codes shouldn't throw a
+     * {@link org.opensearch.client.ResponseException}) that {@code RestClient} strips before building the real
+     * HTTP request ("ignore is a special parameter supported by the clients, shouldn't be sent to es" -
+     * {@code RestClient}'s own source). Signing it would sign a request that was never actually sent over the
+     * wire, and AWS rejects the resulting signature as a mismatch (its error message shows the real, ignore-less
+     * canonical query string it computed from the request it actually received).
+     */
+    static boolean isSignableQueryParameter(final String name) {
+        return !"ignore".equals(name);
     }
 
     private static boolean isSignatureHeader(final String name) {

@@ -81,6 +81,33 @@ public class Sigv4RequestSignerTest {
     }
 
     @Test
+    public void testIgnoreParameterIsNotSignable() {
+        // "ignore" is a client-side-only directive that RestClient strips before sending the real HTTP request -
+        // signing it would sign a request that's never actually sent, and AWS rejects the mismatched signature.
+        assertThat(Sigv4RequestSigner.isSignableQueryParameter("ignore")).isFalse();
+        assertThat(Sigv4RequestSigner.isSignableQueryParameter("refresh")).isTrue();
+    }
+
+    @Test
+    public void testIgnoreParameterDoesNotAffectTheSignature() throws Exception {
+
+        final Sigv4RequestSigner signer = new Sigv4RequestSigner(
+                HttpHost.create("https://search-my-domain.us-east-1.es.amazonaws.com"),
+                Region.US_EAST_1, "es",
+                StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIDEXAMPLE", "secret")));
+
+        final Request withIgnore = new Request("GET", "/.opensearch-querqy/_doc/r1");
+        withIgnore.addParameter("ignore", "404");
+        final Request withoutIgnore = new Request("GET", "/.opensearch-querqy/_doc/r1");
+
+        signer.sign(withIgnore);
+        signer.sign(withoutIgnore);
+
+        // since "ignore" is never actually sent to the server, it must not change what gets signed
+        assertThat(header(withIgnore, "Authorization")).isEqualTo(header(withoutIgnore, "Authorization"));
+    }
+
+    @Test
     public void testSigningIsRepeatableAndDoesNotConsumeTheRequestBody() throws Exception {
 
         final Sigv4RequestSigner signer = new Sigv4RequestSigner(
