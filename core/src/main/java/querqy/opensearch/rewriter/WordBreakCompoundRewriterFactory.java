@@ -186,6 +186,16 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         return errors;
     }
 
+    /**
+     * {@code createRewriter(...)} (below) needs a real shard-backed {@code IndexSearcher} (via {@code
+     * adapter.getSearchExecutionContext().searcher()}) to build its {@link LuceneTermCorpus} - unlike every other
+     * built-in rewriter, this one genuinely cannot run on a coordinating node with no shard access at all.
+     */
+    @Override
+    public boolean isSupportedOnCoordinator() {
+        return false;
+    }
+
     @Override
     public RewriterFactory createRewriterFactory(final IndexShard indexShard) {
 

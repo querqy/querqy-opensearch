@@ -117,4 +117,37 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 () -> loader.loadFactory("does_not_exist", false));
         assertEquals("Rewriter not found: does_not_exist", e.getMessage());
     }
+
+    /**
+     * {@code nodeLevel(...)} (unlike the per-shard constructor {@link RewriterShardContext} uses) enforces {@link
+     * OpenSearchRewriterFactory#isSupportedOnCoordinator()} - word-break-compound genuinely needs a real shard-
+     * backed index reader to run its rewrite (not just to build its factory), so it must fail clearly here rather
+     * than fail confusingly later when the rewrite itself runs with no shard behind it.
+     */
+    public void testWordBreakCompoundFailsClearlyOnTheNodeLevelLoader() throws Exception {
+
+        ensureRewriterIndexExists();
+        writeWordBreakCompoundRewriter("word_break_rewriter");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+
+        final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
+                () -> loader.loadFactory("word_break_rewriter", false));
+        assertTrue(e.getMessage().contains("word_break_rewriter"));
+        assertTrue(e.getMessage().contains("WordBreakCompoundRewriterFactory"));
+    }
+
+    private void writeWordBreakCompoundRewriter(final String rewriterId) throws Exception {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.class.getName());
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryField", "field1");
+        content.put("config", config);
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
+                .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
 }
