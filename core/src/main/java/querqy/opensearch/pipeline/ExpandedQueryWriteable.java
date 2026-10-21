@@ -97,14 +97,26 @@ public final class ExpandedQueryWriteable {
         writeBoostQueries(out, expandedQuery.getMultiplicativeBoostQueries());
     }
 
+    /**
+     * Writes a bare {@link QuerqyQuery} - not a full {@link ExpandedQuery} - with the same versioning and node-type
+     * coverage as {@link #writeExpandedQuery}. Used for the *unrewritten* user query that must travel alongside a
+     * rewritten {@link ExpandedQuery}, since {@code QueryParsingController.buildFromRewrittenQuery} needs both (see
+     * its javadoc for why request-level boosts need the original, unrewritten query).
+     */
+    public static void writeQuerqyQuery(final StreamOutput out, final QuerqyQuery<?> query) throws IOException {
+        out.writeVInt(CURRENT_VERSION);
+        writeNode(out, query);
+    }
+
+    public static QuerqyQuery<?> readQuerqyQuery(final StreamInput in) throws IOException {
+        final int version = in.readVInt();
+        checkVersion(version);
+        return (QuerqyQuery<?>) readNode(in, null);
+    }
+
     public static ExpandedQuery readExpandedQuery(final StreamInput in) throws IOException {
         final int version = in.readVInt();
-        if (version > CURRENT_VERSION) {
-            throw new IOException("Cannot read a rewritten Querqy model of version " + version
-                    + " - this node only supports up to version " + CURRENT_VERSION
-                    + ". This usually means a mixed-version cluster during a rolling upgrade; retry once every "
-                    + "node is upgraded.");
-        }
+        checkVersion(version);
 
         final QuerqyQuery<?> userQuery = (QuerqyQuery<?>) readNode(in, null);
         final List<QuerqyQuery<?>> filterQueries = readQuerqyQueryCollection(in);
@@ -113,6 +125,15 @@ public final class ExpandedQueryWriteable {
         final List<BoostQuery> multiplicative = readBoostQueries(in);
 
         return new ExpandedQuery(userQuery, filterQueries, boostUp, boostDown, multiplicative);
+    }
+
+    private static void checkVersion(final int version) throws IOException {
+        if (version > CURRENT_VERSION) {
+            throw new IOException("Cannot read a rewritten Querqy model of version " + version
+                    + " - this node only supports up to version " + CURRENT_VERSION
+                    + ". This usually means a mixed-version cluster during a rolling upgrade; retry once every "
+                    + "node is upgraded.");
+        }
     }
 
     private static void writeQuerqyQueryCollection(final StreamOutput out, final Iterable<QuerqyQuery<?>> nodes)
