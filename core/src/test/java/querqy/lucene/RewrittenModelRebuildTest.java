@@ -28,14 +28,16 @@ import org.apache.lucene.analysis.core.KeywordAnalyzer;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Query;
 import org.junit.Test;
+import org.opensearch.common.io.stream.BytesStreamOutput;
 import querqy.model.ExpandedQuery;
-import querqy.opensearch.searchpipelinespike.SpikeQuerqyModelCodec;
+import querqy.opensearch.pipeline.ExpandedQueryWriteable;
 import querqy.parser.WhiteSpaceQuerqyParser;
 import querqy.rewrite.RewriteChain;
 import querqy.rewrite.RewriteChainOutput;
 import querqy.rewrite.RewriteLoggingConfig;
 import querqy.rewrite.RewriterFactory;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -43,24 +45,20 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Phase-0 "decisive serialization spike" (briefing section 5): can a Common Rules rewrite be run ONCE,
- * its result (a {@code querqy.model.ExpandedQuery}) serialized, shipped elsewhere, and rebuilt into Lucene
- * queries there via the existing {@code LuceneQueryBuilder} stage - with the same result as running the
- * whole thing (parse + rewrite + build) in one place, as {@link QueryParsingController#process()} does
- * today?
+ * End-to-end proof that {@link ExpandedQueryWriteable} (the production {@code querqy.model} serializer used by the
+ * {@code querqy_rewrite} search pipeline processor) supports the design this whole feature rests on: run a rewrite
+ * ONCE (parse + rewrite only, no Lucene building), serialize the result, ship it elsewhere, and rebuild Lucene
+ * queries from it via the existing {@code LuceneQueryBuilder} stage ({@code QueryParsingController}'s already-public
+ * {@code transformUserQuery}/{@code transformFilterQueries}/{@code getAdditiveQuerqyBoostQueries}) - with the exact
+ * same result as running everything (parse + rewrite + build) in one place, the way {@link
+ * QueryParsingController#process()} does today for the per-shard path.
  * <p>
  * This package ({@code querqy.lucene}) is chosen deliberately so this test can read {@link
  * QueryParsingController}'s {@code protected} {@code builder} field directly (same package, cross-module,
  * classpath-mode - no JPMS module boundary here), since {@code transformUserQuery(QuerqyQuery, LuceneQueryBuilder)}
  * takes that builder as an explicit parameter rather than using it implicitly.
- * <p>
- * <b>Finding:</b> yes, for the node types this spike covers (see {@link SpikeQuerqyModelCodec}) - a rewrite
- * producing a SYNONYM-expanded main query term and an UP-boosted query round-trips through serialization
- * with the resulting Lucene queries identical ({@code equals()} and {@code toString()}) to the
- * no-round-trip baseline. See {@link SpikeQuerqyModelCodec}'s javadoc for what a production serializer
- * would still need to cover beyond this.
  */
-public class CutAtQuerqyModelSpikeTest {
+public class RewrittenModelRebuildTest {
 
     private static final String RULES =
             "a =>\n" +
@@ -82,13 +80,12 @@ public class CutAtQuerqyModelSpikeTest {
         final RewriteChainOutput rewriteChainOutput = rewriteChain.rewrite(parsedInput, requestAdapter);
         final ExpandedQuery rewrittenExpandedQuery = rewriteChainOutput.getExpandedQuery();
 
-        // sanity check this spike is actually exercising SYNONYM+UP, not a no-op
+        // sanity check this test is actually exercising SYNONYM+UP+FILTER, not a no-op
         assertEquals("Expected the UP rule to have produced exactly one boost-up query",
                 1, rewrittenExpandedQuery.getBoostUpQueries().size());
 
-        // --- the wire: serialize, then deserialize into a brand new, independent object graph ---
-        final byte[] bytes = SpikeQuerqyModelCodec.serialize(rewrittenExpandedQuery);
-        final ExpandedQuery roundTripped = SpikeQuerqyModelCodec.deserialize(bytes);
+        // --- the wire: serialize via the production codec, deserialize into a brand new object graph ---
+        final ExpandedQuery roundTripped = roundTrip(rewrittenExpandedQuery);
 
         // --- "shard": build Lucene queries from each, via two independent controller instances ---
         final Query originalMainQuery = buildMainQuery(requestAdapter, rewrittenExpandedQuery);
@@ -112,6 +109,13 @@ public class CutAtQuerqyModelSpikeTest {
         assertEquals(1, originalFilters.size());
         assertEquals("The FILTER query built from the round-tripped model must equal the original",
                 originalFilters, roundTrippedFilters);
+    }
+
+    private static ExpandedQuery roundTrip(final ExpandedQuery expandedQuery) throws IOException {
+        final BytesStreamOutput output = new BytesStreamOutput();
+        ExpandedQueryWriteable.writeExpandedQuery(output, expandedQuery);
+        output.flush();
+        return ExpandedQueryWriteable.readExpandedQuery(output.bytes().streamInput());
     }
 
     private static List<Query> buildFilterQueries(final LuceneSearchEngineRequestAdapter requestAdapter,
