@@ -72,6 +72,7 @@ public class RewriterFactoryLoader {
     private final Cache<String, RewriterFactoryAndLogging> factories;
     private final Client client;
     private final Supplier<IndexShard> indexShardSupplier;
+    private final boolean requireCoordinatorSafe;
     private final long refreshAfterWriteNanos;
     private final boolean asyncRefreshEnabled;
 
@@ -80,9 +81,16 @@ public class RewriterFactoryLoader {
 
     public RewriterFactoryLoader(final Supplier<IndexShard> indexShardSupplier, final Settings settings,
                                  final Client client, final boolean asyncRefreshEnabled) {
+        this(indexShardSupplier, settings, client, asyncRefreshEnabled, false);
+    }
+
+    private RewriterFactoryLoader(final Supplier<IndexShard> indexShardSupplier, final Settings settings,
+                                  final Client client, final boolean asyncRefreshEnabled,
+                                  final boolean requireCoordinatorSafe) {
         this.indexShardSupplier = indexShardSupplier;
         this.client = client;
         this.asyncRefreshEnabled = asyncRefreshEnabled;
+        this.requireCoordinatorSafe = requireCoordinatorSafe;
         this.factories = Caches.buildCache(RewriterShardContext.CACHE_EXPIRE_AFTER_READ.get(settings),
                 RewriterShardContext.CACHE_EXPIRE_AFTER_WRITE.get(settings));
         this.refreshAfterWriteNanos = RewriterShardContext.CACHE_REFRESH_AFTER_WRITE.get(settings).nanos();
@@ -92,10 +100,13 @@ public class RewriterFactoryLoader {
      * A loader with no {@link IndexShard} at all, for use on the coordinating node (e.g. from a search
      * pipeline processor, via {@code SearchPipelinePlugin.Parameters#client}), where there is no shard
      * access of any kind - see the class Javadoc for why this is safe for the built-in rewriter factories.
+     * Unlike the per-shard constructor, this also enforces {@link OpenSearchRewriterFactory
+     * #isSupportedOnCoordinator()}: a rewriter that needs real shard access (e.g. word-break-compound) fails
+     * clearly here instead of failing confusingly later when its rewrite actually runs with no shard behind it.
      */
     public static RewriterFactoryLoader nodeLevel(final Settings settings, final Client client,
                                                   final boolean asyncRefreshEnabled) {
-        return new RewriterFactoryLoader(() -> null, settings, client, asyncRefreshEnabled);
+        return new RewriterFactoryLoader(() -> null, settings, client, asyncRefreshEnabled, true);
     }
 
     /**
@@ -292,8 +303,17 @@ public class RewriterFactoryLoader {
             loggingEnabled = false;
         }
 
-        final RewriterFactory factory = OpenSearchRewriterFactory.loadConfiguredInstance(loadConfig)
-                .createRewriterFactory(indexShardSupplier.get());
+        final OpenSearchRewriterFactory configuredFactory = OpenSearchRewriterFactory.loadConfiguredInstance(loadConfig);
+
+        if (requireCoordinatorSafe && !configuredFactory.isSupportedOnCoordinator()) {
+            throw new IllegalArgumentException("Rewriter '" + rewriterId + "' (" + configuredFactory.getClass().getName()
+                    + ") cannot be used with a coordinator-side rewrite (e.g. the querqy_rewrite search pipeline "
+                    + "processor): it needs direct access to a shard's index, which isn't available on the "
+                    + "coordinating node. Use it only with the per-shard querqy query (no search pipeline), or "
+                    + "remove it from this request.");
+        }
+
+        final RewriterFactory factory = configuredFactory.createRewriterFactory(indexShardSupplier.get());
 
         return new RewriterFactoryAndLogging(factory, loggingEnabled, response.getSeqNo(), response.getPrimaryTerm());
     }
