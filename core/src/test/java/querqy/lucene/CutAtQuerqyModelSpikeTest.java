@@ -65,7 +65,8 @@ public class CutAtQuerqyModelSpikeTest {
     private static final String RULES =
             "a =>\n" +
             "  SYNONYM: b\n" +
-            "  UP(10): c\n";
+            "  UP(10): c\n" +
+            "  FILTER: d\n";
 
     @Test
     public void testRewrittenModelSurvivesSerializationAndRebuildsToTheSameLuceneQuery() throws Exception {
@@ -103,6 +104,20 @@ public class CutAtQuerqyModelSpikeTest {
         assertEquals(1, originalBoosts.size());
         assertEquals("The UP-boost query built from the round-tripped model must equal the original",
                 originalBoosts, roundTrippedBoosts);
+
+        // this is what a hybrid query's filter(...) pushdown would consume - must also survive the round trip
+        final List<Query> originalFilters = buildFilterQueries(requestAdapter, rewrittenExpandedQuery);
+        final List<Query> roundTrippedFilters = buildFilterQueries(requestAdapter, roundTripped);
+
+        assertEquals(1, originalFilters.size());
+        assertEquals("The FILTER query built from the round-tripped model must equal the original",
+                originalFilters, roundTrippedFilters);
+    }
+
+    private static List<Query> buildFilterQueries(final LuceneSearchEngineRequestAdapter requestAdapter,
+                                                   final ExpandedQuery expandedQuery) throws Exception {
+        final QueryParsingController controller = new QueryParsingController(requestAdapter);
+        return controller.transformFilterQueries(expandedQuery.getFilterQueries());
     }
 
     private static Query buildMainQuery(final LuceneSearchEngineRequestAdapter requestAdapter,
