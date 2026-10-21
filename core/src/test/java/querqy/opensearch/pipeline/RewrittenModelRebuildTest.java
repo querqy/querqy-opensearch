@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package querqy.lucene;
+package querqy.opensearch.pipeline;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,11 +26,13 @@ import static org.mockito.Mockito.when;
 
 import org.apache.lucene.analysis.core.KeywordAnalyzer;
 import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.Query;
 import org.junit.Test;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import querqy.lucene.LuceneQueries;
+import querqy.lucene.LuceneSearchEngineRequestAdapter;
+import querqy.lucene.QueryParsingController;
 import querqy.model.ExpandedQuery;
-import querqy.opensearch.pipeline.ExpandedQueryWriteable;
+import querqy.model.QuerqyQuery;
 import querqy.parser.WhiteSpaceQuerqyParser;
 import querqy.rewrite.RewriteChain;
 import querqy.rewrite.RewriteChainOutput;
@@ -40,23 +42,16 @@ import querqy.rewrite.RewriterFactory;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * End-to-end proof that {@link ExpandedQueryWriteable} (the production {@code querqy.model} serializer used by the
- * {@code querqy_rewrite} search pipeline processor) supports the design this whole feature rests on: run a rewrite
- * ONCE (parse + rewrite only, no Lucene building), serialize the result, ship it elsewhere, and rebuild Lucene
- * queries from it via the existing {@code LuceneQueryBuilder} stage ({@code QueryParsingController}'s already-public
- * {@code transformUserQuery}/{@code transformFilterQueries}/{@code getAdditiveQuerqyBoostQueries}) - with the exact
- * same result as running everything (parse + rewrite + build) in one place, the way {@link
- * QueryParsingController#process()} does today for the per-shard path.
- * <p>
- * This package ({@code querqy.lucene}) is chosen deliberately so this test can read {@link
- * QueryParsingController}'s {@code protected} {@code builder} field directly (same package, cross-module,
- * classpath-mode - no JPMS module boundary here), since {@code transformUserQuery(QuerqyQuery, LuceneQueryBuilder)}
- * takes that builder as an explicit parameter rather than using it implicitly.
+ * End-to-end proof, via the real public API (no same-package tricks needed, unlike this test's earlier
+ * incarnation): a Common Rules rewrite can be run ONCE (parse + rewrite only), its unrewritten user query and
+ * rewritten {@link ExpandedQuery} both serialized via {@link ExpandedQueryWriteable}, shipped elsewhere, and
+ * rebuilt into Lucene queries there via {@code QueryParsingController.buildFromRewrittenQuery} - with the exact
+ * same result as running everything (parse + rewrite + build) in one place, the way {@code
+ * QueryParsingController.process()} does today for the per-shard path.
  */
 public class RewrittenModelRebuildTest {
 
@@ -84,56 +79,43 @@ public class RewrittenModelRebuildTest {
         assertEquals("Expected the UP rule to have produced exactly one boost-up query",
                 1, rewrittenExpandedQuery.getBoostUpQueries().size());
 
-        // --- the wire: serialize via the production codec, deserialize into a brand new object graph ---
-        final ExpandedQuery roundTripped = roundTrip(rewrittenExpandedQuery);
+        // --- the wire: serialize both the original and rewritten query, deserialize into fresh object graphs ---
+        final QuerqyQuery<?> roundTrippedOriginalUserQuery = roundTripQuerqyQuery(parsedInput.getUserQuery());
+        final ExpandedQuery roundTrippedRewrittenQuery = roundTripExpandedQuery(rewrittenExpandedQuery);
 
-        // --- "shard": build Lucene queries from each, via two independent controller instances ---
-        final Query originalMainQuery = buildMainQuery(requestAdapter, rewrittenExpandedQuery);
-        final Query roundTrippedMainQuery = buildMainQuery(requestAdapter, roundTripped);
+        // --- "shard": build Lucene queries from each, via two independent controllers and the real public API ---
+        final LuceneQueries originalResult = new QueryParsingController(requestAdapter)
+                .buildFromRewrittenQuery(parsedInput.getUserQuery(), rewrittenExpandedQuery);
+        final LuceneQueries roundTrippedResult = new QueryParsingController(requestAdapter)
+                .buildFromRewrittenQuery(roundTrippedOriginalUserQuery, roundTrippedRewrittenQuery);
 
+        // the UP boost is folded into mainQuery itself here (addQuerqyBoostQueriesToMainQuery() is true in this
+        // adapter), so its effect is asserted via mainQuery equality below, not via a separate querqyBoostQueries
+        // list (which stays null in this configuration - see QueryParsingController's boost-assembly branch)
         assertEquals("Main query built from the round-tripped model must equal the one built directly",
-                originalMainQuery, roundTrippedMainQuery);
-        assertEquals(originalMainQuery.toString(), roundTrippedMainQuery.toString());
-
-        final List<Query> originalBoosts = buildAdditiveBoostQueries(requestAdapter, rewrittenExpandedQuery);
-        final List<Query> roundTrippedBoosts = buildAdditiveBoostQueries(requestAdapter, roundTripped);
-
-        assertEquals(1, originalBoosts.size());
-        assertEquals("The UP-boost query built from the round-tripped model must equal the original",
-                originalBoosts, roundTrippedBoosts);
+                originalResult.mainQuery, roundTrippedResult.mainQuery);
+        assertEquals(originalResult.mainQuery.toString(), roundTrippedResult.mainQuery.toString());
+        assertEquals(null, originalResult.querqyBoostQueries);
+        assertEquals(null, roundTrippedResult.querqyBoostQueries);
 
         // this is what a hybrid query's filter(...) pushdown would consume - must also survive the round trip
-        final List<Query> originalFilters = buildFilterQueries(requestAdapter, rewrittenExpandedQuery);
-        final List<Query> roundTrippedFilters = buildFilterQueries(requestAdapter, roundTripped);
-
-        assertEquals(1, originalFilters.size());
+        assertEquals(1, originalResult.filterQueries.size());
         assertEquals("The FILTER query built from the round-tripped model must equal the original",
-                originalFilters, roundTrippedFilters);
+                originalResult.filterQueries, roundTrippedResult.filterQueries);
     }
 
-    private static ExpandedQuery roundTrip(final ExpandedQuery expandedQuery) throws IOException {
+    private static QuerqyQuery<?> roundTripQuerqyQuery(final QuerqyQuery<?> query) throws IOException {
+        final BytesStreamOutput output = new BytesStreamOutput();
+        ExpandedQueryWriteable.writeQuerqyQuery(output, query);
+        output.flush();
+        return ExpandedQueryWriteable.readQuerqyQuery(output.bytes().streamInput());
+    }
+
+    private static ExpandedQuery roundTripExpandedQuery(final ExpandedQuery expandedQuery) throws IOException {
         final BytesStreamOutput output = new BytesStreamOutput();
         ExpandedQueryWriteable.writeExpandedQuery(output, expandedQuery);
         output.flush();
         return ExpandedQueryWriteable.readExpandedQuery(output.bytes().streamInput());
-    }
-
-    private static List<Query> buildFilterQueries(final LuceneSearchEngineRequestAdapter requestAdapter,
-                                                   final ExpandedQuery expandedQuery) throws Exception {
-        final QueryParsingController controller = new QueryParsingController(requestAdapter);
-        return controller.transformFilterQueries(expandedQuery.getFilterQueries());
-    }
-
-    private static Query buildMainQuery(final LuceneSearchEngineRequestAdapter requestAdapter,
-                                        final ExpandedQuery expandedQuery) {
-        final QueryParsingController controller = new QueryParsingController(requestAdapter);
-        return controller.transformUserQuery(expandedQuery.getUserQuery(), controller.builder);
-    }
-
-    private static List<Query> buildAdditiveBoostQueries(final LuceneSearchEngineRequestAdapter requestAdapter,
-                                                          final ExpandedQuery expandedQuery) throws Exception {
-        final QueryParsingController controller = new QueryParsingController(requestAdapter);
-        return controller.getAdditiveQuerqyBoostQueries(expandedQuery);
     }
 
     private static RewriterFactory buildCommonRulesRewriterFactory() throws Exception {
