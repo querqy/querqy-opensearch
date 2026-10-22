@@ -1,6 +1,7 @@
 # 2. SearchPipelinePlugin integration: spike findings and implemented design
 
-Date: 2026-10-21 (spikes); updated 2026-10-22 (implementation landed)
+Date: 2026-10-21 (spikes); updated 2026-10-22 (implementation landed); updated 2026-10-22 (Spike 2
+answered via a local test, see finding 7)
 
 ## Status
 
@@ -10,9 +11,9 @@ original Phase-0 section (spike findings) is unchanged below; the design section
 rewritten to describe what was actually built, which differs from the original proposal in one
 significant way - see "Design revision" below.
 
-Not yet implemented/verified: AWS spikes 1-2 (need an AWS account; tracked separately), and real
+Not yet implemented/verified: AWS spike 1 (needs an AWS account; tracked separately), and real
 `HybridQueryBuilder` validation (neural-search isn't available as a build/test dependency - see
-"Testing" below).
+"Testing" below). Spike 2 (FGAC identity question) no longer needs an AWS account - see finding 7.
 
 ## Context
 
@@ -120,15 +121,64 @@ round of work ran that spike, plus the two spikes it depends on.
    that write a `querqy` clause with Mustache variables don't need to change shape at all - they
    just add `search_pipeline` to route through `querqy_rewrite`.
 
-6. **Not yet run (blocked on an AWS account):**
-   - Spike 1: does AWS's `create-package`/`describe-packages` validation accept a plugin
-     implementing `SearchPlugin` + `SearchPipelinePlugin` and using `Client`, and what
-     `descriptor.properties`/engine-version format does it actually require for 3.x?
-   - Spike 2: under OpenSearch Security's fine-grained access control, does a `Client` call made
-     from inside a `SearchRequestProcessor` run as the searching user's own identity, or as an
-     elevated/internal one? This determines whether an ordinary, non-admin searching user (who
-     has no explicit read grant on `.opensearch-querqy`) can trigger rewriter resolution through
-     a pipeline at all.
+6. **Spike 1: not yet run (blocked on an AWS account).** Does AWS's `create-package`/
+   `describe-packages` validation accept a plugin implementing `SearchPlugin` +
+   `SearchPipelinePlugin` and using `Client`, and what `descriptor.properties`/engine-version
+   format does it actually require for 3.x?
+
+7. **Spike 2, answered - no AWS account needed.** The question was: under OpenSearch Security's
+   fine-grained access control (FGAC), does a `Client` call made from inside a
+   `SearchRequestProcessor` run as the searching user's own identity, or as an elevated/internal
+   one? This is directly testable locally, since OpenSearch Security is open-source and runs on
+   any self-hosted node - no AWS account or second real test user needed, just two local roles.
+
+   This question is also the subject of
+   [querqy/querqy-opensearch#14](https://github.com/querqy/querqy-opensearch/issues/14) (opened
+   2022 by an AWS/OpenSearch engineer, closed the same year with "keep the default behavior" and
+   no code change). That issue's framing - "the security plugin is able to check the queried
+   index out of the box, but if the Querqy index is already cached, it's not able to check
+   authorization over the Querqy index" - turns out to be correct but incomplete: the gap is
+   narrower than "no check ever happens."
+
+   **Method:** a local single-node OpenSearch cluster (Docker, `opensearchproject/opensearch`,
+   which bundles the security plugin) with this plugin installed, two roles - `admin` (full
+   access) and a `restricted_role` granted `read`/`get`/`search` on a data index only, nothing on
+   `.opensearch-querqy` - and a `restricted_user` mapped to the latter. Four scenarios, crossing
+   {old per-shard `querqy` query, new `querqy_rewrite` pipeline} × {cold rewriter-factory cache
+   (freshly restarted node, nothing loaded yet), warm (an `admin` search already loaded it)},
+   always issuing the actual search as `restricted_user`.
+
+   **Result, identical for both the old per-shard path and the new `querqy_rewrite` pipeline
+   path:**
+   - **Cold:** the search fails (`OpenSearchSecurityException: no permissions for
+     [indices:data/read/get] and User [name=restricted_user, ...]`) - FGAC *does* intercept the
+     internal read and correctly attributes it to the actual searching user's own identity, not
+     an elevated or internal one. This directly answers the original question: the once-captured
+     `Client` reference (`SearchPipelinePlugin.Parameters.client`, captured once at plugin/
+     processor-factory-build time and reused for every later search through any pipeline) does
+     **not** mean a fixed or elevated identity - whichever user's thread is actually running the
+     processor is who the call executes as, same as the pre-existing per-shard path. No privilege
+     escalation, no new risk from the `querqy_rewrite` pipeline path specifically.
+   - **Warm:** the identical query from `restricted_user` succeeds (200, full results, a pure
+     cache hit, no network call at all) - because a cache hit has nothing for FGAC to intercept,
+     *any* prior load by *any* user (not just an admin - the very first searcher, whoever they
+     are, triggers and is checked against the same cold-load path) silently authorizes every
+     subsequent user for as long as that rewriter stays cached, regardless of their own grants.
+     This confirms issue #14's underlying concern, with the precise shape: correct on a cold load,
+     bypassed on a cache hit - not "no check ever happens."
+
+   **Practical conclusion (decided 2026-10-22, documented rather than engineered around for now):**
+   the more operationally relevant consequence of the cold-load behavior above is that *some*
+   sufficiently-privileged request has to be the one to warm each rewriter's cache - an ordinary
+   search user with no grant on `.opensearch-querqy` cannot be the first to query a given
+   rewriter after a cache eviction/restart, which is an awkward operational dependency, not just a
+   theoretical access-control gap. Rather than building a mitigation (e.g. ps48's 2022 "mandatory
+   access check" idea, or a per-user cache), the intended path for an AWS-hosted deployment is
+   simpler: grant the ordinary search user's role explicit read access to `.opensearch-querqy`
+   directly. That removes both the admin-must-warm-it-first dependency and the cache-bypass
+   concern at once (there is no improper bypass if the user was already entitled to read it) -
+   only the write/`PUT` endpoint genuinely needs restricting to admin-like roles, consistent with
+   what both sides of issue #14 agreed on back in 2022.
 
 ## Design revision (supersedes this ADR's original "new `querqy_rewritten` QueryBuilder" proposal)
 
@@ -267,11 +317,17 @@ available, not something this repo's own automated suite can cover.
   on a new branch (`querqy-rewrite-search-pipeline`), not yet released - `querqy-opensearch`
   currently depends on a local Maven SNAPSHOT build of it (`core/build.gradle`'s `mavenLocal()`
   repository addition) until that change is released.
-- Not addressed in this round: spikes 1-2 (need an AWS account), real `HybridQueryBuilder`
-  end-to-end validation (needs a neural-search-enabled cluster), and word-break-style rewriters
-  running on the coordinator at all (explicitly out of scope - they fail clearly rather than being
-  supported, per finding 1 above; a dictionary-based approach for these is a later phase per the
-  briefing's decision 6).
+- Not addressed in this round: spike 1 (needs an AWS account; spike 2 is answered, see finding 7),
+  real `HybridQueryBuilder` end-to-end validation (needs a neural-search-enabled cluster), and
+  word-break-style rewriters running on the coordinator at all (explicitly out of scope - they
+  fail clearly rather than being supported, per finding 1 above; a dictionary-based approach for
+  these is a later phase per the briefing's decision 6).
+- Finding 7's cache-bypass characteristic (correct on a cold load, bypassed on a cache hit) is not
+  new to the `querqy_rewrite` pipeline work - it is identical, pre-existing behavior in the
+  original per-shard path, already discussed in
+  [issue #14](https://github.com/querqy/querqy-opensearch/issues/14). No code or test changes
+  were made as a result of confirming it; see finding 7 for the intended operational answer
+  (grant the search-user role explicit read access to `.opensearch-querqy`) instead.
 - A production `querqy.model` serializer (`ExpandedQueryWriteable`) now covers every concrete node
   type reachable from the built-in rewriters, with an explicit version field, and raises a clear,
   documented exception for `ParsedRawQuery` (generic, unbounded payload - no concrete subclass
