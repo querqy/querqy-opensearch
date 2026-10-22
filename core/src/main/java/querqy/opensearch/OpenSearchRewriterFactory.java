@@ -91,6 +91,22 @@ public abstract class OpenSearchRewriterFactory {
 
     public abstract RewriterFactory createRewriterFactory(IndexShard indexShard) throws OpenSearchException;
 
+    /**
+     * Whether this rewriter can run on a coordinating node with no shard access at all - e.g. inside the
+     * {@code querqy_rewrite} search pipeline request processor, which runs once per request before any shard is
+     * involved. Default {@code true}: {@link #createRewriterFactory(IndexShard)} is unused-in-body by every
+     * built-in rewriter factory, but the actual rewrite - {@code RewriterFactory#createRewriter(...)}, invoked
+     * later, per shard, during normal per-shard query building - can still need a real shard-backed index reader
+     * (see {@code WordBreakCompoundRewriterFactory}, which overrides this to {@code false}). A rewriter factory
+     * that overrides {@link #createRewriterFactory(IndexShard)} to do anything with its {@code indexShard}
+     * argument, or whose built {@code RewriterFactory#createRewriter(...)} needs the request adapter's
+     * {@code getSearchExecutionContext()}/equivalent index access to actually run (not just to build), must
+     * override this to return {@code false}.
+     */
+    public boolean isSupportedOnCoordinator() {
+        return true;
+    }
+
     public String getRewriterId() {
         return rewriterId;
     }
