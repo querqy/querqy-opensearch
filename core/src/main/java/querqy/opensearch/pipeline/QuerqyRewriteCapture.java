@@ -18,6 +18,7 @@
 
 package querqy.opensearch.pipeline;
 
+import querqy.opensearch.infologging.LogPayloadType;
 import querqy.rewrite.logging.RewriteChainLog;
 
 import java.util.Collections;
@@ -38,12 +39,15 @@ public final class QuerqyRewriteCapture {
     private final RewriteChainLog rewriteChainLog;
     private final Set<Object> decorations;
     private final Map<String, List<Object>> decorationsMap;
+    private final LogPayloadType perQueryPayloadTypeOverride;
 
     public QuerqyRewriteCapture(final RewriteChainLog rewriteChainLog, final Set<Object> decorations,
-                                final Map<String, List<Object>> decorationsMap) {
+                                final Map<String, List<Object>> decorationsMap,
+                                final LogPayloadType perQueryPayloadTypeOverride) {
         this.rewriteChainLog = rewriteChainLog;
         this.decorations = decorations == null ? Collections.emptySet() : decorations;
         this.decorationsMap = decorationsMap == null ? Collections.emptyMap() : decorationsMap;
+        this.perQueryPayloadTypeOverride = perQueryPayloadTypeOverride;
     }
 
     /** May be empty (no rewriter in the chain actually logged anything), but is never itself {@code null}. */
@@ -57,5 +61,16 @@ public final class QuerqyRewriteCapture {
 
     public Map<String, List<Object>> getDecorationsMap() {
         return decorationsMap;
+    }
+
+    /**
+     * The originating {@code querqy} query's own {@code info_logging.type}, if that query specified an {@code
+     * info_logging} object at all - {@code null} means it didn't, so the {@code querqy_rewrite} response
+     * processor's own configured default applies instead. Presence (even an explicit {@code "none"}) always wins
+     * over the pipeline default, so a single request can be debugged against an otherwise-quiet pipeline, or
+     * explicitly silenced against an otherwise-verbose one.
+     */
+    public LogPayloadType getPerQueryPayloadTypeOverride() {
+        return perQueryPayloadTypeOverride;
     }
 }

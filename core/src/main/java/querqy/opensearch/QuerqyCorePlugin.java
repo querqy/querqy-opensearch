@@ -22,6 +22,7 @@ import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NU
 
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.core.ParseField;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
@@ -39,11 +40,14 @@ import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.script.ScriptService;
 import org.opensearch.search.pipeline.Processor;
 import org.opensearch.search.pipeline.SearchRequestProcessor;
+import org.opensearch.search.pipeline.SearchResponseProcessor;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 import org.opensearch.watcher.ResourceWatcherService;
 import querqy.opensearch.infologging.Log4jSink;
+import querqy.opensearch.pipeline.QuerqyExtBuilder;
 import querqy.opensearch.pipeline.QuerqyRewriteRequestProcessor;
+import querqy.opensearch.pipeline.QuerqyRewriteResponseProcessor;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.rewriterstore.mapper.QuerqyRewriterConfigFieldMapper;
 
@@ -125,5 +129,25 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
         return Collections.singletonMap(QuerqyRewriteRequestProcessor.TYPE,
                 new QuerqyRewriteRequestProcessor.Factory(parameters.client, parameters.env.settings(),
                         querqyProcessor));
+    }
+
+    @Override
+    public Map<String, Processor.Factory<SearchResponseProcessor>> getResponseProcessors(
+            final SearchPipelinePlugin.Parameters parameters) {
+        return Collections.singletonMap(QuerqyRewriteResponseProcessor.TYPE,
+                new QuerqyRewriteResponseProcessor.Factory());
+    }
+
+    @Override
+    public List<SearchExtSpec<?>> getSearchExts() {
+        return Collections.singletonList(new SearchExtSpec<>(
+                new ParseField(QuerqyExtBuilder.NAME),
+                QuerqyExtBuilder::new,
+                parser -> {
+                    throw new UnsupportedOperationException(
+                            "[" + QuerqyExtBuilder.NAME + "] is a response-only ext section, produced only by the "
+                                    + QuerqyRewriteResponseProcessor.TYPE + " search pipeline response processor - "
+                                    + "it is never parsed back out of a request body");
+                }));
     }
 }

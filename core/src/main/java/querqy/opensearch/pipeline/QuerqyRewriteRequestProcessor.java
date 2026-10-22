@@ -39,6 +39,7 @@ import querqy.opensearch.QuerqyProcessor;
 import querqy.opensearch.RewriteChainAndLogging;
 import querqy.opensearch.RewriterFactoryLoader;
 import querqy.opensearch.RewriterRef;
+import querqy.opensearch.query.InfoLoggingSpec;
 import querqy.opensearch.query.MatchingQuery;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.query.Rewriter;
@@ -149,10 +150,13 @@ public class QuerqyRewriteRequestProcessor extends AbstractProcessor implements 
                 topLevelQuery = topLevelQuery.filter(buildFilterWrapper(queryBuilder, rewritten.getFilterQueries()));
             }
 
+            final InfoLoggingSpec infoLoggingSpec = queryBuilder.getInfoLoggingSpec();
+
             captures.add(new QuerqyRewriteCapture(
                     output.getRewriteLog().orElse(null),
                     castDecorations(adapter.getContext().get(DecorateInstruction.DECORATION_CONTEXT_KEY)),
-                    castDecorationsMap(adapter.getContext().get(DecorateInstruction.DECORATION_CONTEXT_MAP_KEY))));
+                    castDecorationsMap(adapter.getContext().get(DecorateInstruction.DECORATION_CONTEXT_MAP_KEY)),
+                    infoLoggingSpec == null ? null : infoLoggingSpec.getPayloadType()));
         }
 
         source.query(topLevelQuery);
