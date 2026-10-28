@@ -20,36 +20,18 @@ package querqy.opensearch;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.unmodifiableList;
-import static querqy.opensearch.rewriterstore.Constants.SETTINGS_QUERQY_INDEX_NUM_REPLICAS;
 
 import org.opensearch.action.ActionRequest;
 import org.opensearch.core.action.ActionResponse;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.node.DiscoveryNodes;
-import org.opensearch.cluster.service.ClusterService;
-import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.IndexScopedSettings;
-import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.settings.SettingsFilter;
-import org.opensearch.core.xcontent.NamedXContentRegistry;
-import org.opensearch.env.Environment;
-import org.opensearch.env.NodeEnvironment;
-import org.opensearch.index.IndexModule;
-import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.plugins.ActionPlugin;
-import org.opensearch.plugins.Plugin;
-import org.opensearch.plugins.SearchPlugin;
-import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.rest.RestController;
 import org.opensearch.rest.RestHandler;
-import org.opensearch.script.ScriptService;
-import org.opensearch.threadpool.ThreadPool;
-import org.opensearch.transport.client.Client;
-import org.opensearch.watcher.ResourceWatcherService;
-import querqy.opensearch.infologging.Log4jSink;
-import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.rewriterstore.DeleteRewriterAction;
 import querqy.opensearch.rewriterstore.GetRewriterAction;
 import querqy.opensearch.rewriterstore.NodesClearRewriterCacheAction;
@@ -65,39 +47,23 @@ import querqy.opensearch.rewriterstore.TransportNodesReloadRewriterAction;
 import querqy.opensearch.rewriterstore.TransportPutRewriterAction;
 
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Supplier;
 
-public class QuerqyPlugin extends Plugin implements SearchPlugin, ActionPlugin {
-
-
-    private final QuerqyProcessor querqyProcessor;
-    private final RewriterShardContexts rewriterShardContexts;
+/**
+ * The full Querqy plugin: {@link QuerqyCorePlugin} (the {@code querqy} query, rewriters, index-based config) plus
+ * the {@code ActionPlugin} REST/transport rewriter-management API (PUT/GET/DELETE rewriter, cluster-wide reload and
+ * cache clear). This is the self-managed-cluster artifact; it is not installable on Amazon OpenSearch Service, which
+ * doesn't support {@code ActionPlugin} - use {@code querqy-opensearch-core} there instead.
+ */
+public class QuerqyPlugin extends QuerqyCorePlugin implements ActionPlugin {
 
     public QuerqyPlugin(final Settings settings) {
-        rewriterShardContexts = new RewriterShardContexts(settings);
-        querqyProcessor = new QuerqyProcessor(rewriterShardContexts, new Log4jSink());
-    }
-
-    @Override
-    public void onIndexModule(final IndexModule indexModule) {
-
-        indexModule.addIndexEventListener(rewriterShardContexts);
-
-    }
-
-    /**
-     * The new {@link QuerySpec}s defined by this plugin.
-     */
-    @Override
-    public List<QuerySpec<?>> getQueries() {
-        return Collections.singletonList(
-                new QuerySpec<QueryBuilder>(
-                        QuerqyQueryBuilder.NAME,
-                        (in) -> new QuerqyQueryBuilder(in, querqyProcessor),
-                        (parser) -> QuerqyQueryBuilder.fromXContent(parser, querqyProcessor)));
+        super(settings);
+        // push-based reload (below) already keeps every node's cache fresh immediately after every write, making
+        // core's async refresh-after-write check redundant here - and, since both write to the same cache with no
+        // version check between them, a source of an unguarded race between the two paths.
+        rewriterShardContexts.disableAsyncRefresh();
     }
 
     @Override
@@ -124,25 +90,5 @@ public class QuerqyPlugin extends Plugin implements SearchPlugin, ActionPlugin {
                         .class)
 
         ));
-    }
-
-    @Override
-    public Collection<Object> createComponents(final Client client, final ClusterService clusterService,
-                                               final ThreadPool threadPool,
-                                               final ResourceWatcherService resourceWatcherService,
-                                               final ScriptService scriptService,
-                                               final NamedXContentRegistry xContentRegistry,
-                                               final Environment environment, final NodeEnvironment nodeEnvironment,
-                                               final NamedWriteableRegistry namedWriteableRegistry,
-                                               IndexNameExpressionResolver indexNameExpressionResolver,
-                                               Supplier<RepositoriesService> repositoriesServiceSupplier) {
-        return Arrays.asList(rewriterShardContexts, querqyProcessor);
-    }
-
-    @Override
-    public List<Setting<?>> getSettings() {
-        return Collections.singletonList(Setting.intSetting(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, 1, 0,
-                Setting.Property.NodeScope));
-
     }
 }

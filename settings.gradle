@@ -1,2 +1,4 @@
 rootProject.name = 'opensearch-querqy'
 
+include 'core'
+include 'tool'

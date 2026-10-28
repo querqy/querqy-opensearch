@@ -1,0 +1,27 @@
+{
+    "properties": {
+      "class": {"type": "keyword"},
+      "type": {"type": "keyword"},
+      "version": {"type":  "integer"},
+      "revision": {"type": "keyword"},
+      "saved_at": {"type": "date"},
+      "info_logging": {
+        "properties": {
+          "sinks": {"type" : "keyword" }
+        }
+      },
+      "config": {
+        "type" : "keyword",
+        "index": false
+      },
+      "config_v_003": {
+        "type" : "keyword",
+        "doc_values": false,
+        "index": false
+      },
+      "config_v_005": {
+        "type" : "querqy_rewriter_config"
+      }
+
+    }
+}
