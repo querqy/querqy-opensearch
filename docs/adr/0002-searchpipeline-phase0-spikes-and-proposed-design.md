@@ -313,10 +313,10 @@ available, not something this repo's own automated suite can cover.
 
 ## Consequences
 
-- `querqy-lucene` gained one new public method (`QueryParsingController#buildFromRewrittenQuery`)
-  on a new branch (`querqy-rewrite-search-pipeline`), not yet released - `querqy-opensearch`
-  currently depends on a local Maven SNAPSHOT build of it (`core/build.gradle`'s `mavenLocal()`
-  repository addition) until that change is released.
+- `querqy-lucene` gained one new public method (`QueryParsingController#buildFromRewrittenQuery`),
+  merged via [querqy/querqy#1163](https://github.com/querqy/querqy/pull/1163) and released as
+  `5.13.lucene1050.1` - `core/build.gradle` depends on that released version directly, with no
+  `mavenLocal()`/SNAPSHOT workaround needed anymore.
 - Not addressed in this round: spike 1 (needs an AWS account; spike 2 is answered, see finding 7),
   real `HybridQueryBuilder` end-to-end validation (needs a neural-search-enabled cluster), and
   word-break-style rewriters running on the coordinator at all (explicitly out of scope - they
