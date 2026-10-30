@@ -27,14 +27,14 @@ import java.util.Locale;
 public final class CliArgs {
 
     public enum Action {
-        PUT, GET, LIST, DELETE;
+        PUT, GET, LIST, DELETE, PUT_DICTIONARY;
 
         static Action fromString(final String s) {
             try {
-                return Action.valueOf(s.toUpperCase(Locale.ROOT));
+                return Action.valueOf(s.toUpperCase(Locale.ROOT).replace('-', '_'));
             } catch (final IllegalArgumentException e) {
                 throw new IllegalArgumentException("Unknown action '" + s + "', expected one of: put, get, list, "
-                        + "delete");
+                        + "delete, put-dictionary");
             }
         }
     }
@@ -53,11 +53,16 @@ public final class CliArgs {
     public final String awsRegion;
     public final String awsService;
     public final String awsProfile;
+    public final String dictionaryName;
+    public final String dictionaryFile;
+    public final String dictionaryFormat;
+    public final Integer hashFunctions;
 
     private CliArgs(final Action action, final String url, final String id, final String configFile,
                     final String revision, final String username, final String password, final int replicas,
                     final boolean insecure, final boolean validateOnly, final boolean sigv4, final String awsRegion,
-                    final String awsService, final String awsProfile) {
+                    final String awsService, final String awsProfile, final String dictionaryName,
+                    final String dictionaryFile, final String dictionaryFormat, final Integer hashFunctions) {
         this.action = action;
         this.url = url;
         this.id = id;
@@ -72,6 +77,10 @@ public final class CliArgs {
         this.awsRegion = awsRegion;
         this.awsService = awsService;
         this.awsProfile = awsProfile;
+        this.dictionaryName = dictionaryName;
+        this.dictionaryFile = dictionaryFile;
+        this.dictionaryFormat = dictionaryFormat;
+        this.hashFunctions = hashFunctions;
     }
 
     public static CliArgs parse(final String[] args) {
@@ -95,9 +104,25 @@ public final class CliArgs {
         String awsRegion = null;
         String awsService = "es";
         String awsProfile = null;
+        String dictionaryName = null;
+        String dictionaryFile = null;
+        String dictionaryFormat = "tsv_df";
+        Integer hashFunctions = null;
 
         for (int i = 1; i < args.length; i++) {
             switch (args[i]) {
+                case "--name":
+                    dictionaryName = requireValue(args, i++, "--name");
+                    break;
+                case "--file":
+                    dictionaryFile = requireValue(args, i++, "--file");
+                    break;
+                case "--format":
+                    dictionaryFormat = requireValue(args, i++, "--format");
+                    break;
+                case "--hash-functions":
+                    hashFunctions = Integer.parseInt(requireValue(args, i++, "--hash-functions"));
+                    break;
                 case "--url":
                     url = requireValue(args, i++, "--url");
                     break;
@@ -182,12 +207,34 @@ public final class CliArgs {
                     throw new IllegalArgumentException("--url is required");
                 }
                 break;
+            case PUT_DICTIONARY:
+                if (dictionaryName == null) {
+                    throw new IllegalArgumentException("--name is required");
+                }
+                if (revision == null) {
+                    throw new IllegalArgumentException("--revision is required");
+                }
+                if (dictionaryFile == null) {
+                    throw new IllegalArgumentException("--file is required");
+                }
+                if (url == null) {
+                    throw new IllegalArgumentException("--url is required");
+                }
+                if (!dictionaryFormat.equals("tsv_df") && !dictionaryFormat.equals("tsv_df_cooc")) {
+                    throw new IllegalArgumentException(
+                            "--format must be 'tsv_df' or 'tsv_df_cooc', got '" + dictionaryFormat + "'");
+                }
+                if (dictionaryFormat.equals("tsv_df_cooc") && hashFunctions == null) {
+                    throw new IllegalArgumentException("--hash-functions is required for --format tsv_df_cooc");
+                }
+                break;
             default:
                 throw new IllegalStateException("Unhandled action: " + action);
         }
 
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
-                validateOnly, sigv4, awsRegion, awsService, awsProfile);
+                validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryName, dictionaryFile,
+                dictionaryFormat, hashFunctions);
     }
 
     private static String requireValue(final String[] args, final int flagIndex, final String flagName) {

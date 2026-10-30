@@ -21,6 +21,7 @@ package querqy.opensearch;
 import org.opensearch.OpenSearchException;
 
 import org.opensearch.index.shard.IndexShard;
+import org.opensearch.transport.client.Client;
 import querqy.opensearch.rewriterstore.LoadRewriterConfig;
 import querqy.rewrite.RewriterFactory;
 
@@ -90,6 +91,22 @@ public abstract class OpenSearchRewriterFactory {
     public abstract List<String> validateConfiguration(Map<String, Object> config);
 
     public abstract RewriterFactory createRewriterFactory(IndexShard indexShard) throws OpenSearchException;
+
+    /**
+     * Like {@link #createRewriterFactory(IndexShard)}, but also hands in what's needed to resolve a coordinator-
+     * safe dictionary reference (see {@code WordBreakCompoundRewriterFactory}'s {@code dictionary} config, backed
+     * by a {@code term_corpus} document rather than a shard's live index): a {@link DictionaryCorpusLoader} - a
+     * node-level, shared, weak-reference cache of parsed dictionaries - and the {@link Client} needed for the
+     * (coalesced, at-most-once-per-dictionary) load. Default implementation delegates to {@link
+     * #createRewriterFactory(IndexShard)} unchanged, so every built-in rewriter factory except {@code
+     * WordBreakCompoundRewriterFactory}, and any third-party SPI factory, keeps compiling and behaving exactly as
+     * before without needing to know this method exists.
+     */
+    public RewriterFactory createRewriterFactory(final IndexShard indexShard,
+                                                 final DictionaryCorpusLoader dictionaryCorpusLoader,
+                                                 final Client client) throws OpenSearchException {
+        return createRewriterFactory(indexShard);
+    }
 
     /**
      * Whether this rewriter can run on a coordinating node with no shard access at all - e.g. inside the

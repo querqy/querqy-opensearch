@@ -35,6 +35,7 @@ import querqy.model.ExpandedQuery;
 import querqy.model.MatchAllQuery;
 import querqy.model.QuerqyQuery;
 import querqy.lucene.QueryParsingController;
+import querqy.opensearch.DictionaryCorpusLoader;
 import querqy.opensearch.QuerqyProcessor;
 import querqy.opensearch.RewriteChainAndLogging;
 import querqy.opensearch.RewriterFactoryLoader;
@@ -243,8 +244,9 @@ public class QuerqyRewriteRequestProcessor extends AbstractProcessor implements 
         private final RewriterFactoryLoader loader;
         private final QuerqyProcessor querqyProcessor;
 
-        public Factory(final Client client, final Settings settings, final QuerqyProcessor querqyProcessor) {
-            this.loader = RewriterFactoryLoader.nodeLevel(settings, client, true);
+        public Factory(final Client client, final Settings settings, final QuerqyProcessor querqyProcessor,
+                      final DictionaryCorpusLoader dictionaryCorpusLoader) {
+            this.loader = RewriterFactoryLoader.nodeLevel(settings, client, true, dictionaryCorpusLoader);
             this.querqyProcessor = querqyProcessor;
         }
 
