@@ -326,6 +326,22 @@ public class CliArgsTest {
     }
 
     @Test
+    public void testPutRejectsDictionaryName() {
+        assertThatThrownBy(() -> CliArgs.parse(new String[] {
+                "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
+                "--dictionary-file", "d.tsv", "--dictionary-name", "foo"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-name");
+    }
+
+    @Test
+    public void testPutRejectsDictionaryRevision() {
+        assertThatThrownBy(() -> CliArgs.parse(new String[] {
+                "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
+                "--dictionary-file", "d.tsv", "--dictionary-revision", "r1"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-revision");
+    }
+
+    @Test
     public void testPutWithoutDictionaryFileDoesNotRequireFormatValidation() {
         // --format defaults to tsv_df but is irrelevant/unvalidated when no --dictionary-file is given at all
         final CliArgs args = CliArgs.parse(new String[] {

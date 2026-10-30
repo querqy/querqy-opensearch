@@ -201,6 +201,18 @@ public final class CliArgs {
                 if (!validateOnly && url == null) {
                     throw new IllegalArgumentException("--url is required unless --validate-only is set");
                 }
+                // --dictionary-name/--dictionary-revision are not used by put: a dictionary referenced via
+                // --dictionary-file always gets its name/revision from --config-file's own "dictionary" block,
+                // never from a flag - reject them outright rather than silently ignoring what looks like it should
+                // matter.
+                if (dictionaryName != null) {
+                    throw new IllegalArgumentException("--dictionary-name is not used by put - the dictionary's "
+                            + "name always comes from --config-file's own 'dictionary' block");
+                }
+                if (dictionaryRevision != null) {
+                    throw new IllegalArgumentException("--dictionary-revision is not used by put - the dictionary's "
+                            + "revision always comes from --config-file's own 'dictionary' block");
+                }
                 // --dictionary-file is only meaningful for a WordBreakCompoundRewriterFactory config with a
                 // "dictionary" reference - RewriterConfigTool checks that once it has parsed --config-file: this
                 // only validates --format/--hash-functions together, the same way put-dictionary does below.
