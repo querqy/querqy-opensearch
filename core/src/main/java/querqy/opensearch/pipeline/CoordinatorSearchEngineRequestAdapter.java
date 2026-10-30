@@ -174,7 +174,7 @@ public class CoordinatorSearchEngineRequestAdapter implements LuceneSearchEngine
 
     @Override
     public Query applyMinimumShouldMatch(final BooleanQuery query) {
-        throw lucenBuildingStageOnly("applyMinimumShouldMatch");
+        throw luceneBuildingStageOnly("applyMinimumShouldMatch");
     }
 
     @Override
@@ -207,22 +207,22 @@ public class CoordinatorSearchEngineRequestAdapter implements LuceneSearchEngine
 
     @Override
     public java.util.List<Query> getAdditiveBoosts(final QuerqyQuery<?> userQuery) {
-        throw lucenBuildingStageOnly("getAdditiveBoosts");
+        throw luceneBuildingStageOnly("getAdditiveBoosts");
     }
 
     @Override
     public java.util.List<Query> getMultiplicativeBoosts(final QuerqyQuery<?> userQuery) {
-        throw lucenBuildingStageOnly("getMultiplicativeBoosts");
+        throw luceneBuildingStageOnly("getMultiplicativeBoosts");
     }
 
     @Override
     public Optional<Query> parseRankQuery() {
-        throw lucenBuildingStageOnly("parseRankQuery");
+        throw luceneBuildingStageOnly("parseRankQuery");
     }
 
     @Override
     public Query rawQueryToQuery(final RawQuery rawQuery) {
-        throw lucenBuildingStageOnly("rawQueryToQuery");
+        throw luceneBuildingStageOnly("rawQueryToQuery");
     }
 
     @Override
@@ -366,7 +366,7 @@ public class CoordinatorSearchEngineRequestAdapter implements LuceneSearchEngine
         return XContentJsonProvider.INSTANCE;
     }
 
-    private static UnsupportedOperationException lucenBuildingStageOnly(final String methodName) {
+    private static UnsupportedOperationException luceneBuildingStageOnly(final String methodName) {
         return new UnsupportedOperationException(methodName + " belongs to the shard-side Lucene query-building "
                 + "stage (QueryParsingController.buildFromRewrittenQuery), not to coordinator-side parse + rewrite "
                 + "(CoordinatorSearchEngineRequestAdapter only supports createExpandedQuery()/RewriteChain.rewrite(...))");
