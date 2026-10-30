@@ -56,7 +56,7 @@ import java.util.Set;
  * <p>
  * There is no in-place mutator for a {@code SearchResponse}'s ext builders, so adding one means rebuilding the
  * response's sections wholesale - the same pattern core itself uses for other response-section-touching
- * processors (see this class's test-only precursor, {@code SpikeResponseProcessor}).
+ * processors.
  * <p>
  * On/off control: this processor's own {@code info_logging} config (same shape as the query-DSL field) is the
  * pipeline-level default (absent = {@code "none"}, safe by default); a request's own {@code querqy} query
