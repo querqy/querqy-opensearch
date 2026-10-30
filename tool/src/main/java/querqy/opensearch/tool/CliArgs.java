@@ -114,8 +114,8 @@ public final class CliArgs {
                 case "--name":
                     dictionaryName = requireValue(args, i++, "--name");
                     break;
-                case "--file":
-                    dictionaryFile = requireValue(args, i++, "--file");
+                case "--dictionary-file":
+                    dictionaryFile = requireValue(args, i++, "--dictionary-file");
                     break;
                 case "--format":
                     dictionaryFormat = requireValue(args, i++, "--format");
@@ -192,6 +192,12 @@ public final class CliArgs {
                 if (!validateOnly && url == null) {
                     throw new IllegalArgumentException("--url is required unless --validate-only is set");
                 }
+                // --dictionary-file is only meaningful for a WordBreakCompoundRewriterFactory config with a
+                // "dictionary" reference - RewriterConfigTool checks that once it has parsed --config-file: this
+                // only validates --format/--hash-functions together, the same way put-dictionary does below.
+                if (dictionaryFile != null) {
+                    validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
+                }
                 break;
             case GET:
             case DELETE:
@@ -215,18 +221,12 @@ public final class CliArgs {
                     throw new IllegalArgumentException("--revision is required");
                 }
                 if (dictionaryFile == null) {
-                    throw new IllegalArgumentException("--file is required");
+                    throw new IllegalArgumentException("--dictionary-file is required");
                 }
                 if (url == null) {
                     throw new IllegalArgumentException("--url is required");
                 }
-                if (!dictionaryFormat.equals("tsv_df") && !dictionaryFormat.equals("tsv_df_cooc")) {
-                    throw new IllegalArgumentException(
-                            "--format must be 'tsv_df' or 'tsv_df_cooc', got '" + dictionaryFormat + "'");
-                }
-                if (dictionaryFormat.equals("tsv_df_cooc") && hashFunctions == null) {
-                    throw new IllegalArgumentException("--hash-functions is required for --format tsv_df_cooc");
-                }
+                validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
                 break;
             default:
                 throw new IllegalStateException("Unhandled action: " + action);
@@ -235,6 +235,16 @@ public final class CliArgs {
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
                 validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryName, dictionaryFile,
                 dictionaryFormat, hashFunctions);
+    }
+
+    private static void validateDictionaryFormatArgs(final String dictionaryFormat, final Integer hashFunctions) {
+        if (!dictionaryFormat.equals("tsv_df") && !dictionaryFormat.equals("tsv_df_cooc")) {
+            throw new IllegalArgumentException(
+                    "--format must be 'tsv_df' or 'tsv_df_cooc', got '" + dictionaryFormat + "'");
+        }
+        if (dictionaryFormat.equals("tsv_df_cooc") && hashFunctions == null) {
+            throw new IllegalArgumentException("--hash-functions is required for --format tsv_df_cooc");
+        }
     }
 
     private static String requireValue(final String[] args, final int flagIndex, final String flagName) {

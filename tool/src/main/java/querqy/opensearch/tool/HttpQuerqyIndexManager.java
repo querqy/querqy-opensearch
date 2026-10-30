@@ -71,6 +71,17 @@ final class HttpQuerqyIndexManager {
         return response.getStatusLine().getStatusCode() == 200;
     }
 
+    /**
+     * @return true iff a document with this id exists in {@value Constants#QUERQY_INDEX_NAME} - used to check a
+     * {@code word_break_compound} rewriter's referenced {@code term_corpus} dictionary exists before saving the
+     * rewriter (see {@code RewriterConfigTool#runPut}).
+     */
+    boolean documentExists(final String docId) throws IOException {
+        // same reasoning as indexExists(): HEAD never turns a 404 into a ResponseException
+        final Response response = performRequest(new Request("HEAD", INDEX_PATH + "/_doc/" + docId));
+        return response.getStatusLine().getStatusCode() == 200;
+    }
+
     private void createIndex(final int numReplicas) throws IOException {
         final String body = "{\"settings\":{\"number_of_shards\":" + Constants.QUERQY_INDEX_NUM_SHARDS
                 + ",\"number_of_replicas\":" + numReplicas + "},\"mappings\":"

@@ -38,6 +38,7 @@ import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import querqy.opensearch.OpenSearchRewriterFactory;
+import querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 import querqy.opensearch.rewriterstore.RewriterInfo;
 import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
@@ -66,25 +67,34 @@ import java.util.zip.GZIPOutputStream;
  *
  * <pre>
  * java -jar querqy-opensearch-tool.jar put --url https://host:9200 --id my_rewriter --config-file ./my-rewriter.json \
- *     [--revision r42] [--username admin --password '***'] [--replicas 1] [--insecure] [--validate-only]
+ *     [--revision r42] [--dictionary-file ./dict.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N]] \
+ *     [--username admin --password '***'] [--replicas 1] [--insecure] [--validate-only]
  * java -jar querqy-opensearch-tool.jar get --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar list --url https://host:9200 [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar delete --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --name dutch-compounds \
- *     --revision r1 --file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N] \
+ *     --revision r1 --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N] \
  *     [--username ... --password ...] [--replicas 1]
  * </pre>
  *
  * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
  * {@code config}, and optionally {@code info_logging}/{@code revision}.
  *
- * <p><b>{@code put-dictionary}:</b> gzips {@code --file} (a two-column {@code term\tdocFreq} TSV for {@code
- * --format tsv_df}, the default; a three-column {@code term\tdocFreq\tbloomHex} TSV plus {@code --hash-functions}
- * for {@code tsv_df_cooc}, which also enables collation) and writes it as a {@code term_corpus} document, id
- * {@code <name>-<revision>}. A {@code WordBreakCompoundRewriterFactory} rewriter config references it via {@code
- * "dictionary": {"name": ..., "revision": ...}} instead of a shard-side {@code dictionaryField}; that makes it
- * usable from the {@code querqy_rewrite} search pipeline, which has no shard/index access. The document is
- * immutable by convention - write a new revision rather than overwriting one already in use.</p>
+ * <p><b>{@code put-dictionary}:</b> gzips {@code --dictionary-file} (a two-column {@code term\tdocFreq} TSV for
+ * {@code --format tsv_df}, the default; a three-column {@code term\tdocFreq\tbloomHex} TSV plus {@code
+ * --hash-functions} for {@code tsv_df_cooc}, which also enables collation) and writes it as a {@code term_corpus}
+ * document, id {@code <name>-<revision>}. A {@code WordBreakCompoundRewriterFactory} rewriter config references it
+ * via {@code "dictionary": {"name": ..., "revision": ...}} instead of a shard-side {@code dictionaryField}; that
+ * makes it usable from the {@code querqy_rewrite} search pipeline, which has no shard/index access. The document
+ * is immutable by convention - write a new revision rather than overwriting one already in use.</p>
+ *
+ * <p><b>{@code put} with a {@code dictionary} reference:</b> if {@code --config-file}'s rewriter is a {@code
+ * WordBreakCompoundRewriterFactory} configured with {@code "dictionary": {"name": ..., "revision": ...}}, {@code
+ * put} checks that document already exists before saving the rewriter - rejecting the command instead of saving a
+ * rewriter config that would only fail later, the first time a query tries to use it. Pass {@code
+ * --dictionary-file} (plus {@code --format}/{@code --hash-functions} as needed, same as {@code put-dictionary}) to
+ * upload the dictionary as part of the same command instead of requiring a separate {@code put-dictionary} call
+ * first.</p>
  *
  * <p><b>AWS IAM auth:</b> pass {@code --sigv4} instead of {@code --username}/{@code --password} to sign every
  * request with AWS SigV4, for an Amazon OpenSearch Service domain or OpenSearch Serverless collection whose
@@ -181,12 +191,18 @@ public final class RewriterConfigTool {
             return;
         }
 
+        final DictionaryReference dictionaryReference = findWordBreakDictionaryReference(content);
         final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
 
         final HttpHost host = parseHost(args);
         try (RestClient client = buildClient(args, host)) {
             final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
             indexManager.ensureIndexExists(args.replicas);
+
+            if (dictionaryReference != null) {
+                ensureDictionaryExists(indexManager, dictionaryReference, args);
+            }
+
             indexManager.putRewriter(args.id, source);
         }
 
@@ -195,19 +211,74 @@ public final class RewriterConfigTool {
     }
 
     /**
-     * Gzips {@code --file} and writes it as a {@code term_corpus} document (see {@link TermCorpusConfigMapping}) -
-     * the dictionary a coordinator-safe {@code word_break} rewriter can reference by {@code name}/{@code revision}
-     * instead of a shard-side {@code dictionaryField}. Always writes {@code gzip: true}; someone hand-writing a
-     * small, uncompressed dictionary directly via a raw {@code PUT} (not through this tool) can set {@code gzip:
-     * false} instead.
+     * @return The {@code dictionary.name}/{@code dictionary.revision} a {@code WordBreakCompoundRewriterFactory}
+     * config refers to, or {@code null} if {@code content} isn't that class, or is configured with a shard-side
+     * {@code dictionaryField} instead (nothing to check in either case).
+     */
+    @SuppressWarnings("unchecked")
+    private static DictionaryReference findWordBreakDictionaryReference(final Map<String, Object> content) {
+
+        if (!WordBreakCompoundRewriterFactory.class.getName().equals(content.get("class"))) {
+            return null;
+        }
+
+        final Map<String, Object> config = (Map<String, Object>) content.get("config");
+        final Map<String, Object> dictionary = config == null ? null : (Map<String, Object>) config.get("dictionary");
+        if (dictionary == null) {
+            return null;
+        }
+
+        final Object name = dictionary.get("name");
+        final Object revision = dictionary.get("revision");
+        // malformed (missing name/revision) is already rejected by validate() above - nothing to check here
+        return (name == null || revision == null) ? null : new DictionaryReference(name.toString(),
+                revision.toString());
+    }
+
+    /**
+     * For a {@code word_break_compound} rewriter configured with a {@code dictionary} reference: if {@code
+     * --dictionary-file} was given, gzips and writes it as that dictionary's {@code term_corpus} document (same as
+     * {@code put-dictionary}); otherwise checks the referenced document already exists, failing clearly - before
+     * the rewriter config is saved - if it doesn't, rather than letting the rewriter save successfully only to
+     * fail later, confusingly, the first time a live query tries to use it.
+     */
+    private static void ensureDictionaryExists(final HttpQuerqyIndexManager indexManager,
+                                               final DictionaryReference dictionaryReference, final CliArgs args)
+            throws IOException {
+
+        final String docId = TermCorpusConfigMapping.docId(dictionaryReference.name, dictionaryReference.revision);
+
+        if (args.dictionaryFile != null) {
+            final Map<String, Object> source = buildDictionarySource(dictionaryReference.name,
+                    dictionaryReference.revision, args.dictionaryFile, args.dictionaryFormat, args.hashFunctions);
+            indexManager.putDictionary(docId, source);
+            System.out.println("Saved dictionary '" + dictionaryReference.name + "' revision '"
+                    + dictionaryReference.revision + "'.");
+            return;
+        }
+
+        if (!indexManager.documentExists(docId)) {
+            throw new IllegalArgumentException("Rewriter '" + args.id + "' references dictionary '"
+                    + dictionaryReference.name + "' revision '" + dictionaryReference.revision + "', which does not "
+                    + "exist in the index. Either run 'put-dictionary' first, or pass --dictionary-file to upload "
+                    + "it as part of this command.");
+        }
+    }
+
+    private record DictionaryReference(String name, String revision) {
+    }
+
+    /**
+     * Gzips {@code --dictionary-file} and writes it as a {@code term_corpus} document (see {@link
+     * TermCorpusConfigMapping}) - the dictionary a coordinator-safe {@code word_break} rewriter can reference by
+     * {@code name}/{@code revision} instead of a shard-side {@code dictionaryField}. Always writes {@code gzip:
+     * true}; someone hand-writing a small, uncompressed dictionary directly via a raw {@code PUT} (not through this
+     * tool) can set {@code gzip: false} instead.
      */
     private static void runPutDictionary(final CliArgs args) throws IOException {
 
-        final byte[] tsvBytes = Files.readAllBytes(Path.of(args.dictionaryFile));
-        final byte[] gzipped = gzip(tsvBytes);
-
-        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(args.dictionaryName, args.revision,
-                args.dictionaryFormat, true, null, args.hashFunctions, gzipped, System.currentTimeMillis());
+        final Map<String, Object> source = buildDictionarySource(args.dictionaryName, args.revision,
+                args.dictionaryFile, args.dictionaryFormat, args.hashFunctions);
 
         final HttpHost host = parseHost(args);
         try (RestClient client = buildClient(args, host)) {
@@ -218,6 +289,15 @@ public final class RewriterConfigTool {
 
         System.out.println("Saved dictionary '" + args.dictionaryName + "' revision '" + args.revision + "'.");
         printFreshnessNote();
+    }
+
+    private static Map<String, Object> buildDictionarySource(final String name, final String revision,
+                                                              final String file, final String format,
+                                                              final Integer hashFunctions) throws IOException {
+        final byte[] tsvBytes = Files.readAllBytes(Path.of(file));
+        final byte[] gzipped = gzip(tsvBytes);
+        return TermCorpusConfigMapping.toLuceneSource(name, revision, format, true, null, hashFunctions, gzipped,
+                System.currentTimeMillis());
     }
 
     private static byte[] gzip(final byte[] data) throws IOException {
@@ -375,16 +455,17 @@ public final class RewriterConfigTool {
                 + "[--aws-service es|aoss] [--aws-profile <profile>]] [--insecure]";
         System.err.println("Usage:");
         System.err.println("  java -jar querqy-opensearch-tool.jar put --url <url> --id <rewriterId> "
-                + "--config-file <file> [--revision <revision>] " + authOptions + " [--replicas <n>] "
-                + "[--validate-only]");
+                + "--config-file <file> [--revision <revision>] "
+                + "[--dictionary-file <tsvFile> [--format tsv_df|tsv_df_cooc] [--hash-functions <n>]] "
+                + authOptions + " [--replicas <n>] [--validate-only]");
         System.err.println("  java -jar querqy-opensearch-tool.jar get --url <url> --id <rewriterId> "
                 + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> " + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar delete --url <url> --id <rewriterId> "
                 + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> --name <name> "
-                + "--revision <revision> --file <tsvFile> [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] "
-                + authOptions + " [--replicas <n>]");
+                + "--revision <revision> --dictionary-file <tsvFile> [--format tsv_df|tsv_df_cooc] "
+                + "[--hash-functions <n>] " + authOptions + " [--replicas <n>]");
     }
 
     static final class ValidationFailedException extends RuntimeException {
