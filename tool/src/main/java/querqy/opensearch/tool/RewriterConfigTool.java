@@ -40,6 +40,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import querqy.opensearch.OpenSearchRewriterFactory;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 import querqy.opensearch.rewriterstore.RewriterInfo;
+import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
@@ -47,11 +48,15 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Validates, lists, fetches, or deletes a rewriter configuration directly against the {@code .opensearch-querqy}
@@ -65,10 +70,21 @@ import java.util.Map;
  * java -jar querqy-opensearch-tool.jar get --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar list --url https://host:9200 [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar delete --url https://host:9200 --id my_rewriter [--username ... --password ...]
+ * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --name dutch-compounds \
+ *     --revision r1 --file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N] \
+ *     [--username ... --password ...] [--replicas 1]
  * </pre>
  *
  * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
  * {@code config}, and optionally {@code info_logging}/{@code revision}.
+ *
+ * <p><b>{@code put-dictionary}:</b> gzips {@code --file} (a two-column {@code term\tdocFreq} TSV for {@code
+ * --format tsv_df}, the default; a three-column {@code term\tdocFreq\tbloomHex} TSV plus {@code --hash-functions}
+ * for {@code tsv_df_cooc}, which also enables collation) and writes it as a {@code term_corpus} document, id
+ * {@code <name>-<revision>}. A {@code WordBreakCompoundRewriterFactory} rewriter config references it via {@code
+ * "dictionary": {"name": ..., "revision": ...}} instead of a shard-side {@code dictionaryField}; that makes it
+ * usable from the {@code querqy_rewrite} search pipeline, which has no shard/index access. The document is
+ * immutable by convention - write a new revision rather than overwriting one already in use.</p>
  *
  * <p><b>AWS IAM auth:</b> pass {@code --sigv4} instead of {@code --username}/{@code --password} to sign every
  * request with AWS SigV4, for an Amazon OpenSearch Service domain or OpenSearch Serverless collection whose
@@ -141,6 +157,9 @@ public final class RewriterConfigTool {
             case DELETE:
                 runDelete(args);
                 break;
+            case PUT_DICTIONARY:
+                runPutDictionary(args);
+                break;
             default:
                 throw new IllegalStateException("Unhandled action: " + args.action);
         }
@@ -173,6 +192,40 @@ public final class RewriterConfigTool {
 
         System.out.println("Saved rewriter '" + args.id + "'.");
         printFreshnessNote();
+    }
+
+    /**
+     * Gzips {@code --file} and writes it as a {@code term_corpus} document (see {@link TermCorpusConfigMapping}) -
+     * the dictionary a coordinator-safe {@code word_break} rewriter can reference by {@code name}/{@code revision}
+     * instead of a shard-side {@code dictionaryField}. Always writes {@code gzip: true}; someone hand-writing a
+     * small, uncompressed dictionary directly via a raw {@code PUT} (not through this tool) can set {@code gzip:
+     * false} instead.
+     */
+    private static void runPutDictionary(final CliArgs args) throws IOException {
+
+        final byte[] tsvBytes = Files.readAllBytes(Path.of(args.dictionaryFile));
+        final byte[] gzipped = gzip(tsvBytes);
+
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(args.dictionaryName, args.revision,
+                args.dictionaryFormat, true, null, args.hashFunctions, gzipped, System.currentTimeMillis());
+
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
+            indexManager.ensureIndexExists(args.replicas);
+            indexManager.putDictionary(TermCorpusConfigMapping.docId(args.dictionaryName, args.revision), source);
+        }
+
+        System.out.println("Saved dictionary '" + args.dictionaryName + "' revision '" + args.revision + "'.");
+        printFreshnessNote();
+    }
+
+    private static byte[] gzip(final byte[] data) throws IOException {
+        final ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
+            gzip.write(data);
+        }
+        return bos.toByteArray();
     }
 
     private static void runGet(final CliArgs args) throws IOException {
@@ -329,6 +382,9 @@ public final class RewriterConfigTool {
         System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> " + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar delete --url <url> --id <rewriterId> "
                 + authOptions);
+        System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> --name <name> "
+                + "--revision <revision> --file <tsvFile> [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] "
+                + authOptions + " [--replicas <n>]");
     }
 
     static final class ValidationFailedException extends RuntimeException {

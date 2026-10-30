@@ -101,7 +101,20 @@ final class HttpQuerqyIndexManager {
     }
 
     void putRewriter(final String rewriterId, final Map<String, Object> source) throws IOException {
-        final Request request = new Request("PUT", INDEX_PATH + "/_doc/" + rewriterId);
+        putDocument(rewriterId, source);
+    }
+
+    /**
+     * Writes a {@code term_corpus} document (a word-break-compound dictionary, see {@code
+     * querqy.opensearch.rewriterstore.TermCorpusConfigMapping}) - same mechanism as {@link #putRewriter}, just a
+     * different document shape/id convention ({@code <name>-<revision>}).
+     */
+    void putDictionary(final String docId, final Map<String, Object> source) throws IOException {
+        putDocument(docId, source);
+    }
+
+    private void putDocument(final String docId, final Map<String, Object> source) throws IOException {
+        final Request request = new Request("PUT", INDEX_PATH + "/_doc/" + docId);
         request.addParameter("refresh", "true");
         request.setJsonEntity(MAPPER.writeValueAsString(source));
         performRequest(request);

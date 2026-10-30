@@ -40,14 +40,16 @@ public class RewriterShardContexts implements IndexEventListener {
 
 
     private final Map<ShardId, RewriterShardContext> shardContexts;
+    private final DictionaryCorpusLoader dictionaryCorpusLoader;
 
     private IndicesService indicesService;
     private Settings settings;
 
     private volatile boolean asyncRefreshEnabled = true;
 
-    public RewriterShardContexts(final Settings settings) {
+    public RewriterShardContexts(final Settings settings, final DictionaryCorpusLoader dictionaryCorpusLoader) {
         this.settings = settings;
+        this.dictionaryCorpusLoader = dictionaryCorpusLoader;
         shardContexts = new ConcurrentHashMap<>();
     }
 
@@ -83,7 +85,7 @@ public class RewriterShardContexts implements IndexEventListener {
 
         if (shardContext == null) {
             shardContext = new RewriterShardContext(shardId, indicesService.indexService(shardId.getIndex()),  settings,
-                    context.getClient(), asyncRefreshEnabled);
+                    context.getClient(), asyncRefreshEnabled, dictionaryCorpusLoader);
             shardContexts.put(shardId, shardContext);
         }
 
