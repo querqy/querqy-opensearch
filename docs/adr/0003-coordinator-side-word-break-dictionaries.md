@@ -85,7 +85,14 @@ preserving today's behavior (`false`) for existing shard-field configs.
 
 `DictionaryCorpusLoader` is constructed once by `QuerqyCorePlugin` and shared by every
 `RewriterFactoryLoader` on the node - every per-shard one (via `RewriterShardContext`) and the
-node-level/pipeline one - rather than one per loader instance. This solves two problems at once:
+node-level/pipeline one - rather than one per loader instance. It is constructed in the plugin's own
+constructor, before a real `Client` exists, and takes its `Client` the same way `RewriterShardContexts`
+takes its `IndicesService`: `QuerqyCorePlugin#createComponents` calls `setClient(...)` with the real
+one the moment it becomes available (`createComponents` already receives `Client` directly as a
+parameter, unlike `IndicesService`, so no `@Inject`-based deferred member-injection is needed here).
+There is exactly one `Client` per node, and every other consumer already resolves to that same
+instance, so `load(name, revision)` itself needs no `Client` argument. This solves two problems at
+once:
 
 1. **No duplication.** The same `(name, revision)` dictionary, however many rewriters/shards/
    pipelines reference it, is parsed and held in memory at most once per node.
@@ -109,7 +116,7 @@ other four built-ins and any third-party SPI factory are unaffected:
 
 ```java
 public RewriterFactory createRewriterFactory(IndexShard indexShard,
-        DictionaryCorpusLoader dictionaryCorpusLoader, Client client) throws OpenSearchException {
+        DictionaryCorpusLoader dictionaryCorpusLoader) throws OpenSearchException {
     return createRewriterFactory(indexShard);
 }
 ```

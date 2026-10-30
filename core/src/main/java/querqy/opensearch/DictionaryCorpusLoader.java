@@ -61,22 +61,42 @@ import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
  * explicitly is coalescing concurrent cold loads of the same doc id (e.g. many shards of the same index, or many
  * pipeline requests, asking for a brand-new dictionary at the same moment), so they don't all fetch, gunzip and
  * parse the same multi-MB file in parallel.</p>
+ *
+ * <p>This object is constructed early, in {@code QuerqyCorePlugin}'s own constructor, before a real {@link Client}
+ * exists - {@code QuerqyCorePlugin#createComponents} calls {@link #setClient(Client)} with the real one the moment
+ * it becomes available (that method already receives a {@code Client} directly, unlike e.g. {@code IndicesService},
+ * so no {@code @Inject}-based deferred member-injection is needed here, unlike {@code
+ * RewriterShardContexts#setIndicesService}). There's exactly one {@code Client} per node, and every other consumer
+ * of it (per-shard {@code RewriterFactoryLoader}s, the pipeline's) already resolves to the same instance, so this
+ * loader does not need a separate one per caller.</p>
  */
 public final class DictionaryCorpusLoader {
 
     private final ConcurrentHashMap<String, WeakReference<TermCorpus>> cache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompletableFuture<TermCorpus>> loading = new ConcurrentHashMap<>();
 
+    private volatile Client client;
+
+    public void setClient(final Client client) {
+        this.client = client;
+    }
+
     /**
      * @param name The dictionary name
      * @param revision The dictionary revision
-     * @param client Used for the (at most one, coalesced) blocking {@code GET} needed to load this dictionary if
-     *               it isn't already cached
      * @return The (possibly shared, cached) {@link TermCorpus}
+     * @throws IllegalStateException if called before {@link #setClient(Client)} - shouldn't be reachable in
+     * practice, since injection completes during node startup, well before any rewrite chain is ever built
      * @throws ResourceNotFoundException if no such document exists
      * @throws OpenSearchException if the document exists but isn't a valid {@code term_corpus} document
      */
-    public TermCorpus load(final String name, final String revision, final Client client) {
+    public TermCorpus load(final String name, final String revision) {
+
+        final Client currentClient = client;
+        if (currentClient == null) {
+            throw new IllegalStateException(
+                    "DictionaryCorpusLoader has no Client yet - setClient(...) was not called before load(...)");
+        }
 
         final String docId = TermCorpusConfigMapping.docId(name, revision);
 
@@ -92,7 +112,7 @@ public final class DictionaryCorpusLoader {
         }
 
         try {
-            final TermCorpus loaded = doLoad(docId, client);
+            final TermCorpus loaded = doLoad(docId, currentClient);
             cache.put(docId, new WeakReference<>(loaded));
             future.complete(loaded);
             return loaded;

@@ -108,7 +108,12 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
                                                final NamedWriteableRegistry namedWriteableRegistry,
                                                IndexNameExpressionResolver indexNameExpressionResolver,
                                                Supplier<RepositoriesService> repositoriesServiceSupplier) {
-        return Arrays.asList(rewriterShardContexts, querqyProcessor);
+        // DictionaryCorpusLoader is constructed in this plugin's own constructor, before a real Client exists -
+        // wire the real one in now, directly, the moment it's available (no need for @Inject-based deferred
+        // member-injection here, unlike RewriterShardContexts#setIndicesService, since Client - unlike
+        // IndicesService - is already a parameter of this very method).
+        dictionaryCorpusLoader.setClient(client);
+        return Arrays.asList(rewriterShardContexts, querqyProcessor, dictionaryCorpusLoader);
     }
 
     @Override
