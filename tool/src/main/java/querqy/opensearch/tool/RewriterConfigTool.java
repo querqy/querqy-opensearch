@@ -72,21 +72,24 @@ import java.util.zip.GZIPOutputStream;
  * java -jar querqy-opensearch-tool.jar get --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar list --url https://host:9200 [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar delete --url https://host:9200 --id my_rewriter [--username ... --password ...]
- * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --name dutch-compounds \
- *     --revision r1 --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N] \
- *     [--username ... --password ...] [--replicas 1]
+ * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --dictionary-name dutch-compounds \
+ *     --dictionary-revision r1 --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] \
+ *     [--hash-functions N] [--username ... --password ...] [--replicas 1]
  * </pre>
  *
  * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
- * {@code config}, and optionally {@code info_logging}/{@code revision}.
+ * {@code config}, and optionally {@code info_logging}/{@code revision}. {@code --revision} (for {@code put} only)
+ * sets the rewriter document's own optional revision tag - unrelated to a dictionary's revision, which is always
+ * {@code --dictionary-revision}, to avoid exactly that confusion.
  *
  * <p><b>{@code put-dictionary}:</b> gzips {@code --dictionary-file} (a two-column {@code term\tdocFreq} TSV for
  * {@code --format tsv_df}, the default; a three-column {@code term\tdocFreq\tbloomHex} TSV plus {@code
  * --hash-functions} for {@code tsv_df_cooc}, which also enables collation) and writes it as a {@code term_corpus}
- * document, id {@code <name>-<revision>}. A {@code WordBreakCompoundRewriterFactory} rewriter config references it
- * via {@code "dictionary": {"name": ..., "revision": ...}} instead of a shard-side {@code dictionaryField}; that
- * makes it usable from the {@code querqy_rewrite} search pipeline, which has no shard/index access. The document
- * is immutable by convention - write a new revision rather than overwriting one already in use.</p>
+ * document, id {@code <dictionary-name>-<dictionary-revision>}. A {@code WordBreakCompoundRewriterFactory} rewriter
+ * config references it via {@code "dictionary": {"name": ..., "revision": ...}} instead of a shard-side {@code
+ * dictionaryField}; that makes it usable from the {@code querqy_rewrite} search pipeline, which has no shard/index
+ * access. The document is immutable by convention - write a new revision rather than overwriting one already in
+ * use.</p>
  *
  * <p><b>{@code put} with a {@code dictionary} reference:</b> if {@code --config-file}'s rewriter is a {@code
  * WordBreakCompoundRewriterFactory} configured with {@code "dictionary": {"name": ..., "revision": ...}}, {@code
@@ -277,17 +280,19 @@ public final class RewriterConfigTool {
      */
     private static void runPutDictionary(final CliArgs args) throws IOException {
 
-        final Map<String, Object> source = buildDictionarySource(args.dictionaryName, args.revision,
+        final Map<String, Object> source = buildDictionarySource(args.dictionaryName, args.dictionaryRevision,
                 args.dictionaryFile, args.dictionaryFormat, args.hashFunctions);
 
         final HttpHost host = parseHost(args);
         try (RestClient client = buildClient(args, host)) {
             final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
             indexManager.ensureIndexExists(args.replicas);
-            indexManager.putDictionary(TermCorpusConfigMapping.docId(args.dictionaryName, args.revision), source);
+            indexManager.putDictionary(TermCorpusConfigMapping.docId(args.dictionaryName, args.dictionaryRevision),
+                    source);
         }
 
-        System.out.println("Saved dictionary '" + args.dictionaryName + "' revision '" + args.revision + "'.");
+        System.out.println("Saved dictionary '" + args.dictionaryName + "' revision '" + args.dictionaryRevision
+                + "'.");
         printFreshnessNote();
     }
 
@@ -463,9 +468,9 @@ public final class RewriterConfigTool {
         System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> " + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar delete --url <url> --id <rewriterId> "
                 + authOptions);
-        System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> --name <name> "
-                + "--revision <revision> --dictionary-file <tsvFile> [--format tsv_df|tsv_df_cooc] "
-                + "[--hash-functions <n>] " + authOptions + " [--replicas <n>]");
+        System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> "
+                + "--dictionary-name <name> --dictionary-revision <revision> --dictionary-file <tsvFile> "
+                + "[--format tsv_df|tsv_df_cooc] [--hash-functions <n>] " + authOptions + " [--replicas <n>]");
     }
 
     static final class ValidationFailedException extends RuntimeException {
