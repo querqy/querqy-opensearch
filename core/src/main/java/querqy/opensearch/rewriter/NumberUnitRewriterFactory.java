@@ -70,4 +70,9 @@ public class NumberUnitRewriterFactory extends OpenSearchRewriterFactory {
         return querqy.rewriter.numberunit.NumberUnitRewriterFactory.validateConfiguration((String) numberUnitConfig, JSON_PROVIDER);
     }
 
+    @Override
+    public boolean isSupportedOnCoordinator() {
+        return true;
+    }
+
 }

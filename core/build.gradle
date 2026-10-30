@@ -52,7 +52,7 @@ dependencies {
     // so no Jackson dependency is declared here anymore. This is what actually lets this AWS-installable module
     // pass AWS OpenSearch Service's plugin-upload CVE scanner, which previously kept flagging the Jackson version
     // pinned below.
-    api('org.querqy:querqy-lucene:5.13.lucene1050.0')
+    api('org.querqy:querqy-lucene:5.13.lucene1050.1')
     api('org.querqy:querqy-core:4.3.0')
     // querqy-core's PropertyParser/InstructionsProperties configure json-path with their own
     // querqy.json.jsonpath.QuerqyJsonPathProvider/QuerqyJsonPathMappingProvider (not json-smart, not

@@ -32,7 +32,10 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.query.AbstractQueryBuilder;
 import org.opensearch.index.query.QueryShardContext;
+import querqy.model.ExpandedQuery;
+import querqy.model.QuerqyQuery;
 import querqy.opensearch.QuerqyProcessor;
+import querqy.opensearch.pipeline.ExpandedQueryWriteable;
 import querqy.lucene.LuceneSearchEngineRequestAdapter;
 import querqy.lucene.rewrite.SearchFieldsAndBoosting.FieldBoostModel;
 
@@ -98,6 +101,21 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
     /** The query-wide default {@link RefreshMode}; {@code null} (the wire-absent case) means {@link RefreshMode#NO}. */
     private RefreshMode refreshConfig;
 
+    /**
+     * Non-null only when a search pipeline's {@code querqy_rewrite} request processor has already run the full
+     * parse + rewrite chain for this query on the coordinating node (see {@link #setPreRewritten}) - in which case
+     * {@link #doToQuery} runs only the shard-local Lucene query-building stage against this already-rewritten model
+     * instead of doing the full per-shard parse + rewrite + build it does by default. Deliberately not wired into
+     * {@link #PARSER}/{@link XContentParser} parsing anywhere in this class: a client can never supply a
+     * pre-rewritten model directly in a query body and bypass the rewrite chain - the only way these two fields are
+     * ever populated is a search pipeline processor calling {@link #setPreRewritten} programmatically after finding
+     * this exact (mutable, in-place) instance via {@code QueryBuilder.visit(QueryBuilderVisitor)}.
+     */
+    private QuerqyQuery<?> originalUserQuery;
+
+    /** @see #originalUserQuery */
+    private ExpandedQuery rewrittenExpandedQuery;
+
     public QuerqyQueryBuilder() {
         super();
     }
@@ -134,6 +152,11 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
 
         final String strRefreshConfig = in.readOptionalString();
         refreshConfig = strRefreshConfig == null ? null : RefreshMode.valueOf(strRefreshConfig);
+
+        if (in.readBoolean()) {
+            originalUserQuery = ExpandedQueryWriteable.readQuerqyQuery(in);
+            rewrittenExpandedQuery = ExpandedQueryWriteable.readExpandedQuery(in);
+        }
     }
 
     @Override
@@ -152,6 +175,13 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
         }
         out.writeOptionalWriteable(infoLoggingSpec);
         out.writeOptionalString(refreshConfig == null ? null : refreshConfig.name());
+
+        final boolean hasPreRewritten = rewrittenExpandedQuery != null;
+        out.writeBoolean(hasPreRewritten);
+        if (hasPreRewritten) {
+            ExpandedQueryWriteable.writeQuerqyQuery(out, originalUserQuery);
+            ExpandedQueryWriteable.writeExpandedQuery(out, rewrittenExpandedQuery);
+        }
     }
 
     @Override
@@ -233,6 +263,10 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
     @Override
     protected Query doToQuery(final QueryShardContext context) throws IOException {
         try {
+            if (rewrittenExpandedQuery != null) {
+                return querqyProcessor.buildFromRewrittenQuery(this, originalUserQuery, rewrittenExpandedQuery,
+                        context);
+            }
             return querqyProcessor.parseQuery(this, context);
         } catch (final LuceneSearchEngineRequestAdapter.SyntaxException e) {
             throw new IOException(e);
@@ -381,6 +415,27 @@ public class QuerqyQueryBuilder extends AbstractQueryBuilder<QuerqyQueryBuilder>
      * @return The effective {@link RefreshMode} for the given rewriter: its own override if set, otherwise the
      * query's default ({@link #getRefreshConfig()}), otherwise {@link RefreshMode#NO}.
      */
+    /**
+     * Called only by a search pipeline's {@code querqy_rewrite} request processor, on an instance it already found
+     * via {@code QueryBuilder.visit(QueryBuilderVisitor)} (i.e. the same, live object sitting in the request's
+     * query tree - this mutates it in place rather than the processor replacing it with a new object). See the
+     * {@code rewrittenExpandedQuery} field's javadoc for why this is deliberately unreachable from the query DSL.
+     *
+     * @param originalUserQuery The unrewritten user query (before the rewrite chain ran) - see {@code
+     *                          QueryParsingController#buildFromRewrittenQuery}'s javadoc for why this must be
+     *                          preserved alongside the rewritten model.
+     * @param rewrittenExpandedQuery The result of running the rewrite chain against {@code originalUserQuery}.
+     */
+    public void setPreRewritten(final QuerqyQuery<?> originalUserQuery, final ExpandedQuery rewrittenExpandedQuery) {
+        this.originalUserQuery = Objects.requireNonNull(originalUserQuery);
+        this.rewrittenExpandedQuery = Objects.requireNonNull(rewrittenExpandedQuery);
+    }
+
+    /** @return Whether {@link #setPreRewritten} has already been called on this instance. */
+    public boolean isPreRewritten() {
+        return rewrittenExpandedQuery != null;
+    }
+
     public RefreshMode effectiveRefreshMode(final Rewriter rewriter) {
         if (rewriter.getRefreshMode() != null) {
             return rewriter.getRefreshMode();

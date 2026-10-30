@@ -24,6 +24,8 @@ import org.apache.lucene.search.Query;
 import org.opensearch.index.query.QueryShardContext;
 import querqy.lucene.rewrite.infologging.InfoLogging;
 import querqy.lucene.rewrite.infologging.Sink;
+import querqy.model.ExpandedQuery;
+import querqy.model.QuerqyQuery;
 import querqy.opensearch.infologging.LogPayloadType;
 import querqy.opensearch.infologging.SingleSinkInfoLogging;
 import querqy.opensearch.query.InfoLoggingSpec;
@@ -97,9 +99,46 @@ public class QuerqyProcessor {
         final QueryParsingController controller = new QueryParsingController(requestAdapter);
         final LuceneQueries queries = controller.process();
 
+        final Query query = assembleQuery(queries);
+        if (infoLogging != null) {
+            infoLogging.endOfRequest(requestAdapter);
+        }
+        return query;
 
-//        // TODO: make decos part of the general Querqy object model
-//        final Set<Object> decorations = (Set<Object>) requestAdapter.getContext().get(DecorateInstruction.CONTEXT_KEY);
+    }
+
+    /**
+     * Runs only the Lucene query-building stage against an {@link ExpandedQuery} that was already parsed and
+     * rewritten elsewhere - e.g. once, on the coordinating node, by the {@code querqy_rewrite} search pipeline
+     * request processor - instead of running {@link #parseQuery}'s full per-shard parse + rewrite + build. Used by
+     * {@link querqy.opensearch.query.QuerqyQueryBuilder#doToQuery} when the query builder carries a pre-rewritten
+     * model (see its {@code setPreRewritten} / the {@code rewrittenExpandedQuery} field).
+     * <p>
+     * No rewrite chain runs here at all (an empty one is passed to the request adapter purely because {@link
+     * DismaxSearchEngineRequestAdapter}'s constructor requires one; {@link QueryParsingController
+     * #buildFromRewrittenQuery} never calls {@code getRewriteChain()}), and no per-shard {@code info_logging}/{@code
+     * Sink} delivery applies either - rewriting already happened on the coordinator, so there is nothing new to log
+     * shard-side in this mode; that data is instead captured directly by the request processor from its own
+     * coordinator-side rewrite call (see the {@code querqy_rewrite} response processor).
+     *
+     * @param originalUserQuery The *unrewritten* user query {@code rewrittenExpandedQuery} was rewritten from - see
+     *                          {@link QueryParsingController#buildFromRewrittenQuery} for why this must be preserved
+     *                          and supplied alongside the rewritten model.
+     */
+    public Query buildFromRewrittenQuery(final QuerqyQueryBuilder queryBuilder, final QuerqyQuery<?> originalUserQuery,
+                                         final ExpandedQuery rewrittenExpandedQuery, final QueryShardContext context)
+            throws LuceneSearchEngineRequestAdapter.SyntaxException {
+
+        final DismaxSearchEngineRequestAdapter requestAdapter =
+                new DismaxSearchEngineRequestAdapter(queryBuilder, EMPTY_REWRITE_CHAIN, context, null);
+
+        final QueryParsingController controller = new QueryParsingController(requestAdapter);
+        final LuceneQueries queries = controller.buildFromRewrittenQuery(originalUserQuery, rewrittenExpandedQuery);
+
+        return assembleQuery(queries);
+    }
+
+    private Query assembleQuery(final LuceneQueries queries) {
 
         if ((queries.querqyBoostQueries == null || queries.querqyBoostQueries.isEmpty())
                 && (queries.filterQueries == null || queries.filterQueries.isEmpty())
@@ -126,12 +165,7 @@ public class QuerqyProcessor {
 
         appendFilterQueries(queries, builder);
 
-        final BooleanQuery query = builder.build();
-        if (infoLogging != null) {
-            infoLogging.endOfRequest(requestAdapter);
-        }
-        return query;
-
+        return builder.build();
     }
 
 
