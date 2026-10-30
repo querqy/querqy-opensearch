@@ -109,4 +109,9 @@ public class ReplaceRewriterFactory extends OpenSearchRewriterFactory {
     public RewriterFactory createRewriterFactory(IndexShard indexShard) {
         return delegate;
     }
+
+    @Override
+    public boolean isSupportedOnCoordinator() {
+        return true;
+    }
 }
