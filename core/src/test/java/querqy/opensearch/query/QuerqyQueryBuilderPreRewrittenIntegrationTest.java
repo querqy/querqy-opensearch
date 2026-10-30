@@ -36,6 +36,7 @@ import querqy.lucene.LuceneSearchEngineRequestAdapter;
 import querqy.lucene.QueryParsingController;
 import querqy.model.ExpandedQuery;
 import querqy.model.QuerqyQuery;
+import querqy.opensearch.DictionaryCorpusLoader;
 import querqy.opensearch.QuerqyCorePlugin;
 import querqy.opensearch.QuerqyProcessor;
 import querqy.opensearch.RewriteChainAndLogging;
@@ -103,7 +104,8 @@ public class QuerqyQueryBuilderPreRewrittenIntegrationTest extends OpenSearchSin
 
         // --- pre-rewritten path: run parse+rewrite "on the coordinator" ourselves, then set the result on a builder
         // that never calls into the rewrite chain on the shard at all ---
-        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                new DictionaryCorpusLoader());
         final RewriteChainAndLogging chainAndLogging = loader.getRewriteChain(
                 Collections.singletonList(new RewriterRef(REWRITER_ID, querqy.opensearch.query.RefreshMode.NO)));
 

@@ -21,6 +21,10 @@
       },
       "config_v_005": {
         "type" : "querqy_rewriter_config"
+      },
+      "name": {"type": "keyword"},
+      "corpus": {
+        "type" : "querqy_term_corpus"
       }
 
     }
