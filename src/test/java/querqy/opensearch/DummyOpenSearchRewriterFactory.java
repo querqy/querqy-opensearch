@@ -61,4 +61,9 @@ public class DummyOpenSearchRewriterFactory extends OpenSearchRewriterFactory {
             }
         };
     }
+
+    @Override
+    public boolean isSupportedOnCoordinator() {
+        return true;
+    }
 }

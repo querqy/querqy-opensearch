@@ -88,4 +88,9 @@ public class RegexReplaceRewriterFactory  extends OpenSearchRewriterFactory {
     public RewriterFactory createRewriterFactory(final IndexShard indexShard) throws OpenSearchException {
         return delegate;
     }
+
+    @Override
+    public boolean isSupportedOnCoordinator() {
+        return true;
+    }
 }

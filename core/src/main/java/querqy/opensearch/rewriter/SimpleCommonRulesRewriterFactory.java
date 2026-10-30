@@ -130,5 +130,9 @@ public class SimpleCommonRulesRewriterFactory extends OpenSearchRewriterFactory 
         return delegate;
     }
 
+    @Override
+    public boolean isSupportedOnCoordinator() {
+        return true;
+    }
 
 }
