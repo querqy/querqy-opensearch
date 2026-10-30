@@ -180,8 +180,20 @@ final class HttpQuerqyIndexManager {
      * @return {@code true} if a rewriter document existed and was deleted, {@code false} if it was already absent.
      */
     boolean deleteRewriter(final String rewriterId) throws IOException {
+        return deleteDocument(rewriterId);
+    }
 
-        final Request request = new Request("DELETE", INDEX_PATH + "/_doc/" + rewriterId);
+    /**
+     * @return {@code true} if a {@code term_corpus} document existed and was deleted, {@code false} if it was
+     * already absent.
+     */
+    boolean deleteDictionary(final String docId) throws IOException {
+        return deleteDocument(docId);
+    }
+
+    private boolean deleteDocument(final String docId) throws IOException {
+
+        final Request request = new Request("DELETE", INDEX_PATH + "/_doc/" + docId);
         request.addParameter("refresh", "true");
         request.addParameter("ignore", "404"); // deleting an already-absent document is not an error
 
