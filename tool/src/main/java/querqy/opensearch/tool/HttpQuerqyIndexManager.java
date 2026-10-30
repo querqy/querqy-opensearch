@@ -71,6 +71,17 @@ final class HttpQuerqyIndexManager {
         return response.getStatusLine().getStatusCode() == 200;
     }
 
+    /**
+     * @return true iff a document with this id exists in {@value Constants#QUERQY_INDEX_NAME} - used to check a
+     * {@code word_break_compound} rewriter's referenced {@code term_corpus} dictionary exists before saving the
+     * rewriter (see {@code RewriterConfigTool#runPut}).
+     */
+    boolean documentExists(final String docId) throws IOException {
+        // same reasoning as indexExists(): HEAD never turns a 404 into a ResponseException
+        final Response response = performRequest(new Request("HEAD", INDEX_PATH + "/_doc/" + docId));
+        return response.getStatusLine().getStatusCode() == 200;
+    }
+
     private void createIndex(final int numReplicas) throws IOException {
         final String body = "{\"settings\":{\"number_of_shards\":" + Constants.QUERQY_INDEX_NUM_SHARDS
                 + ",\"number_of_replicas\":" + numReplicas + "},\"mappings\":"
@@ -101,7 +112,20 @@ final class HttpQuerqyIndexManager {
     }
 
     void putRewriter(final String rewriterId, final Map<String, Object> source) throws IOException {
-        final Request request = new Request("PUT", INDEX_PATH + "/_doc/" + rewriterId);
+        putDocument(rewriterId, source);
+    }
+
+    /**
+     * Writes a {@code term_corpus} document (a word-break-compound dictionary, see {@code
+     * querqy.opensearch.rewriterstore.TermCorpusConfigMapping}) - same mechanism as {@link #putRewriter}, just a
+     * different document shape/id convention ({@code <name>-<revision>}).
+     */
+    void putDictionary(final String docId, final Map<String, Object> source) throws IOException {
+        putDocument(docId, source);
+    }
+
+    private void putDocument(final String docId, final Map<String, Object> source) throws IOException {
+        final Request request = new Request("PUT", INDEX_PATH + "/_doc/" + docId);
         request.addParameter("refresh", "true");
         request.setJsonEntity(MAPPER.writeValueAsString(source));
         performRequest(request);
@@ -156,8 +180,20 @@ final class HttpQuerqyIndexManager {
      * @return {@code true} if a rewriter document existed and was deleted, {@code false} if it was already absent.
      */
     boolean deleteRewriter(final String rewriterId) throws IOException {
+        return deleteDocument(rewriterId);
+    }
 
-        final Request request = new Request("DELETE", INDEX_PATH + "/_doc/" + rewriterId);
+    /**
+     * @return {@code true} if a {@code term_corpus} document existed and was deleted, {@code false} if it was
+     * already absent.
+     */
+    boolean deleteDictionary(final String docId) throws IOException {
+        return deleteDocument(docId);
+    }
+
+    private boolean deleteDocument(final String docId) throws IOException {
+
+        final Request request = new Request("DELETE", INDEX_PATH + "/_doc/" + docId);
         request.addParameter("refresh", "true");
         request.addParameter("ignore", "404"); // deleting an already-absent document is not an error
 

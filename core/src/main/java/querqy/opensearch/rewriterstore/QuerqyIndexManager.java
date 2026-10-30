@@ -95,6 +95,21 @@ public final class QuerqyIndexManager {
                     "      }");
         }
 
+        if (!existingProperties.containsKey(TermCorpusConfigMapping.PROP_NAME)) {
+            missingProperties.put(TermCorpusConfigMapping.PROP_NAME,
+                    "      \"" + TermCorpusConfigMapping.PROP_NAME + "\": {\"type\" : \"keyword\" }");
+        }
+
+        // the combined format+gzip+numDocs+hashFunctions+data field of a term_corpus document (dictionary for a
+        // coordinator-safe rewriter, e.g. word-break-compound), validated at write time by the
+        // querqy_term_corpus field mapper.
+        if (!existingProperties.containsKey(TermCorpusConfigMapping.PROP_CORPUS)) {
+            missingProperties.put(TermCorpusConfigMapping.PROP_CORPUS,
+                    "      \"" + TermCorpusConfigMapping.PROP_CORPUS + "\": {\n" +
+                    "        \"type\" : \"querqy_term_corpus\"\n" +
+                    "      }");
+        }
+
         return missingProperties;
     }
 

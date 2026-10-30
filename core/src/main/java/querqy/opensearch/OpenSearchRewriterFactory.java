@@ -92,6 +92,22 @@ public abstract class OpenSearchRewriterFactory {
     public abstract RewriterFactory createRewriterFactory(IndexShard indexShard) throws OpenSearchException;
 
     /**
+     * Like {@link #createRewriterFactory(IndexShard)}, but also hands in a {@link DictionaryCorpusLoader} - a
+     * node-level, shared, weak-reference cache of parsed dictionaries, already carrying the {@code Client} it
+     * needs (see {@link DictionaryCorpusLoader#setClient}) - for resolving a coordinator-safe dictionary reference
+     * (see {@code WordBreakCompoundRewriterFactory}'s {@code dictionary} config, backed by a {@code term_corpus}
+     * document rather than a shard's live index). Default implementation delegates to {@link
+     * #createRewriterFactory(IndexShard)} unchanged, so every built-in rewriter factory except {@code
+     * WordBreakCompoundRewriterFactory}, and any third-party SPI factory, keeps compiling and behaving exactly as
+     * before without needing to know this method exists.
+     */
+    public RewriterFactory createRewriterFactory(final IndexShard indexShard,
+                                                 final DictionaryCorpusLoader dictionaryCorpusLoader)
+            throws OpenSearchException {
+        return createRewriterFactory(indexShard);
+    }
+
+    /**
      * Whether this rewriter can run on a coordinating node with no shard access at all - e.g. inside the
      * {@code querqy_rewrite} search pipeline request processor, which runs once per request before any shard is
      * involved. {@link #createRewriterFactory(IndexShard)} is unused-in-body by every built-in rewriter factory, but

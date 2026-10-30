@@ -34,8 +34,8 @@ import java.util.List;
  * refresh logic lives in {@link RewriterFactoryLoader}, which this class supplies with this shard's real
  * {@link org.opensearch.index.shard.IndexShard} (resolved freshly on each load, matching this class's
  * previous behavior, in case the shard reference changes while this context is alive). A coordinator-side
- * consumer with no shard at all uses {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean)}
- * directly instead of this class.
+ * consumer with no shard at all uses {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean,
+ * DictionaryCorpusLoader)} directly instead of this class.
  */
 public class RewriterShardContext {
 
@@ -78,9 +78,10 @@ public class RewriterShardContext {
     private final RewriterFactoryLoader loader;
 
     public RewriterShardContext(final ShardId shardId, final IndexService indexService, final Settings settings,
-                                final Client client, final boolean asyncRefreshEnabled) {
+                                final Client client, final boolean asyncRefreshEnabled,
+                                final DictionaryCorpusLoader dictionaryCorpusLoader) {
         this.loader = new RewriterFactoryLoader(() -> indexService.getShard(shardId.id()), settings, client,
-                asyncRefreshEnabled);
+                asyncRefreshEnabled, dictionaryCorpusLoader);
         LOGGER.info("Context loaded for shard {} {}. Async refresh enabled: {}", shardId, shardId.getIndex(),
                 asyncRefreshEnabled);
     }

@@ -30,15 +30,20 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import querqy.opensearch.rewriterstore.QuerqyIndexManager;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
+import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
 import querqy.rewrite.RewriterFactory;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.GZIPOutputStream;
 
 /**
- * Proves the central claim behind {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean)}: loading
+ * Proves the central claim behind {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean,
+ * DictionaryCorpusLoader)}: loading
  * and building a {@link RewriterFactory} from a rewriter-config document needs nothing shard-specific at all -
  * no {@code IndexService}, no {@code IndexShard}, not even an index with any local shard on this node. This is
  * the prerequisite a coordinator-side consumer (e.g. a future search pipeline processor, which runs with no
@@ -67,6 +72,17 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 .setMapping(QuerqyIndexManager.readMappingResource()).get();
     }
 
+    /**
+     * In the real plugin, {@code QuerqyCorePlugin#createComponents} calls {@link DictionaryCorpusLoader#setClient}
+     * the moment a real {@link org.opensearch.transport.client.Client} is available; tests that construct a
+     * {@link RewriterFactoryLoader} directly (bypassing that plugin wiring) must do the same themselves.
+     */
+    private DictionaryCorpusLoader newDictionaryCorpusLoader() {
+        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
+        loader.setClient(client());
+        return loader;
+    }
+
     private void writeCommonRulesRewriter(final String rewriterId, final String rules) throws Exception {
 
         final Map<String, Object> content = new HashMap<>();
@@ -93,7 +109,8 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         ensureRewriterIndexExists();
         writeCommonRulesRewriter("node_level_rewriter", "k =>\nSYNONYM: c");
 
-        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
 
         final RewriterFactoryAndLogging loaded = loader.loadFactory("node_level_rewriter", false);
 
@@ -111,7 +128,8 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
 
         ensureRewriterIndexExists();
 
-        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
 
         final ResourceNotFoundException e = expectThrows(ResourceNotFoundException.class,
                 () -> loader.loadFactory("does_not_exist", false));
@@ -129,7 +147,8 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         ensureRewriterIndexExists();
         writeWordBreakCompoundRewriter("word_break_rewriter");
 
-        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
 
         final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> loader.loadFactory("word_break_rewriter", false));
@@ -147,6 +166,62 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
 
         client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
                 .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    /**
+     * Unlike {@link #testWordBreakCompoundFailsClearlyOnTheNodeLevelLoader()}, a word-break-compound rewriter
+     * configured with a {@code dictionary} reference (a {@code term_corpus} document) instead of a shard-side
+     * {@code dictionaryField} needs no shard access at all, so it must succeed on the node-level loader.
+     */
+    public void testWordBreakCompoundWithDictionaryReferenceSucceedsOnTheNodeLevelLoader() throws Exception {
+
+        ensureRewriterIndexExists();
+        writeTermCorpus("compounds", "r1", "haus\t10\nboot\t5\n");
+        writeWordBreakCompoundRewriterWithDictionary("word_break_rewriter", "compounds", "r1");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
+
+        final RewriterFactoryAndLogging loaded = loader.loadFactory("word_break_rewriter", false);
+
+        assertNotNull(loaded);
+        assertNotNull(loaded.rewriterFactory);
+        assertEquals("word_break_rewriter", loaded.rewriterFactory.getRewriterId());
+    }
+
+    private void writeWordBreakCompoundRewriterWithDictionary(final String rewriterId, final String dictionaryName,
+                                                              final String dictionaryRevision) throws Exception {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.class.getName());
+        final Map<String, Object> config = new HashMap<>();
+        final Map<String, Object> dictionary = new HashMap<>();
+        dictionary.put("name", dictionaryName);
+        dictionary.put("revision", dictionaryRevision);
+        config.put("dictionary", dictionary);
+        content.put("config", config);
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
+                .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    private void writeTermCorpus(final String name, final String revision, final String tsv) throws Exception {
+
+        final ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
+            gzip.write(tsv.getBytes(StandardCharsets.UTF_8));
+        }
+
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(name, revision,
+                TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, bos.toByteArray(),
+                System.currentTimeMillis());
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(name, revision))
+                .setSource(source)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();
     }

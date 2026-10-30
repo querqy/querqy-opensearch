@@ -50,10 +50,12 @@ import querqy.opensearch.pipeline.QuerqyRewriteRequestProcessor;
 import querqy.opensearch.pipeline.QuerqyRewriteResponseProcessor;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.rewriterstore.mapper.QuerqyRewriterConfigFieldMapper;
+import querqy.opensearch.rewriterstore.mapper.QuerqyTermCorpusFieldMapper;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -69,9 +71,11 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
 
     protected final QuerqyProcessor querqyProcessor;
     protected final RewriterShardContexts rewriterShardContexts;
+    protected final DictionaryCorpusLoader dictionaryCorpusLoader;
 
     public QuerqyCorePlugin(final Settings settings) {
-        rewriterShardContexts = new RewriterShardContexts(settings);
+        dictionaryCorpusLoader = new DictionaryCorpusLoader();
+        rewriterShardContexts = new RewriterShardContexts(settings, dictionaryCorpusLoader);
         querqyProcessor = new QuerqyProcessor(rewriterShardContexts, new Log4jSink());
     }
 
@@ -104,7 +108,12 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
                                                final NamedWriteableRegistry namedWriteableRegistry,
                                                IndexNameExpressionResolver indexNameExpressionResolver,
                                                Supplier<RepositoriesService> repositoriesServiceSupplier) {
-        return Arrays.asList(rewriterShardContexts, querqyProcessor);
+        // DictionaryCorpusLoader is constructed in this plugin's own constructor, before a real Client exists -
+        // wire the real one in now, directly, the moment it's available (no need for @Inject-based deferred
+        // member-injection here, unlike RewriterShardContexts#setIndicesService, since Client - unlike
+        // IndicesService - is already a parameter of this very method).
+        dictionaryCorpusLoader.setClient(client);
+        return Arrays.asList(rewriterShardContexts, querqyProcessor, dictionaryCorpusLoader);
     }
 
     @Override
@@ -119,8 +128,10 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
 
     @Override
     public Map<String, Mapper.TypeParser> getMappers() {
-        return Collections.singletonMap(QuerqyRewriterConfigFieldMapper.CONTENT_TYPE,
-                new QuerqyRewriterConfigFieldMapper.TypeParser());
+        final Map<String, Mapper.TypeParser> mappers = new HashMap<>();
+        mappers.put(QuerqyRewriterConfigFieldMapper.CONTENT_TYPE, new QuerqyRewriterConfigFieldMapper.TypeParser());
+        mappers.put(QuerqyTermCorpusFieldMapper.CONTENT_TYPE, new QuerqyTermCorpusFieldMapper.TypeParser());
+        return mappers;
     }
 
     @Override
@@ -128,7 +139,7 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
             final SearchPipelinePlugin.Parameters parameters) {
         return Collections.singletonMap(QuerqyRewriteRequestProcessor.TYPE,
                 new QuerqyRewriteRequestProcessor.Factory(parameters.client, parameters.env.settings(),
-                        querqyProcessor));
+                        querqyProcessor, dictionaryCorpusLoader));
     }
 
     @Override
