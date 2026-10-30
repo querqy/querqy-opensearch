@@ -84,27 +84,45 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
                 .get();
     }
 
+    /**
+     * In the real plugin, {@code QuerqyCorePlugin#createComponents} calls {@link DictionaryCorpusLoader#setClient}
+     * the moment a real {@link org.opensearch.transport.client.Client} is available; tests that construct a loader
+     * directly (bypassing that plugin wiring) must do the same themselves.
+     */
+    private DictionaryCorpusLoader newDictionaryCorpusLoader() {
+        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
+        loader.setClient(client());
+        return loader;
+    }
+
     public void testLoadsAndCaches() throws Exception {
 
         ensureRewriterIndexExists();
         writeTermCorpus("d", "r1", "haus\t10\n", true);
 
-        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
-        final TermCorpus first = loader.load("d", "r1", client());
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
+        final TermCorpus first = loader.load("d", "r1");
         assertTrue(first.exists("haus"));
 
         // same shared instance on a second load - proves it wasn't re-fetched/re-parsed
-        final TermCorpus second = loader.load("d", "r1", client());
+        final TermCorpus second = loader.load("d", "r1");
         assertSame(first, second);
+    }
+
+    public void testLoadBeforeSetClientFailsClearly() {
+        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
+        final IllegalStateException e = expectThrows(IllegalStateException.class,
+                () -> loader.load("d", "r1"));
+        assertTrue(e.getMessage().contains("setClient"));
     }
 
     public void testMissingDictionaryFailsClearly() {
 
         ensureRewriterIndexExists();
 
-        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
         final ResourceNotFoundException e = expectThrows(ResourceNotFoundException.class,
-                () -> loader.load("does-not-exist", "r1", client()));
+                () -> loader.load("does-not-exist", "r1"));
         assertTrue(e.getMessage().contains("does-not-exist-r1"));
     }
 
@@ -124,8 +142,8 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();
 
-        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
-        expectThrows(InvalidTypeNameException.class, () -> loader.load("d", "r1", client()));
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
+        expectThrows(InvalidTypeNameException.class, () -> loader.load("d", "r1"));
     }
 
     /**

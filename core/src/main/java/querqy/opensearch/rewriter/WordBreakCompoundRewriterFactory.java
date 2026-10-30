@@ -22,7 +22,6 @@ import querqy.lucene.LuceneTermCorpus;
 import querqy.opensearch.DictionaryCorpusLoader;
 import querqy.opensearch.DismaxSearchEngineRequestAdapter;
 import org.opensearch.index.shard.IndexShard;
-import org.opensearch.transport.client.Client;
 import querqy.opensearch.ConfigUtils;
 import querqy.opensearch.OpenSearchRewriterFactory;
 import querqy.model.Term;
@@ -250,7 +249,7 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
      * adapter.getSearchExecutionContext().searcher()}) to build its {@link LuceneTermCorpus} - unlike every other
      * built-in rewriter, this one genuinely cannot run on a coordinating node with no shard access at all in that
      * mode. Configured with a {@code dictionary} reference instead, it needs no shard access at all (see {@link
-     * #createRewriterFactory(IndexShard, DictionaryCorpusLoader, Client)}), so it is coordinator-safe.
+     * #createRewriterFactory(IndexShard, DictionaryCorpusLoader)}), so it is coordinator-safe.
      */
     @Override
     public boolean isSupportedOnCoordinator() {
@@ -292,14 +291,13 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
      */
     @Override
     public RewriterFactory createRewriterFactory(final IndexShard indexShard,
-                                                 final DictionaryCorpusLoader dictionaryCorpusLoader,
-                                                 final Client client) {
+                                                 final DictionaryCorpusLoader dictionaryCorpusLoader) {
 
         if (dictionaryRef == null) {
             return createRewriterFactory(indexShard);
         }
 
-        final TermCorpus corpus = dictionaryCorpusLoader.load(dictionaryRef.name, dictionaryRef.revision, client);
+        final TermCorpus corpus = dictionaryCorpusLoader.load(dictionaryRef.name, dictionaryRef.revision);
 
         return new RewriterFactory(getRewriterId()) {
             @Override

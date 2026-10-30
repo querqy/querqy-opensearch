@@ -322,7 +322,7 @@ public class RewriterFactoryLoader {
         }
 
         final RewriterFactory factory = configuredFactory.createRewriterFactory(indexShardSupplier.get(),
-                dictionaryCorpusLoader, client);
+                dictionaryCorpusLoader);
 
         return new RewriterFactoryAndLogging(factory, loggingEnabled, response.getSeqNo(), response.getPrimaryTerm());
     }

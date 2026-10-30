@@ -72,6 +72,17 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 .setMapping(QuerqyIndexManager.readMappingResource()).get();
     }
 
+    /**
+     * In the real plugin, {@code QuerqyCorePlugin#createComponents} calls {@link DictionaryCorpusLoader#setClient}
+     * the moment a real {@link org.opensearch.transport.client.Client} is available; tests that construct a
+     * {@link RewriterFactoryLoader} directly (bypassing that plugin wiring) must do the same themselves.
+     */
+    private DictionaryCorpusLoader newDictionaryCorpusLoader() {
+        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
+        loader.setClient(client());
+        return loader;
+    }
+
     private void writeCommonRulesRewriter(final String rewriterId, final String rules) throws Exception {
 
         final Map<String, Object> content = new HashMap<>();
@@ -99,7 +110,7 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         writeCommonRulesRewriter("node_level_rewriter", "k =>\nSYNONYM: c");
 
         final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
-                new DictionaryCorpusLoader());
+                newDictionaryCorpusLoader());
 
         final RewriterFactoryAndLogging loaded = loader.loadFactory("node_level_rewriter", false);
 
@@ -118,7 +129,7 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         ensureRewriterIndexExists();
 
         final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
-                new DictionaryCorpusLoader());
+                newDictionaryCorpusLoader());
 
         final ResourceNotFoundException e = expectThrows(ResourceNotFoundException.class,
                 () -> loader.loadFactory("does_not_exist", false));
@@ -137,7 +148,7 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         writeWordBreakCompoundRewriter("word_break_rewriter");
 
         final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
-                new DictionaryCorpusLoader());
+                newDictionaryCorpusLoader());
 
         final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> loader.loadFactory("word_break_rewriter", false));
@@ -171,7 +182,7 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         writeWordBreakCompoundRewriterWithDictionary("word_break_rewriter", "compounds", "r1");
 
         final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
-                new DictionaryCorpusLoader());
+                newDictionaryCorpusLoader());
 
         final RewriterFactoryAndLogging loaded = loader.loadFactory("word_break_rewriter", false);
 
