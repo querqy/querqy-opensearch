@@ -54,6 +54,7 @@ public final class CliArgs {
     public final String awsService;
     public final String awsProfile;
     public final String dictionaryName;
+    public final String dictionaryRevision;
     public final String dictionaryFile;
     public final String dictionaryFormat;
     public final Integer hashFunctions;
@@ -62,7 +63,8 @@ public final class CliArgs {
                     final String revision, final String username, final String password, final int replicas,
                     final boolean insecure, final boolean validateOnly, final boolean sigv4, final String awsRegion,
                     final String awsService, final String awsProfile, final String dictionaryName,
-                    final String dictionaryFile, final String dictionaryFormat, final Integer hashFunctions) {
+                    final String dictionaryRevision, final String dictionaryFile, final String dictionaryFormat,
+                    final Integer hashFunctions) {
         this.action = action;
         this.url = url;
         this.id = id;
@@ -78,6 +80,7 @@ public final class CliArgs {
         this.awsService = awsService;
         this.awsProfile = awsProfile;
         this.dictionaryName = dictionaryName;
+        this.dictionaryRevision = dictionaryRevision;
         this.dictionaryFile = dictionaryFile;
         this.dictionaryFormat = dictionaryFormat;
         this.hashFunctions = hashFunctions;
@@ -105,14 +108,18 @@ public final class CliArgs {
         String awsService = "es";
         String awsProfile = null;
         String dictionaryName = null;
+        String dictionaryRevision = null;
         String dictionaryFile = null;
         String dictionaryFormat = "tsv_df";
         Integer hashFunctions = null;
 
         for (int i = 1; i < args.length; i++) {
             switch (args[i]) {
-                case "--name":
-                    dictionaryName = requireValue(args, i++, "--name");
+                case "--dictionary-name":
+                    dictionaryName = requireValue(args, i++, "--dictionary-name");
+                    break;
+                case "--dictionary-revision":
+                    dictionaryRevision = requireValue(args, i++, "--dictionary-revision");
                     break;
                 case "--dictionary-file":
                     dictionaryFile = requireValue(args, i++, "--dictionary-file");
@@ -133,6 +140,8 @@ public final class CliArgs {
                     configFile = requireValue(args, i++, "--config-file");
                     break;
                 case "--revision":
+                    // put only: the rewriter document's own optional revision tag (RewriterConfigMapping
+                    // .PROP_REVISION) - unrelated to a dictionary's revision, which is always --dictionary-revision
                     revision = requireValue(args, i++, "--revision");
                     break;
                 case "--username":
@@ -215,10 +224,10 @@ public final class CliArgs {
                 break;
             case PUT_DICTIONARY:
                 if (dictionaryName == null) {
-                    throw new IllegalArgumentException("--name is required");
+                    throw new IllegalArgumentException("--dictionary-name is required");
                 }
-                if (revision == null) {
-                    throw new IllegalArgumentException("--revision is required");
+                if (dictionaryRevision == null) {
+                    throw new IllegalArgumentException("--dictionary-revision is required");
                 }
                 if (dictionaryFile == null) {
                     throw new IllegalArgumentException("--dictionary-file is required");
@@ -233,8 +242,8 @@ public final class CliArgs {
         }
 
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
-                validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryName, dictionaryFile,
-                dictionaryFormat, hashFunctions);
+                validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryName, dictionaryRevision,
+                dictionaryFile, dictionaryFormat, hashFunctions);
     }
 
     private static void validateDictionaryFormatArgs(final String dictionaryFormat, final Integer hashFunctions) {
