@@ -54,6 +54,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,8 @@ import java.util.zip.GZIPOutputStream;
  * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --dictionary-name dutch-compounds \
  *     --dictionary-revision r1 --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] \
  *     [--hash-functions N] [--username ... --password ...] [--replicas 1]
+ * java -jar querqy-opensearch-tool.jar delete-dictionary --url https://host:9200 --dictionary-name dutch-compounds \
+ *     --dictionary-revision r1 [--force] [--username ... --password ...]
  * </pre>
  *
  * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
@@ -97,7 +100,15 @@ import java.util.zip.GZIPOutputStream;
  * rewriter config that would only fail later, the first time a query tries to use it. Pass {@code
  * --dictionary-file} (plus {@code --format}/{@code --hash-functions} as needed, same as {@code put-dictionary}) to
  * upload the dictionary as part of the same command instead of requiring a separate {@code put-dictionary} call
- * first.</p>
+ * first. {@code --dictionary-name}/{@code --dictionary-revision} are rejected on {@code put}: that reference
+ * always comes from {@code --config-file} itself, never from a flag.</p>
+ *
+ * <p><b>{@code delete-dictionary}:</b> refuses to delete a dictionary still referenced by any stored {@code
+ * word_break_compound} rewriter's {@code dictionary} block, listing which rewriter(s) reference it, unless
+ * {@code --force} is given. This matters because deleting the document doesn't affect an already-cached {@code
+ * TermCorpus} - it keeps being served from memory - so the danger is silent and deferred: the rewriter looks fine
+ * until its cache entry is next rebuilt for any reason (a reload, a restart, an unrelated config change), at which
+ * point it fails outright because the dictionary it still points to is gone.</p>
  *
  * <p><b>AWS IAM auth:</b> pass {@code --sigv4} instead of {@code --username}/{@code --password} to sign every
  * request with AWS SigV4, for an Amazon OpenSearch Service domain or OpenSearch Serverless collection whose
@@ -172,6 +183,9 @@ public final class RewriterConfigTool {
                 break;
             case PUT_DICTIONARY:
                 runPutDictionary(args);
+                break;
+            case DELETE_DICTIONARY:
+                runDeleteDictionary(args);
                 break;
             default:
                 throw new IllegalStateException("Unhandled action: " + args.action);
@@ -345,6 +359,73 @@ public final class RewriterConfigTool {
         printFreshnessNote();
     }
 
+    /**
+     * Unless {@code --force} is given, refuses to delete a dictionary that's still referenced by any stored
+     * {@code word_break_compound} rewriter's {@code dictionary} block - deleting a dictionary document doesn't
+     * affect an already-cached {@code TermCorpus} (it keeps being served from memory until that rewriter's cache
+     * entry is next rebuilt for some unrelated reason), so the danger is silent and deferred: the rewriter looks
+     * fine until the next reload/restart, at which point it fails outright because the dictionary it still points
+     * to is gone.
+     */
+    private static void runDeleteDictionary(final CliArgs args) throws IOException {
+
+        final String docId = TermCorpusConfigMapping.docId(args.dictionaryName, args.dictionaryRevision);
+
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
+
+            if (!args.force) {
+                final List<String> referencingRewriters = findRewritersReferencingDictionary(indexManager,
+                        args.dictionaryName, args.dictionaryRevision);
+                if (!referencingRewriters.isEmpty()) {
+                    throw new IllegalArgumentException("Dictionary '" + args.dictionaryName + "' revision '"
+                            + args.dictionaryRevision + "' is still referenced by rewriter(s) "
+                            + referencingRewriters + " - update or delete them first, or pass --force to delete "
+                            + "the dictionary anyway (any rewriter still referencing it will fail the next time "
+                            + "its cache is reloaded).");
+                }
+            }
+
+            final boolean deleted = indexManager.deleteDictionary(docId);
+            System.out.println(deleted
+                    ? "Deleted dictionary '" + args.dictionaryName + "' revision '" + args.dictionaryRevision + "'."
+                    : "Dictionary '" + args.dictionaryName + "' revision '" + args.dictionaryRevision
+                            + "' was already absent.");
+        }
+        printFreshnessNote();
+    }
+
+    /**
+     * @return The ids of every stored {@code word_break_compound} rewriter whose {@code dictionary} reference
+     * matches {@code (name, revision)}. {@link HttpQuerqyIndexManager#listRewriters()} omits config (configs can
+     * be large), so each word-break candidate's full config is fetched individually to check - acceptable since
+     * the rewriter index holds at most a few hundred small documents.
+     */
+    @SuppressWarnings("unchecked")
+    static List<String> findRewritersReferencingDictionary(final HttpQuerqyIndexManager indexManager,
+                                                            final String name, final String revision)
+            throws IOException {
+
+        final List<String> referencing = new ArrayList<>();
+        for (final RewriterInfo listed : indexManager.listRewriters()) {
+            if (!WordBreakCompoundRewriterFactory.class.getName().equals(listed.getRewriterClassName())) {
+                continue;
+            }
+            final RewriterInfo full = indexManager.getRewriter(listed.getRewriterId());
+            if (full == null) {
+                continue; // deleted concurrently between list and get - no longer a reference either way
+            }
+            final Map<String, Object> config = full.getConfig();
+            final Map<String, Object> dictionary = config == null ? null
+                    : (Map<String, Object>) config.get("dictionary");
+            if (dictionary != null && name.equals(dictionary.get("name")) && revision.equals(dictionary.get("revision"))) {
+                referencing.add(listed.getRewriterId());
+            }
+        }
+        return referencing;
+    }
+
     private static void printFreshnessNote() {
         System.out.println("Note: on an install without the full plugin's REST API (e.g. core-only/AWS), this "
                 + "change can take up to querqy.caches.rewriter.refresh_after_write (default 30s) to take effect on "
@@ -471,6 +552,8 @@ public final class RewriterConfigTool {
         System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> "
                 + "--dictionary-name <name> --dictionary-revision <revision> --dictionary-file <tsvFile> "
                 + "[--format tsv_df|tsv_df_cooc] [--hash-functions <n>] " + authOptions + " [--replicas <n>]");
+        System.err.println("  java -jar querqy-opensearch-tool.jar delete-dictionary --url <url> "
+                + "--dictionary-name <name> --dictionary-revision <revision> [--force] " + authOptions);
     }
 
     static final class ValidationFailedException extends RuntimeException {
