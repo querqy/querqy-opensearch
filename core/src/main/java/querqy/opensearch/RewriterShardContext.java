@@ -20,6 +20,7 @@ package querqy.opensearch;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.get.GetResponse;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -28,6 +29,8 @@ import org.opensearch.index.IndexService;
 import org.opensearch.transport.client.Client;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Per-shard entry point for resolving rewriters, keyed by {@link ShardId}. The actual loading/caching/
@@ -104,5 +107,13 @@ public class RewriterShardContext {
 
     public RewriterFactoryAndLogging loadFactory(final String rewriterId, final boolean forceLoad) {
         return loader.loadFactory(rewriterId, forceLoad);
+    }
+
+    public Set<String> cachedRewriterIds() {
+        return loader.cachedRewriterIds();
+    }
+
+    public void applySweepResponses(final Map<String, GetResponse> responsesById) {
+        loader.applySweepResponses(responsesById);
     }
 }
