@@ -64,6 +64,9 @@ public class QuerqyPlugin extends QuerqyCorePlugin implements ActionPlugin {
         // core's async refresh-after-write check redundant here - and, since both write to the same cache with no
         // version check between them, a source of an unguarded race between the two paths.
         rewriterShardContexts.disableAsyncRefresh();
+        // same reasoning: the periodic sweep exists only to catch changes core-only installs (no ActionPlugin,
+        // e.g. AWS OpenSearch Service) can't push-notify; redundant and racy here for the same reason as above.
+        rewriterCacheSweeper.disable();
     }
 
     @Override

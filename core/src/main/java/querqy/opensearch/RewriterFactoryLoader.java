@@ -181,6 +181,40 @@ public class RewriterFactoryLoader {
     }
 
     /**
+     * The rewriter ids currently cached by this loader, as a snapshot - used by {@link RewriterCacheSweeper} to
+     * know which ids to check in its next sweep.
+     */
+    public Set<String> cachedRewriterIds() {
+        final Set<String> ids = new HashSet<>();
+        factories.keys().forEach(ids::add);
+        return ids;
+    }
+
+    /**
+     * Applies the result of a {@link RewriterCacheSweeper} multi-get round trip: for each currently cached
+     * rewriter id that was part of the sweep, checks it against the fetched {@link GetResponse} using the same
+     * seqNo/primaryTerm comparison as {@link #checkAndReloadIfChanged}. Unlike that method, this never blocks and
+     * never throws - the sweep already has the response in hand, and a rebuild failure here (e.g. a replacement
+     * document that fails to parse) just keeps the previous version and logs, matching {@link #maybeRefreshAsync}'s
+     * fail-safe philosophy for a background path. An id missing from {@code responsesById} (not part of this
+     * sweep's batch) or no longer cached (evicted/replaced concurrently) is silently skipped.
+     */
+    public void applySweepResponses(final Map<String, GetResponse> responsesById) {
+        for (final String id : cachedRewriterIds()) {
+            final GetResponse response = responsesById.get(id);
+            final RewriterFactoryAndLogging current = factories.get(id);
+            if (response == null || current == null) {
+                continue;
+            }
+            try {
+                applyFreshResponse(id, current, response);
+            } catch (final Exception e) {
+                LOGGER.error("Could not apply sweep result for rewriter " + id + ", keeping previous version", e);
+            }
+        }
+    }
+
+    /**
      * If {@code current} is older than {@code RewriterShardContext#CACHE_REFRESH_AFTER_WRITE} and no refresh
      * of this rewriter is already in flight, kicks off a non-blocking reload from the index. The cached value
      * keeps being served as-is while the refresh is in flight. On success the cache is updated; if the
@@ -248,6 +282,25 @@ public class RewriterFactoryLoader {
         if (!response.isExists()) {
             factories.invalidate(rewriterId);
             throw new ResourceNotFoundException("Rewriter not found: " + rewriterId);
+        }
+
+        return applyFreshResponse(rewriterId, current, response);
+    }
+
+    /**
+     * Shared by {@link #checkAndReloadIfChanged} and {@link #applySweepResponses}: given a rewriter's current
+     * cached entry and a freshly fetched {@link GetResponse} for it, evicts the cache entry if the document has
+     * been deleted, leaves the entry untouched if the seqNo/primaryTerm are unchanged, or rebuilds and replaces it
+     * otherwise.
+     */
+    private RewriterFactoryAndLogging applyFreshResponse(final String rewriterId,
+                                                          final RewriterFactoryAndLogging current,
+                                                          final GetResponse response) {
+
+        if (!response.isExists()) {
+            LOGGER.info("Rewriter {} no longer exists in the index, evicting from cache", rewriterId);
+            factories.invalidate(rewriterId);
+            return current;
         }
 
         if (response.getSeqNo() == current.seqNo && response.getPrimaryTerm() == current.primaryTerm) {

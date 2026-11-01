@@ -73,12 +73,14 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
     protected final RewriterShardContexts rewriterShardContexts;
     protected final DictionaryCorpusLoader dictionaryCorpusLoader;
     protected final PipelineRewriterCacheHandle pipelineRewriterCacheHandle;
+    protected final RewriterCacheSweeper rewriterCacheSweeper;
 
     public QuerqyCorePlugin(final Settings settings) {
         dictionaryCorpusLoader = new DictionaryCorpusLoader();
         rewriterShardContexts = new RewriterShardContexts(settings, dictionaryCorpusLoader);
         querqyProcessor = new QuerqyProcessor(rewriterShardContexts, new Log4jSink());
         pipelineRewriterCacheHandle = new PipelineRewriterCacheHandle();
+        rewriterCacheSweeper = new RewriterCacheSweeper(rewriterShardContexts, pipelineRewriterCacheHandle);
     }
 
     @Override
@@ -115,6 +117,7 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
         // member-injection here, unlike RewriterShardContexts#setIndicesService, since Client - unlike
         // IndicesService - is already a parameter of this very method).
         dictionaryCorpusLoader.setClient(client);
+        rewriterCacheSweeper.start(environment.settings(), threadPool, client);
         return Arrays.asList(rewriterShardContexts, querqyProcessor, dictionaryCorpusLoader,
                 pipelineRewriterCacheHandle);
     }
@@ -125,7 +128,8 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
                 Setting.intSetting(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, 1, 0, Setting.Property.NodeScope),
                 RewriterShardContext.CACHE_EXPIRE_AFTER_WRITE,
                 RewriterShardContext.CACHE_EXPIRE_AFTER_READ,
-                RewriterShardContext.CACHE_REFRESH_AFTER_WRITE);
+                RewriterShardContext.CACHE_REFRESH_AFTER_WRITE,
+                RewriterCacheSweeper.SWEEP_INTERVAL);
 
     }
 

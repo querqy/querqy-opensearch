@@ -21,6 +21,7 @@ package querqy.opensearch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.OpenSearchException;
+import org.opensearch.action.get.GetResponse;
 import org.opensearch.cluster.routing.ShardRouting;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.settings.Settings;
@@ -30,8 +31,10 @@ import org.opensearch.index.shard.IndexShard;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.indices.IndicesService;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class RewriterShardContexts implements IndexEventListener {
@@ -109,6 +112,21 @@ public class RewriterShardContexts implements IndexEventListener {
 
     public void clearRewriters() {
         shardContexts.values().forEach(RewriterShardContext::clearRewriters);
+    }
+
+    /**
+     * The rewriter ids currently cached across every shard context on this node - used by
+     * {@link RewriterCacheSweeper} to know which ids to check in its next sweep.
+     */
+    public Set<String> cachedRewriterIds() {
+        final Set<String> ids = new HashSet<>();
+        shardContexts.values().forEach(ctx -> ids.addAll(ctx.cachedRewriterIds()));
+        return ids;
+    }
+
+    /** Fans a {@link RewriterCacheSweeper} multi-get result out to every shard context on this node. */
+    public void applySweepResponses(final Map<String, GetResponse> responsesById) {
+        shardContexts.values().forEach(ctx -> ctx.applySweepResponses(responsesById));
     }
 
     @Override

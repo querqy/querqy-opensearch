@@ -18,6 +18,12 @@
 
 package querqy.opensearch;
 
+import org.opensearch.action.get.GetResponse;
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+
 /**
  * A stable, early-constructible handle to the {@link RewriterFactoryLoader} used by the {@code querqy_rewrite}
  * search pipeline processor (built inside {@code QuerqyCorePlugin#getRequestProcessors}), so that node components
@@ -59,6 +65,20 @@ public final class PipelineRewriterCacheHandle {
         final RewriterFactoryLoader current = loader;
         if (current != null) {
             current.reloadRewriter(rewriterId);
+        }
+    }
+
+    /** Used by {@link RewriterCacheSweeper} to know which ids to check in its next sweep. */
+    public Set<String> cachedRewriterIds() {
+        final RewriterFactoryLoader current = loader;
+        return current == null ? Collections.emptySet() : current.cachedRewriterIds();
+    }
+
+    /** Applies a {@link RewriterCacheSweeper} multi-get result to the pipeline's cache. */
+    public void applySweepResponses(final Map<String, GetResponse> responsesById) {
+        final RewriterFactoryLoader current = loader;
+        if (current != null) {
+            current.applySweepResponses(responsesById);
         }
     }
 }
