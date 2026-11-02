@@ -143,6 +143,33 @@ with the existing `dictionaryField` (shard-side) key - `dictionaryField` xor `di
 flat strings, same validation pattern. With only one scalar left after dropping `revision`, a nested
 object added a cast and a null-check at every call site for no benefit.
 
+### Nested-blocking-call precaution (found during testing, not by design review)
+
+Making `DictionaryCorpusLoader.load` always do a `GET` (rather than only on a cache miss) surfaced a
+real thread-pool self-starvation deadlock, reproduced by the test suite hanging indefinitely: two
+places rebuild a rewriter from inside a `GET`/multi-get response callback that OpenSearch already
+runs on a thread from its small `get` pool (`FixedExecutorBuilder`, sized to `allocatedProcessors` -
+as low as 1-2 on a constrained node) - `RewriterFactoryLoader#maybeRefreshAsync` and
+`RewriterCacheSweeper#applyResponse`. Rebuilding a rewriter with a `dictionaryId` re-resolves it via
+*another* blocking `Client` call, needing a second thread from that same small pool - with none free,
+since the only one available was the one already stuck waiting.
+
+A first fix attempt - dispatching only the nested `GET` itself onto `threadPool.generic()`, from
+inside `DictionaryCorpusLoader.load` - did not work: the *calling* thread (the one running the `get`-
+pool callback) was still blocked waiting for that dispatched work to finish, so it never actually
+returned to its pool. Moving where the wait happens doesn't help if the originating thread still
+occupies its pool's slot for the same duration either way.
+
+The actual fix: both callbacks now dispatch their *entire* body onto `threadPool.generic()` and
+return immediately, before doing any work that might block - exactly the pattern
+`TransportPutRewriterAction` already used for the same reason, for a deadlock found earlier in this
+project's history. `DictionaryCorpusLoader.load` itself was reverted to a plain, single blocking
+`GET` with no internal dispatch; it documents the precaution for any future caller instead
+(`threadPool()` exposes the node's `ThreadPool` for exactly this purpose). A follow-up audit of every
+other `ActionListener`/thread-pool touch point in the `core` and root modules found no other instance
+of this pattern - the two fixed here, plus `TransportPutRewriterAction`'s earlier one, are the only
+three.
+
 ## Consequences
 
 - A dictionary's content can be changed in place without minting a new identifier, matching how
