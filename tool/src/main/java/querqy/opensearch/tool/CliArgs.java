@@ -141,7 +141,7 @@ public final class CliArgs {
                     break;
                 case "--revision":
                     // put only: the rewriter document's own optional revision tag (RewriterConfigMapping
-                    // .PROP_REVISION) - unrelated to a dictionary's revision, which is always --dictionary-revision
+                    // .PROP_REVISION) - unrelated to a dictionary's id, which is always --dictionary-id
                     revision = requireValue(args, i++, "--revision");
                     break;
                 case "--username":
