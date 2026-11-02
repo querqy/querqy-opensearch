@@ -26,18 +26,36 @@ import java.util.Set;
 
 /**
  * A stable, early-constructible handle to the {@link RewriterFactoryLoader} used by the {@code querqy_rewrite}
- * search pipeline processor (built inside {@code QuerqyCorePlugin#getRequestProcessors}), so that node components
- * built elsewhere - in particular the full plugin module's push-based cache invalidation (
- * {@code TransportNodesClearRewriterCacheAction}/{@code TransportNodesReloadRewriterAction}, which otherwise only
- * reach {@link RewriterShardContexts}, the per-shard caches behind the classic {@code querqy} query) - can also
- * reach the pipeline's cache, without a code-level dependency on it and without depending on the unspecified
- * ordering between {@code QuerqyCorePlugin#createComponents} (where this handle is registered as a component,
- * available for {@code @Inject}) and {@code getRequestProcessors} (where the real loader is actually built, once a
- * {@code Client} is available).
+ * search pipeline processor. Full design rationale: {@code docs/adr/0004-pipeline-rewriter-cache-handle.md}.
  *
- * <p>Every method is a no-op while {@link #setLoader} hasn't run yet - a brief window during node startup, or
- * permanently on an install that never configures a {@code querqy_rewrite} pipeline - mirroring {@link
- * RewriterFactoryLoader#reloadRewriter}'s own "no-op if not cached" semantics.</p>
+ * <p><b>The problem.</b> A node has two independent rewriter caches: one {@link RewriterFactoryLoader} per shard
+ * (via {@link RewriterShardContexts}, behind the classic {@code querqy} query), and a separate, single node-level
+ * loader used only by the {@code querqy_rewrite} pipeline (built inside {@code QuerqyCorePlugin
+ * #getRequestProcessors}). Some node components need to reach <em>both</em> caches - the full plugin module's
+ * push-based cache invalidation ({@code TransportNodesClearRewriterCacheAction}/
+ * {@code TransportNodesReloadRewriterAction}) and the periodic {@link RewriterCacheSweeper} - but neither has any
+ * way to get a reference to the pipeline's loader: it lives inside a different module's processor factory, with no
+ * shared type connecting the two.</p>
+ *
+ * <p><b>The ordering problem.</b> The pipeline's real loader cannot be built until {@code getRequestProcessors}
+ * runs (it needs a {@code Client}), but a consumer like {@code TransportNodesClearRewriterCacheAction} needs
+ * something {@code @Inject}-able the moment components are registered, in {@code QuerqyCorePlugin#createComponents}
+ * - and OpenSearch does not guarantee which of those two plugin methods runs first.</p>
+ *
+ * <p><b>The fix.</b> This handle is constructed immediately, in {@code QuerqyCorePlugin}'s own constructor, so it
+ * always exists before any component wiring happens. It is registered as a component in {@code createComponents},
+ * making it available for {@code @Inject} regardless of ordering, and filled in later via {@link #setLoader} once
+ * {@code getRequestProcessors} actually builds the real loader.</p>
+ *
+ * <p><b>The no-op window.</b> Every method below is a no-op while {@link #setLoader} hasn't run yet - a brief
+ * window during node startup, or permanently on an install that never configures a {@code querqy_rewrite} pipeline
+ * at all - mirroring {@link RewriterFactoryLoader#reloadRewriter}'s own "no-op if not cached" semantics. Callers
+ * never need to check readiness themselves.</p>
+ *
+ * <p><b>Current consumers</b> (this handle is a general mechanism, not specific to either): push-based cache
+ * invalidation ({@code TransportNodesClearRewriterCacheAction}/{@code TransportNodesReloadRewriterAction}) and
+ * {@link RewriterCacheSweeper} both hold a reference to the same handle instance and call through it exactly as
+ * they would call a real {@link RewriterFactoryLoader} directly.</p>
  */
 public final class PipelineRewriterCacheHandle {
 
