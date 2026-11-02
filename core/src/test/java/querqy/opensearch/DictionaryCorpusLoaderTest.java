@@ -30,15 +30,12 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import querqy.opensearch.rewriterstore.QuerqyIndexManager;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
-import querqy.rewriter.wordbreak.TermCorpus;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.zip.GZIPOutputStream;
 
 public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
 
@@ -61,24 +58,13 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
                 .setMapping(QuerqyIndexManager.readMappingResource()).get();
     }
 
-    private void writeTermCorpus(final String name, final String revision, final String tsv,
-                                final boolean gzip) throws Exception {
+    private void writeTermCorpus(final String id, final String tsv, final boolean gzip) throws Exception {
 
-        final byte[] data;
-        if (gzip) {
-            final ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            try (GZIPOutputStream gzipOut = new GZIPOutputStream(bos)) {
-                gzipOut.write(tsv.getBytes(StandardCharsets.UTF_8));
-            }
-            data = bos.toByteArray();
-        } else {
-            data = tsv.getBytes(StandardCharsets.UTF_8);
-        }
-
-        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(name, revision,
+        final byte[] data = tsv.getBytes(StandardCharsets.UTF_8);
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id,
                 TermCorpusConfigMapping.FORMAT_TSV_DF, gzip, null, null, data, System.currentTimeMillis());
 
-        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(name, revision))
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(id))
                 .setSource(source)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();
@@ -92,27 +78,53 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
     private DictionaryCorpusLoader newDictionaryCorpusLoader() {
         final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
         loader.setClient(client());
+        loader.setThreadPool(getInstanceFromNode(org.opensearch.threadpool.ThreadPool.class));
         return loader;
     }
 
-    public void testLoadsAndCaches() throws Exception {
+    public void testLoadsAndReturnsSameInstanceWhileChecksumUnchanged() throws Exception {
 
         ensureRewriterIndexExists();
-        writeTermCorpus("d", "r1", "haus\t10\n", true);
+        writeTermCorpus("d", "haus\t10\n", true);
 
         final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
-        final TermCorpus first = loader.load("d", "r1");
-        assertTrue(first.exists("haus"));
+        final DictionaryCorpusLoader.LoadedTermCorpus first = loader.load("d");
+        assertTrue(first.termCorpus.exists("haus"));
 
-        // same shared instance on a second load - proves it wasn't re-fetched/re-parsed
-        final TermCorpus second = loader.load("d", "r1");
-        assertSame(first, second);
+        // same shared instance on a second load (even though load() always re-checks the live checksum) - proves
+        // it wasn't re-fetched/re-parsed since nothing changed
+        final DictionaryCorpusLoader.LoadedTermCorpus second = loader.load("d");
+        assertSame(first.termCorpus, second.termCorpus);
+        assertEquals(first.checksum, second.checksum);
+    }
+
+    /**
+     * The whole point of dropping "immutable by convention": writing new content under the same id must be picked
+     * up, not silently ignored in favor of a stale cached instance.
+     */
+    public void testReloadsWhenContentChanges() throws Exception {
+
+        ensureRewriterIndexExists();
+        writeTermCorpus("d", "haus\t10\n", true);
+
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
+        final DictionaryCorpusLoader.LoadedTermCorpus first = loader.load("d");
+        assertTrue(first.termCorpus.exists("haus"));
+        assertFalse(first.termCorpus.exists("boot"));
+
+        writeTermCorpus("d", "boot\t5\n", true);
+
+        final DictionaryCorpusLoader.LoadedTermCorpus second = loader.load("d");
+        assertNotEquals(first.checksum, second.checksum);
+        assertNotSame(first.termCorpus, second.termCorpus);
+        assertTrue(second.termCorpus.exists("boot"));
+        assertFalse(second.termCorpus.exists("haus"));
     }
 
     public void testLoadBeforeSetClientFailsClearly() {
         final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
         final IllegalStateException e = expectThrows(IllegalStateException.class,
-                () -> loader.load("d", "r1"));
+                () -> loader.load("d"));
         assertTrue(e.getMessage().contains("setClient"));
     }
 
@@ -122,8 +134,8 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
 
         final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
         final ResourceNotFoundException e = expectThrows(ResourceNotFoundException.class,
-                () -> loader.load("does-not-exist", "r1"));
-        assertTrue(e.getMessage().contains("does-not-exist-r1"));
+                () -> loader.load("does-not-exist"));
+        assertTrue(e.getMessage().contains("does-not-exist"));
     }
 
     public void testWrongDocumentTypeFailsClearly() throws Exception {
@@ -137,13 +149,13 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
         content.put("config", config);
 
         // write a *rewriter* document under the id a term_corpus lookup would use
-        client().prepareIndex(QUERQY_INDEX_NAME).setId("d-r1")
+        client().prepareIndex(QUERQY_INDEX_NAME).setId("d")
                 .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();
 
         final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
-        expectThrows(InvalidTypeNameException.class, () -> loader.load("d", "r1"));
+        expectThrows(InvalidTypeNameException.class, () -> loader.load("d"));
     }
 
     /**
@@ -156,7 +168,7 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
 
         ensureRewriterIndexExists();
 
-        final Exception e = expectThrows(Exception.class, () -> writeTermCorpus("d", "r1", "no-tab-here", false));
+        final Exception e = expectThrows(Exception.class, () -> writeTermCorpus("d", "no-tab-here", false));
         boolean foundValidationMessage = false;
         for (Throwable cause = e; cause != null; cause = cause.getCause()) {
             if (cause.getMessage() != null && cause.getMessage().contains("term corpus")) {
@@ -179,12 +191,12 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
 
         ensureRewriterIndexExists();
 
-        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d", "r1",
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d",
                 TermCorpusConfigMapping.FORMAT_TSV_DF_COOC, false, null, 2,
                 "a\t1\t00\n".getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
 
         final Exception e = expectThrows(Exception.class, () -> client().prepareIndex(QUERQY_INDEX_NAME)
-                .setId(TermCorpusConfigMapping.docId("d", "r1")).setSource(source)
+                .setId(TermCorpusConfigMapping.docId("d")).setSource(source)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).get());
 
         boolean foundValidationMessage = false;
@@ -195,6 +207,41 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
             }
         }
         assertTrue("Expected a bloom-hex-length validation message somewhere in the cause chain of: " + e,
+                foundValidationMessage);
+    }
+
+    /**
+     * {@code QuerqyTermCorpusFieldMapper} rejects a write with no {@code checksum} field, the same way it rejects
+     * any other malformed content - confirming the mapper, not just {@link TermCorpusConfigMapping#verifyChecksum},
+     * is what actually enforces this.
+     */
+    public void testWriteTimeValidationRejectsMissingChecksum() {
+
+        ensureRewriterIndexExists();
+
+        // built by hand (no "checksum" key), rather than via TermCorpusConfigMapping.toLuceneSource, which always
+        // computes one
+        final String corpusJson = "{\"format\":\"" + TermCorpusConfigMapping.FORMAT_TSV_DF + "\",\"gzip\":false,"
+                + "\"data\":\"" + java.util.Base64.getEncoder().encodeToString(
+                        "haus\t10\n".getBytes(StandardCharsets.UTF_8)) + "\"}";
+
+        final Map<String, Object> source = new HashMap<>();
+        source.put(TermCorpusConfigMapping.PROP_TYPE, TermCorpusConfigMapping.TYPE_VALUE);
+        source.put(TermCorpusConfigMapping.PROP_VERSION, TermCorpusConfigMapping.CURRENT_MAPPING_VERSION);
+        source.put(TermCorpusConfigMapping.PROP_NAME, "d");
+        source.put(TermCorpusConfigMapping.PROP_CORPUS, corpusJson);
+
+        final Exception e = expectThrows(Exception.class, () -> client().prepareIndex(QUERQY_INDEX_NAME)
+                .setId("d").setSource(source).setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).get());
+
+        boolean foundValidationMessage = false;
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause.getMessage() != null && cause.getMessage().contains("checksum")) {
+                foundValidationMessage = true;
+                break;
+            }
+        }
+        assertTrue("Expected a checksum validation message somewhere in the cause chain of: " + e,
                 foundValidationMessage);
     }
 }

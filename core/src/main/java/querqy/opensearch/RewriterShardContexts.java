@@ -124,9 +124,21 @@ public class RewriterShardContexts implements IndexEventListener {
         return ids;
     }
 
+    /**
+     * The {@code term_corpus} dictionary ids every currently cached rewriter factory (across every shard context on
+     * this node) depends on - used by {@link RewriterCacheSweeper} to fold dependency ids into its batched
+     * multi-get.
+     */
+    public Set<String> cachedDictionaryDependencyIds() {
+        final Set<String> ids = new HashSet<>();
+        shardContexts.values().forEach(ctx -> ids.addAll(ctx.cachedDictionaryDependencyIds()));
+        return ids;
+    }
+
     /** Fans a {@link RewriterCacheSweeper} multi-get result out to every shard context on this node. */
-    public void applySweepResponses(final Map<String, GetResponse> responsesById) {
-        shardContexts.values().forEach(ctx -> ctx.applySweepResponses(responsesById));
+    public void applySweepResponses(final Map<String, GetResponse> responsesById,
+                                    final boolean rewriterLevelChecksEnabled) {
+        shardContexts.values().forEach(ctx -> ctx.applySweepResponses(responsesById, rewriterLevelChecksEnabled));
     }
 
     @Override

@@ -53,8 +53,7 @@ public final class CliArgs {
     public final String awsRegion;
     public final String awsService;
     public final String awsProfile;
-    public final String dictionaryName;
-    public final String dictionaryRevision;
+    public final String dictionaryId;
     public final String dictionaryFile;
     public final String dictionaryFormat;
     public final Integer hashFunctions;
@@ -63,8 +62,8 @@ public final class CliArgs {
     private CliArgs(final Action action, final String url, final String id, final String configFile,
                     final String revision, final String username, final String password, final int replicas,
                     final boolean insecure, final boolean validateOnly, final boolean sigv4, final String awsRegion,
-                    final String awsService, final String awsProfile, final String dictionaryName,
-                    final String dictionaryRevision, final String dictionaryFile, final String dictionaryFormat,
+                    final String awsService, final String awsProfile, final String dictionaryId,
+                    final String dictionaryFile, final String dictionaryFormat,
                     final Integer hashFunctions, final boolean force) {
         this.action = action;
         this.url = url;
@@ -80,8 +79,7 @@ public final class CliArgs {
         this.awsRegion = awsRegion;
         this.awsService = awsService;
         this.awsProfile = awsProfile;
-        this.dictionaryName = dictionaryName;
-        this.dictionaryRevision = dictionaryRevision;
+        this.dictionaryId = dictionaryId;
         this.dictionaryFile = dictionaryFile;
         this.dictionaryFormat = dictionaryFormat;
         this.hashFunctions = hashFunctions;
@@ -109,8 +107,7 @@ public final class CliArgs {
         String awsRegion = null;
         String awsService = "es";
         String awsProfile = null;
-        String dictionaryName = null;
-        String dictionaryRevision = null;
+        String dictionaryId = null;
         String dictionaryFile = null;
         String dictionaryFormat = "tsv_df";
         Integer hashFunctions = null;
@@ -121,11 +118,8 @@ public final class CliArgs {
                 case "--force":
                     force = true;
                     break;
-                case "--dictionary-name":
-                    dictionaryName = requireValue(args, i++, "--dictionary-name");
-                    break;
-                case "--dictionary-revision":
-                    dictionaryRevision = requireValue(args, i++, "--dictionary-revision");
+                case "--dictionary-id":
+                    dictionaryId = requireValue(args, i++, "--dictionary-id");
                     break;
                 case "--dictionary-file":
                     dictionaryFile = requireValue(args, i++, "--dictionary-file");
@@ -207,20 +201,15 @@ public final class CliArgs {
                 if (!validateOnly && url == null) {
                     throw new IllegalArgumentException("--url is required unless --validate-only is set");
                 }
-                // --dictionary-name/--dictionary-revision are not used by put: a dictionary referenced via
-                // --dictionary-file always gets its name/revision from --config-file's own "dictionary" block,
-                // never from a flag - reject them outright rather than silently ignoring what looks like it should
-                // matter.
-                if (dictionaryName != null) {
-                    throw new IllegalArgumentException("--dictionary-name is not used by put - the dictionary's "
-                            + "name always comes from --config-file's own 'dictionary' block");
-                }
-                if (dictionaryRevision != null) {
-                    throw new IllegalArgumentException("--dictionary-revision is not used by put - the dictionary's "
-                            + "revision always comes from --config-file's own 'dictionary' block");
+                // --dictionary-id is not used by put: a dictionary referenced via --dictionary-file always gets
+                // its id from --config-file's own "dictionaryId" field, never from a flag - reject it outright
+                // rather than silently ignoring what looks like it should matter.
+                if (dictionaryId != null) {
+                    throw new IllegalArgumentException("--dictionary-id is not used by put - the dictionary's "
+                            + "id always comes from --config-file's own 'dictionaryId' field");
                 }
                 // --dictionary-file is only meaningful for a WordBreakCompoundRewriterFactory config with a
-                // "dictionary" reference - RewriterConfigTool checks that once it has parsed --config-file: this
+                // "dictionaryId" reference - RewriterConfigTool checks that once it has parsed --config-file: this
                 // only validates --format/--hash-functions together, the same way put-dictionary does below.
                 if (dictionaryFile != null) {
                     validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
@@ -241,11 +230,8 @@ public final class CliArgs {
                 }
                 break;
             case PUT_DICTIONARY:
-                if (dictionaryName == null) {
-                    throw new IllegalArgumentException("--dictionary-name is required");
-                }
-                if (dictionaryRevision == null) {
-                    throw new IllegalArgumentException("--dictionary-revision is required");
+                if (dictionaryId == null) {
+                    throw new IllegalArgumentException("--dictionary-id is required");
                 }
                 if (dictionaryFile == null) {
                     throw new IllegalArgumentException("--dictionary-file is required");
@@ -256,11 +242,8 @@ public final class CliArgs {
                 validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
                 break;
             case DELETE_DICTIONARY:
-                if (dictionaryName == null) {
-                    throw new IllegalArgumentException("--dictionary-name is required");
-                }
-                if (dictionaryRevision == null) {
-                    throw new IllegalArgumentException("--dictionary-revision is required");
+                if (dictionaryId == null) {
+                    throw new IllegalArgumentException("--dictionary-id is required");
                 }
                 if (url == null) {
                     throw new IllegalArgumentException("--url is required");
@@ -271,7 +254,7 @@ public final class CliArgs {
         }
 
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
-                validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryName, dictionaryRevision,
+                validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryId,
                 dictionaryFile, dictionaryFormat, hashFunctions, force);
     }
 

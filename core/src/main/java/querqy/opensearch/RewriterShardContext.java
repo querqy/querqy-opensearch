@@ -113,7 +113,12 @@ public class RewriterShardContext {
         return loader.cachedRewriterIds();
     }
 
-    public void applySweepResponses(final Map<String, GetResponse> responsesById) {
-        loader.applySweepResponses(responsesById);
+    public Set<String> cachedDictionaryDependencyIds() {
+        return loader.cachedDictionaryDependencyIds();
+    }
+
+    public void applySweepResponses(final Map<String, GetResponse> responsesById,
+                                    final boolean rewriterLevelChecksEnabled) {
+        loader.applySweepResponses(responsesById, rewriterLevelChecksEnabled);
     }
 }

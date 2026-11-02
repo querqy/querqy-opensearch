@@ -33,13 +33,11 @@ import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
 import querqy.rewrite.RewriterFactory;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.zip.GZIPOutputStream;
 
 /**
  * Proves the central claim behind {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean,
@@ -80,6 +78,7 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
     private DictionaryCorpusLoader newDictionaryCorpusLoader() {
         final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
         loader.setClient(client());
+        loader.setThreadPool(getInstanceFromNode(org.opensearch.threadpool.ThreadPool.class));
         return loader;
     }
 
@@ -178,8 +177,8 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
     public void testWordBreakCompoundWithDictionaryReferenceSucceedsOnTheNodeLevelLoader() throws Exception {
 
         ensureRewriterIndexExists();
-        writeTermCorpus("compounds", "r1", "haus\t10\nboot\t5\n");
-        writeWordBreakCompoundRewriterWithDictionary("word_break_rewriter", "compounds", "r1");
+        writeTermCorpus("compounds", "haus\t10\nboot\t5\n");
+        writeWordBreakCompoundRewriterWithDictionary("word_break_rewriter", "compounds");
 
         final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
                 newDictionaryCorpusLoader());
@@ -191,16 +190,13 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         assertEquals("word_break_rewriter", loaded.rewriterFactory.getRewriterId());
     }
 
-    private void writeWordBreakCompoundRewriterWithDictionary(final String rewriterId, final String dictionaryName,
-                                                              final String dictionaryRevision) throws Exception {
+    private void writeWordBreakCompoundRewriterWithDictionary(final String rewriterId, final String dictionaryId)
+            throws Exception {
 
         final Map<String, Object> content = new HashMap<>();
         content.put("class", querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.class.getName());
         final Map<String, Object> config = new HashMap<>();
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", dictionaryName);
-        dictionary.put("revision", dictionaryRevision);
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", dictionaryId);
         content.put("config", config);
 
         client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
@@ -209,18 +205,13 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 .get();
     }
 
-    private void writeTermCorpus(final String name, final String revision, final String tsv) throws Exception {
+    private void writeTermCorpus(final String id, final String tsv) throws Exception {
 
-        final ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        try (GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
-            gzip.write(tsv.getBytes(StandardCharsets.UTF_8));
-        }
-
-        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(name, revision,
-                TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, bos.toByteArray(),
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id,
+                TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, tsv.getBytes(StandardCharsets.UTF_8),
                 System.currentTimeMillis());
 
-        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(name, revision))
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(id))
                 .setSource(source)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();

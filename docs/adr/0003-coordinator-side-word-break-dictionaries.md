@@ -4,7 +4,11 @@ Date: 2026-10-30
 
 ## Status
 
-Accepted and implemented.
+Accepted and implemented. The document format and immutability sections (the `(name, revision)`
+document id/addressing, and the "immutable by convention" assumption) are superseded by ADR 0005
+("Mutable, checksum-verified word-break dictionaries"); the loading/caching architecture described
+below (node-level `DictionaryCorpusLoader` singleton, weak-reference sharing) is unaffected and still
+applies.
 
 ## Context
 
