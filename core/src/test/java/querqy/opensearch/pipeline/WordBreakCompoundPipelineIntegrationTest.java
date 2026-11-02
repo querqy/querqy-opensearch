@@ -40,14 +40,12 @@ import querqy.opensearch.rewriterstore.QuerqyIndexManager;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.zip.GZIPOutputStream;
 
 /**
  * Proves the goal of this change end-to-end: a {@code word_break_compound} rewriter configured with a {@code
@@ -61,8 +59,7 @@ public class WordBreakCompoundPipelineIntegrationTest extends OpenSearchSingleNo
     private static final String INDEX_NAME = "word_break_pipeline_test_index";
     private static final String PIPELINE_ID = "word_break_pipeline_test_pipeline";
     private static final String REWRITER_ID = "word_break_pipeline_test_rewriter";
-    private static final String DICTIONARY_NAME = "test-compounds";
-    private static final String DICTIONARY_REVISION = "r1";
+    private static final String DICTIONARY_ID = "test-compounds";
 
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
@@ -88,7 +85,7 @@ public class WordBreakCompoundPipelineIntegrationTest extends OpenSearchSingleNo
         client().admin().indices().prepareCreate(QUERQY_INDEX_NAME)
                 .setMapping(QuerqyIndexManager.readMappingResource()).get();
 
-        writeTermCorpus(DICTIONARY_NAME, DICTIONARY_REVISION, "haus\t50\nboot\t50\n");
+        writeTermCorpus(DICTIONARY_ID, "haus\t50\nboot\t50\n");
         writeWordBreakCompoundRewriter();
 
         client().admin().indices().prepareCreate(INDEX_NAME).get();
@@ -133,10 +130,7 @@ public class WordBreakCompoundPipelineIntegrationTest extends OpenSearchSingleNo
         final Map<String, Object> content = new HashMap<>();
         content.put("class", querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.class.getName());
         final Map<String, Object> config = new HashMap<>();
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", DICTIONARY_NAME);
-        dictionary.put("revision", DICTIONARY_REVISION);
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", DICTIONARY_ID);
         content.put("config", config);
 
         client().prepareIndex(QUERQY_INDEX_NAME).setId(REWRITER_ID)
@@ -145,18 +139,13 @@ public class WordBreakCompoundPipelineIntegrationTest extends OpenSearchSingleNo
                 .get();
     }
 
-    private void writeTermCorpus(final String name, final String revision, final String tsv) throws Exception {
+    private void writeTermCorpus(final String id, final String tsv) throws Exception {
 
-        final ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        try (GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
-            gzip.write(tsv.getBytes(StandardCharsets.UTF_8));
-        }
-
-        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(name, revision,
-                TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, bos.toByteArray(),
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id,
+                TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, tsv.getBytes(StandardCharsets.UTF_8),
                 System.currentTimeMillis());
 
-        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(name, revision))
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(id))
                 .setSource(source)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();

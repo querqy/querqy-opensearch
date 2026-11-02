@@ -32,18 +32,21 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 /**
- * The document format for a {@code term_corpus} document in {@value Constants#QUERQY_INDEX_NAME}: a named,
- * revisioned, immutable word-frequency dictionary that a coordinator-safe rewriter (currently only
- * {@code WordBreakCompoundRewriterFactory}, when configured with a {@code dictionary} reference instead of a
- * shard-side {@code dictionaryField}) can use without any index/shard access. See
- * {@code docs/adr/0003-coordinator-side-word-break-dictionaries.md}.
+ * The document format for a {@code term_corpus} document in {@value Constants#QUERQY_INDEX_NAME}: a word-frequency
+ * dictionary, addressed by a single {@code id}, that a coordinator-safe rewriter (currently only
+ * {@code WordBreakCompoundRewriterFactory}, when configured with a {@code dictionaryId} instead of a shard-side
+ * {@code dictionaryField}) can use without any index/shard access. See
+ * {@code docs/adr/0005-mutable-checksum-verified-dictionaries.md}.
  *
  * <p>Document shape:
  * <pre>
@@ -51,21 +54,17 @@ import java.util.zip.GZIPInputStream;
  *   "type": "term_corpus",
  *   "version": 1,
  *   "name": "dutch-compounds",
- *   "revision": "2026-01",
- *   "saved_at": "2026-10-30T12:00:00Z",
- *   "corpus": "{\"format\":\"tsv_df\",\"gzip\":true,\"numDocs\":409000,\"data\":\"&lt;base64&gt;\"}"
+ *   "saved_at": "2026-11-02T12:00:00Z",
+ *   "corpus": "{\"format\":\"tsv_df\",\"gzip\":true,\"numDocs\":409000,\"checksum\":\"sha256:...\",\"data\":\"&lt;base64&gt;\"}"
  * }
  * </pre>
  * {@code corpus} is a single JSON-string-valued field (like {@code config_v_005} on a rewriter document), so a
  * write-time field mapper ({@code QuerqyTermCorpusFieldMapper}) can see {@code format}/{@code gzip}/
- * {@code numDocs}/{@code hashFunctions}/{@code data} together and actually build the corpus to validate it. Unlike
- * {@code config_v_005}, whose version suffix exists because of real migration history (it started as plain
- * {@code config} and only got a version baked into the field name once a later, incompatible format needed to
- * coexist with documents already written under the old one - an OpenSearch mapping can't change a field's type in
- * place), this is a brand-new document type with no such history yet: the field is named plainly ({@code corpus}),
- * and the top-level {@code version} integer tracks the document schema generation instead. If an incompatible
- * change to the field's shape is ever needed, a new field ({@code corpus_v2}) should be minted and {@code version}
- * bumped, the same way the rewriter document's own history did.
+ * {@code numDocs}/{@code hashFunctions}/{@code checksum}/{@code data} together, actually build the corpus to
+ * validate it, and verify {@code checksum} matches the content. The document is intentionally mutable: updating a
+ * dictionary's content in place (same id, new content, new checksum) is the supported way to change it - see
+ * {@code DictionaryCorpusLoader}, which re-verifies the checksum on every load rather than assuming the content
+ * never changes. If an old version needs to stay addressable, save it under a different id instead.
  */
 public final class TermCorpusConfigMapping {
 
@@ -76,7 +75,6 @@ public final class TermCorpusConfigMapping {
     public static final String PROP_TYPE = "type";
     public static final String PROP_VERSION = "version";
     public static final String PROP_NAME = "name";
-    public static final String PROP_REVISION = "revision";
     public static final String PROP_SAVED_AT = "saved_at";
     public static final String PROP_CORPUS = "corpus";
 
@@ -84,34 +82,65 @@ public final class TermCorpusConfigMapping {
     public static final String FIELD_GZIP = "gzip";
     public static final String FIELD_NUM_DOCS = "numDocs";
     public static final String FIELD_HASH_FUNCTIONS = "hashFunctions";
+    public static final String FIELD_CHECKSUM = "checksum";
     public static final String FIELD_DATA = "data";
 
     public static final String FORMAT_TSV_DF = "tsv_df";
     public static final String FORMAT_TSV_DF_COOC = "tsv_df_cooc";
 
+    private static final String CHECKSUM_ALGORITHM = "SHA-256";
+    private static final String CHECKSUM_PREFIX = "sha256:";
+
     private TermCorpusConfigMapping() {
     }
 
-    /** The {@code .opensearch-querqy} document id for a given dictionary name and revision. */
-    public static String docId(final String name, final String revision) {
-        return name + "-" + revision;
+    /**
+     * The {@code .opensearch-querqy} document id for a dictionary id - currently just the id itself. Kept as a
+     * named indirection point (rather than using the id directly at every call site) in case that ever changes.
+     */
+    public static String docId(final String id) {
+        return id;
     }
 
     /**
-     * @param name The dictionary name (uninterpreted)
-     * @param revision The dictionary revision (uninterpreted)
+     * SHA-256 over the raw, uncompressed TSV bytes, formatted {@code "sha256:<lowercase-hex>"}. Called identically
+     * by whoever writes a dictionary (before any gzip compression, so compression settings never affect it) and by
+     * {@code QuerqyTermCorpusFieldMapper} (to verify the written checksum matches the actual content) - the one
+     * shared source of truth for both, so the two can never disagree on algorithm or encoding.
+     */
+    public static String computeChecksum(final byte[] rawData) {
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance(CHECKSUM_ALGORITHM);
+        } catch (final NoSuchAlgorithmException e) {
+            throw new IllegalStateException(CHECKSUM_ALGORITHM + " not available", e);
+        }
+        final byte[] hash = digest.digest(rawData);
+        final StringBuilder hex = new StringBuilder(CHECKSUM_PREFIX.length() + hash.length * 2);
+        hex.append(CHECKSUM_PREFIX);
+        for (final byte b : hash) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
+    }
+
+    /**
+     * @param id The dictionary id (uninterpreted)
      * @param format {@link #FORMAT_TSV_DF} or {@link #FORMAT_TSV_DF_COOC}
-     * @param gzip Whether {@code data} is gzip-compressed
+     * @param gzip Whether to gzip-compress {@code rawData} before storing it
      * @param numDocs Optional, as in {@code TsvDfTermCorpus}/{@code TsvDfCoocTermCorpus}
      * @param hashFunctions Required iff {@code format} is {@link #FORMAT_TSV_DF_COOC}
-     * @param data The raw TSV bytes, gzip-compressed iff {@code gzip}
+     * @param rawData The raw, uncompressed TSV bytes - gzip compression (if requested) and the checksum are both
+     *                derived from this exact buffer, so they can never end up describing different content
      * @param savedAtMillis The point in time at which the document is saved, in epoch millis, or null
      * @return The document to save in {@value Constants#QUERQY_INDEX_NAME}
      */
-    public static Map<String, Object> toLuceneSource(final String name, final String revision, final String format,
-                                                      final boolean gzip, final Integer numDocs,
-                                                      final Integer hashFunctions, final byte[] data,
-                                                      final Long savedAtMillis) throws IOException {
+    public static Map<String, Object> toLuceneSource(final String id, final String format, final boolean gzip,
+                                                      final Integer numDocs, final Integer hashFunctions,
+                                                      final byte[] rawData, final Long savedAtMillis)
+            throws IOException {
+
+        final byte[] stored = gzip ? gzip(rawData) : rawData;
 
         final Map<String, Object> corpus = new HashMap<>();
         corpus.put(FIELD_FORMAT, format);
@@ -122,13 +151,13 @@ public final class TermCorpusConfigMapping {
         if (hashFunctions != null) {
             corpus.put(FIELD_HASH_FUNCTIONS, hashFunctions);
         }
-        corpus.put(FIELD_DATA, Base64.getEncoder().encodeToString(data));
+        corpus.put(FIELD_CHECKSUM, computeChecksum(rawData));
+        corpus.put(FIELD_DATA, Base64.getEncoder().encodeToString(stored));
 
         final Map<String, Object> source = new HashMap<>();
         source.put(PROP_TYPE, TYPE_VALUE);
         source.put(PROP_VERSION, CURRENT_MAPPING_VERSION);
-        source.put(PROP_NAME, name);
-        source.put(PROP_REVISION, revision);
+        source.put(PROP_NAME, id);
         if (savedAtMillis != null) {
             source.put(PROP_SAVED_AT, Instant.ofEpochMilli(savedAtMillis).toString());
         }
@@ -137,6 +166,14 @@ public final class TermCorpusConfigMapping {
         source.put(PROP_CORPUS, RewriterConfigMapping.toCanonicalJsonString(corpus));
 
         return source;
+    }
+
+    private static byte[] gzip(final byte[] data) throws IOException {
+        final ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzipOut = new GZIPOutputStream(bos)) {
+            gzipOut.write(data);
+        }
+        return bos.toByteArray();
     }
 
     /**
@@ -174,6 +211,10 @@ public final class TermCorpusConfigMapping {
         return hashFunctions == null ? null : ((Number) hashFunctions).intValue();
     }
 
+    public static String getChecksum(final Map<String, Object> corpus) {
+        return (String) corpus.get(FIELD_CHECKSUM);
+    }
+
     /**
      * @return The raw TSV bytes: base64-decoded, then gunzipped iff {@link #isGzip(Map)}.
      */
@@ -203,6 +244,23 @@ public final class TermCorpusConfigMapping {
     }
 
     /**
+     * @throws IOException if {@link #FIELD_CHECKSUM} is missing, or doesn't match {@link #computeChecksum(byte[])}
+     * of {@code rawData} - i.e. the writer's claimed checksum doesn't match the content it was supposedly computed
+     * from.
+     */
+    public static void verifyChecksum(final Map<String, Object> corpus, final byte[] rawData) throws IOException {
+        final String claimed = getChecksum(corpus);
+        if (claimed == null) {
+            throw new IOException("Missing '" + FIELD_CHECKSUM + "'");
+        }
+        final String actual = computeChecksum(rawData);
+        if (!actual.equals(claimed)) {
+            throw new IOException("'" + FIELD_CHECKSUM + "' does not match the content: expected " + actual
+                    + ", got " + claimed);
+        }
+    }
+
+    /**
      * Builds the {@link TermCorpus} described by a parsed {@code corpus} map, dispatching on {@link
      * #FIELD_FORMAT}. Used both to actually load a dictionary ({@code DictionaryCorpusLoader}) and to validate one
      * at write time ({@code QuerqyTermCorpusFieldMapper}) - the latter discards the result, it only cares whether
@@ -212,16 +270,25 @@ public final class TermCorpusConfigMapping {
      * format} is unknown, or {@code format} is {@link #FORMAT_TSV_DF_COOC} with no {@link #FIELD_HASH_FUNCTIONS}
      */
     public static TermCorpus buildTermCorpus(final Map<String, Object> corpus) throws IOException {
+        return buildTermCorpus(corpus, readData(corpus));
+    }
+
+    /**
+     * Like {@link #buildTermCorpus(Map)}, but takes already-decoded raw bytes - avoids decoding {@link #FIELD_DATA}
+     * twice when the caller ({@code QuerqyTermCorpusFieldMapper}) already has them in hand from {@link
+     * #verifyChecksum}.
+     */
+    public static TermCorpus buildTermCorpus(final Map<String, Object> corpus, final byte[] rawData)
+            throws IOException {
 
         final String format = getFormat(corpus);
         if (format == null) {
             throw new IOException("Missing '" + FIELD_FORMAT + "'");
         }
 
-        final byte[] data = readData(corpus);
         final Integer numDocs = getNumDocs(corpus);
 
-        try (Reader reader = new InputStreamReader(new ByteArrayInputStream(data), StandardCharsets.UTF_8)) {
+        try (Reader reader = new InputStreamReader(new ByteArrayInputStream(rawData), StandardCharsets.UTF_8)) {
 
             switch (format) {
 
@@ -254,11 +321,6 @@ public final class TermCorpusConfigMapping {
         } catch (final IllegalStateException | IllegalArgumentException e) {
             throw new IOException(e.getMessage(), e);
         }
-    }
-
-    public static String getRevision(final Map<String, Object> source) {
-        final Object revision = source.get(PROP_REVISION);
-        return revision == null ? null : revision.toString();
     }
 
     public static String getName(final Map<String, Object> source) {

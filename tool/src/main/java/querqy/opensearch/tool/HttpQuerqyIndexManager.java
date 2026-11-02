@@ -118,7 +118,8 @@ final class HttpQuerqyIndexManager {
     /**
      * Writes a {@code term_corpus} document (a word-break-compound dictionary, see {@code
      * querqy.opensearch.rewriterstore.TermCorpusConfigMapping}) - same mechanism as {@link #putRewriter}, just a
-     * different document shape/id convention ({@code <name>-<revision>}).
+     * different document shape/id convention (the dictionary's own id, unchanged). Writing to an id that already
+     * exists updates its content in place - dictionaries are intentionally mutable.
      */
     void putDictionary(final String docId, final Map<String, Object> source) throws IOException {
         putDocument(docId, source);

@@ -37,21 +37,23 @@ import java.util.Map;
 /**
  * Field type for the combined {@code corpus} field of a {@code term_corpus} document (see
  * {@link TermCorpusConfigMapping}): {@code {"format": ..., "gzip": ..., "numDocs": ..., "hashFunctions": ...,
- * "data": ...}}.
+ * "checksum": ..., "data": ...}}.
  *
  * <p>Like {@code QuerqyRewriterConfigFieldMapper}, this mapper doesn't index or store a Lucene field of its own -
- * the raw value is always available via {@code _source}. Its only purpose is to validate a dictionary document at
- * write time: it base64-decodes (and gunzips, if {@code gzip: true}) {@code data} and actually builds the {@code
- * TermCorpus} it describes ({@code TsvDfTermCorpus}/{@code TsvDfCoocTermCorpus}, per {@code format}), rejecting the
- * write (throwing {@link MapperParsingException}) if the content doesn't parse as declared. This is what makes
- * write-time validation possible for a raw {@code PUT <index>/_doc/<id>}, the only way to write a dictionary
- * document on an install without the REST rewriter API ({@code ActionPlugin}).</p>
+ * the raw value is always available via {@code _source}. Its purpose is to validate a dictionary document at write
+ * time: it base64-decodes (and gunzips, if {@code gzip: true}) {@code data}, verifies {@code checksum} matches that
+ * decoded content (see {@link TermCorpusConfigMapping#verifyChecksum}), and actually builds the {@code TermCorpus}
+ * it describes ({@code TsvDfTermCorpus}/{@code TsvDfCoocTermCorpus}, per {@code format}), rejecting the write
+ * (throwing {@link MapperParsingException}) if either check fails. This is what makes write-time validation
+ * possible for a raw {@code PUT <index>/_doc/<id>}, the only way to write a dictionary document on an install
+ * without the REST rewriter API ({@code ActionPlugin}) - and, since a dictionary document is intentionally mutable
+ * (see {@link TermCorpusConfigMapping}), the checksum check is what lets a reader ({@code DictionaryCorpusLoader})
+ * later tell whether a given id's content has actually changed, without trusting an unenforced convention.</p>
  *
  * <p><b>Known limitation:</b> like {@code QuerqyRewriterConfigFieldMapper}, this runs on every shard copy (primary
  * and replicas) and again during translog replay on recovery - here that means gunzipping and fully parsing a
  * dictionary that may be several MB uncompressed, once per shard copy. Acceptable because {@code term_corpus}
- * documents are written rarely and are immutable per revision (a change is a new document, not an update), so this
- * cost is paid once per write, not on any request-serving hot path.</p>
+ * documents are written rarely, so this cost is paid once per write, not on any request-serving hot path.</p>
  */
 public final class QuerqyTermCorpusFieldMapper extends FieldMapper {
 
@@ -126,8 +128,23 @@ public final class QuerqyTermCorpusFieldMapper extends FieldMapper {
                     + e.getMessage(), e);
         }
 
+        final byte[] rawData;
         try {
-            TermCorpusConfigMapping.buildTermCorpus(corpus);
+            rawData = TermCorpusConfigMapping.readData(corpus);
+        } catch (final Exception e) {
+            throw new MapperParsingException("Invalid term corpus content in document '" + documentId + "': "
+                    + e.getMessage(), e);
+        }
+
+        try {
+            TermCorpusConfigMapping.verifyChecksum(corpus, rawData);
+        } catch (final Exception e) {
+            throw new MapperParsingException("Invalid term corpus checksum in document '" + documentId + "': "
+                    + e.getMessage(), e);
+        }
+
+        try {
+            TermCorpusConfigMapping.buildTermCorpus(corpus, rawData);
         } catch (final Exception e) {
             throw new MapperParsingException("Invalid term corpus content in document '" + documentId + "': "
                     + e.getMessage(), e);

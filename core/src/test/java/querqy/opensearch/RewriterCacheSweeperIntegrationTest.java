@@ -37,7 +37,9 @@ import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.query.Rewriter;
 import querqy.opensearch.rewriterstore.QuerqyIndexManager;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
+import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -129,9 +131,79 @@ public class RewriterCacheSweeperIntegrationTest extends OpenSearchSingleNodeTes
         assertBusy(() -> assertHitCount(1L));
     }
 
+    /**
+     * Proves the sweep's dependency-checksum check (not just its rewriter-doc check): a {@code word_break_compound}
+     * rewriter's dictionary is updated out-of-band (same id, new content, so a new checksum) - with no change
+     * whatsoever to the rewriter's own document - and the sweep still notices and rebuilds it, with no query
+     * traffic in between.
+     */
+    public void testSweepPicksUpDictionaryContentChangeWithoutQueryTraffic() throws Exception {
+
+        final String dictionaryId = "sweeper_test_dictionary";
+        final String wordBreakRewriterId = "sweeper_test_word_break_rewriter";
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+        client().prepareIndex(INDEX_NAME).setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .setSource("field1", "haus boot").get(); // the split form "hausboot" must decompound to match
+        writeTermCorpus(dictionaryId, "haus\t50\nboot\t50\n");
+        writeWordBreakCompoundRewriter(wordBreakRewriterId, dictionaryId);
+
+        assertDecompoundsHausboot(wordBreakRewriterId, true); // warms the cache, resolving the dictionary
+
+        // same id, different content - "boot" is no longer a known term, so "hausboot" can no longer be
+        // decompounded into "haus"+"boot"
+        writeTermCorpus(dictionaryId, "haus\t50\n");
+
+        newSweeper().sweep(client());
+
+        assertBusy(() -> assertDecompoundsHausboot(wordBreakRewriterId, false));
+    }
+
+    private void writeTermCorpus(final String id, final String tsv) throws Exception {
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id,
+                TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, tsv.getBytes(StandardCharsets.UTF_8),
+                System.currentTimeMillis());
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(id))
+                .setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    private void writeWordBreakCompoundRewriter(final String rewriterId, final String dictionaryId)
+            throws Exception {
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.class.getName());
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryId", dictionaryId);
+        content.put("config", config);
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
+                .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    /** Asserts whether "hausboot" decompounds into "haus"+"boot" and so matches a doc containing the split form. */
+    private void assertDecompoundsHausboot(final String rewriterId, final boolean expectDecompound) throws Exception {
+        final QuerqyQueryBuilder query = new QuerqyQueryBuilder(getInstanceFromNode(QuerqyProcessor.class));
+        query.setRewriters(Collections.singletonList(new Rewriter(rewriterId)));
+        query.setMatchingQuery(new MatchingQuery("hausboot"));
+        query.setQueryFieldsAndBoostings(Arrays.asList("field1", "field2"));
+        final SearchResponse response = client().search(client().prepareSearch(INDEX_NAME).setQuery(query)
+                .request()).get();
+        final long hits = response.getHits().getTotalHits().value();
+        if (expectDecompound) {
+            assertTrue("Expected 'hausboot' to decompound and match the split-form doc", hits >= 1L);
+        } else {
+            assertEquals("Expected 'hausboot' to no longer decompound into 'haus'+'boot'", 0L, hits);
+        }
+    }
+
     private RewriterCacheSweeper newSweeper() {
-        return new RewriterCacheSweeper(getInstanceFromNode(RewriterShardContexts.class),
+        final RewriterCacheSweeper sweeper = new RewriterCacheSweeper(getInstanceFromNode(RewriterShardContexts.class),
                 getInstanceFromNode(PipelineRewriterCacheHandle.class));
+        sweeper.setThreadPool(getInstanceFromNode(org.opensearch.threadpool.ThreadPool.class));
+        return sweeper;
     }
 
     private void ensureRewriterIndexExists() throws Exception {

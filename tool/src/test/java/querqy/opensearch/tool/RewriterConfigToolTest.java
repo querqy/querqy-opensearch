@@ -94,19 +94,15 @@ public class RewriterConfigToolTest {
         return new RewriterInfo(id, WordBreakCompoundRewriterFactory.class.getName(), null, "hash", null, null, null);
     }
 
-    private static RewriterInfo wordBreakWithDictionary(final String id, final String dictionaryName,
-                                                        final String dictionaryRevision) {
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", dictionaryName);
-        dictionary.put("revision", dictionaryRevision);
+    private static RewriterInfo wordBreakWithDictionary(final String id, final String dictionaryId) {
         final Map<String, Object> config = new HashMap<>();
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", dictionaryId);
         return new RewriterInfo(id, WordBreakCompoundRewriterFactory.class.getName(), null, "hash", null, config,
                 null);
     }
 
     @Test
-    public void testFindRewritersReferencingDictionaryMatchesByNameAndRevision() throws Exception {
+    public void testFindRewritersReferencingDictionaryMatchesById() throws Exception {
 
         final HttpQuerqyIndexManager indexManager = mock(HttpQuerqyIndexManager.class);
 
@@ -115,12 +111,10 @@ public class RewriterConfigToolTest {
                 wordBreakListing("wb_no_match"),
                 new RewriterInfo("common_rules", "querqy.opensearch.rewriter.SimpleCommonRulesRewriterFactory",
                         null, "hash", null, null, null)));
-        when(indexManager.getRewriter("wb_match")).thenReturn(wordBreakWithDictionary("wb_match", "d", "r1"));
-        when(indexManager.getRewriter("wb_no_match")).thenReturn(wordBreakWithDictionary("wb_no_match", "other",
-                "r1"));
+        when(indexManager.getRewriter("wb_match")).thenReturn(wordBreakWithDictionary("wb_match", "d"));
+        when(indexManager.getRewriter("wb_no_match")).thenReturn(wordBreakWithDictionary("wb_no_match", "other"));
 
-        final List<String> referencing = RewriterConfigTool.findRewritersReferencingDictionary(indexManager, "d",
-                "r1");
+        final List<String> referencing = RewriterConfigTool.findRewritersReferencingDictionary(indexManager, "d");
 
         assertThat(referencing).containsExactly("wb_match");
         // a non-word-break rewriter's full config is never even fetched - listRewriters() already told us enough
@@ -133,9 +127,9 @@ public class RewriterConfigToolTest {
         final HttpQuerqyIndexManager indexManager = mock(HttpQuerqyIndexManager.class);
 
         when(indexManager.listRewriters()).thenReturn(List.of(wordBreakListing("wb1")));
-        when(indexManager.getRewriter("wb1")).thenReturn(wordBreakWithDictionary("wb1", "other", "r1"));
+        when(indexManager.getRewriter("wb1")).thenReturn(wordBreakWithDictionary("wb1", "other"));
 
-        assertThat(RewriterConfigTool.findRewritersReferencingDictionary(indexManager, "d", "r1")).isEmpty();
+        assertThat(RewriterConfigTool.findRewritersReferencingDictionary(indexManager, "d")).isEmpty();
     }
 
     @Test
@@ -143,12 +137,12 @@ public class RewriterConfigToolTest {
 
         final HttpQuerqyIndexManager indexManager = mock(HttpQuerqyIndexManager.class);
         final Map<String, Object> config = new HashMap<>();
-        config.put("dictionaryField", "f1"); // no "dictionary" block at all
+        config.put("dictionaryField", "f1"); // no "dictionaryId" at all
 
         when(indexManager.listRewriters()).thenReturn(List.of(wordBreakListing("wb1")));
         when(indexManager.getRewriter("wb1")).thenReturn(new RewriterInfo("wb1",
                 WordBreakCompoundRewriterFactory.class.getName(), null, "hash", null, config, null));
 
-        assertThat(RewriterConfigTool.findRewritersReferencingDictionary(indexManager, "d", "r1")).isEmpty();
+        assertThat(RewriterConfigTool.findRewritersReferencingDictionary(indexManager, "d")).isEmpty();
     }
 }

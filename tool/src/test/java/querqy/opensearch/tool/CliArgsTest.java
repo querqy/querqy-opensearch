@@ -217,14 +217,12 @@ public class CliArgsTest {
         final CliArgs args = CliArgs.parse(new String[] {
                 "put-dictionary",
                 "--url", "https://localhost:9200",
-                "--dictionary-name", "dutch-compounds",
-                "--dictionary-revision", "r1",
+                "--dictionary-id", "dutch-compounds",
                 "--dictionary-file", "./dutch-compounds.tsv"
         });
 
         assertThat(args.action).isEqualTo(CliArgs.Action.PUT_DICTIONARY);
-        assertThat(args.dictionaryName).isEqualTo("dutch-compounds");
-        assertThat(args.dictionaryRevision).isEqualTo("r1");
+        assertThat(args.dictionaryId).isEqualTo("dutch-compounds");
         assertThat(args.dictionaryFile).isEqualTo("./dutch-compounds.tsv");
         assertThat(args.dictionaryFormat).isEqualTo("tsv_df");
         assertThat(args.hashFunctions).isNull();
@@ -233,64 +231,53 @@ public class CliArgsTest {
     @Test
     public void testPutDictionaryAcceptsDashedActionName() {
         assertThat(CliArgs.parse(new String[] {
-                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-revision", "r1", "--dictionary-file", "d.tsv"
+                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
+                "--dictionary-file", "d.tsv"
         }).action).isEqualTo(CliArgs.Action.PUT_DICTIONARY);
     }
 
     @Test
-    public void testPutDictionaryRequiresName() {
+    public void testPutDictionaryRequiresId() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-revision", "r1",
-                "--dictionary-file", "d.tsv"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-name");
-    }
-
-    @Test
-    public void testPutDictionaryRequiresRevision() {
-        assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-file", "d.tsv"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-revision");
+                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-file", "d.tsv"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-id");
     }
 
     @Test
     public void testPutDictionaryRequiresFile() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-revision", "r1"
+                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d"
         })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-file");
     }
 
     @Test
     public void testPutDictionaryRequiresUrl() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "put-dictionary", "--dictionary-name", "d", "--dictionary-revision", "r1", "--dictionary-file",
-                "d.tsv"
+                "put-dictionary", "--dictionary-id", "d", "--dictionary-file", "d.tsv"
         })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--url");
     }
 
     @Test
     public void testPutDictionaryRejectsUnknownFormat() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-revision", "r1", "--dictionary-file", "d.tsv", "--format", "nonsense"
+                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
+                "--dictionary-file", "d.tsv", "--format", "nonsense"
         })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--format");
     }
 
     @Test
     public void testPutDictionaryCoocFormatRequiresHashFunctions() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-revision", "r1", "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc"
+                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
+                "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc"
         })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--hash-functions");
     }
 
     @Test
     public void testPutDictionaryParsesCoocFormatWithHashFunctions() {
         final CliArgs args = CliArgs.parse(new String[] {
-                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-revision", "r1", "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc",
+                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
+                "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc",
                 "--hash-functions", "7"
         });
 
@@ -326,19 +313,11 @@ public class CliArgsTest {
     }
 
     @Test
-    public void testPutRejectsDictionaryName() {
+    public void testPutRejectsDictionaryId() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
                 "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
-                "--dictionary-file", "d.tsv", "--dictionary-name", "foo"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-name");
-    }
-
-    @Test
-    public void testPutRejectsDictionaryRevision() {
-        assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
-                "--dictionary-file", "d.tsv", "--dictionary-revision", "r1"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-revision");
+                "--dictionary-file", "d.tsv", "--dictionary-id", "foo"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-id");
     }
 
     @Test
@@ -354,43 +333,33 @@ public class CliArgsTest {
     @Test
     public void testDeleteDictionaryParsesAllOptions() {
         final CliArgs args = CliArgs.parse(new String[] {
-                "delete-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-revision", "r1", "--force"
+                "delete-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d", "--force"
         });
 
         assertThat(args.action).isEqualTo(CliArgs.Action.DELETE_DICTIONARY);
-        assertThat(args.dictionaryName).isEqualTo("d");
-        assertThat(args.dictionaryRevision).isEqualTo("r1");
+        assertThat(args.dictionaryId).isEqualTo("d");
         assertThat(args.force).isTrue();
     }
 
     @Test
     public void testDeleteDictionaryDefaultsForceToFalse() {
         final CliArgs args = CliArgs.parse(new String[] {
-                "delete-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d",
-                "--dictionary-revision", "r1"
+                "delete-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d"
         });
         assertThat(args.force).isFalse();
     }
 
     @Test
-    public void testDeleteDictionaryRequiresName() {
+    public void testDeleteDictionaryRequiresId() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "delete-dictionary", "--url", "https://localhost:9200", "--dictionary-revision", "r1"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-name");
-    }
-
-    @Test
-    public void testDeleteDictionaryRequiresRevision() {
-        assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "delete-dictionary", "--url", "https://localhost:9200", "--dictionary-name", "d"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-revision");
+                "delete-dictionary", "--url", "https://localhost:9200"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-id");
     }
 
     @Test
     public void testDeleteDictionaryRequiresUrl() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
-                "delete-dictionary", "--dictionary-name", "d", "--dictionary-revision", "r1"
+                "delete-dictionary", "--dictionary-id", "d"
         })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--url");
     }
 }

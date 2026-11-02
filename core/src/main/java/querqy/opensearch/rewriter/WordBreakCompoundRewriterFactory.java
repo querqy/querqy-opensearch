@@ -74,25 +74,11 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     private boolean verifyDecompoundCollation = DEFAULT_VERIFY_DECOMPOUND_COLLATION;
     private int minSuggestionFreq = DEFAULT_MIN_SUGGESTION_FREQ;
     private OptionalModifierConfig optionalModifierConfig = OptionalModifierConfig.DISABLED;
-    private DictionaryRef dictionaryRef;
+    private String dictionaryId;
+    private volatile Map<String, String> dictionaryDependencyChecksums = Collections.emptyMap();
 
     public WordBreakCompoundRewriterFactory(final String rewriterId) {
         super(rewriterId);
-    }
-
-    /**
-     * A reference to a {@code term_corpus} document in {@code .opensearch-querqy} (see {@link
-     * querqy.opensearch.rewriterstore.TermCorpusConfigMapping}), used instead of {@link #dictionaryField} to build
-     * a coordinator-safe (TSV-based) {@link TermCorpus} that needs no shard/index access at all.
-     */
-    private static final class DictionaryRef {
-        final String name;
-        final String revision;
-
-        DictionaryRef(final String name, final String revision) {
-            this.name = name;
-            this.revision = revision;
-        }
     }
 
     @Override
@@ -105,28 +91,24 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         final Optional<String> dictionaryFieldOpt = ConfigUtils.getStringArg(config, "dictionaryField")
                 .map(String::trim)
                 .filter(s -> !s.isEmpty());
-        final Map<String, Object> dictionaryConf = (Map<String, Object>) config.get("dictionary");
+        final Optional<String> dictionaryIdOpt = ConfigUtils.getStringArg(config, "dictionaryId")
+                .map(String::trim)
+                .filter(s -> !s.isEmpty());
 
-        if (dictionaryFieldOpt.isPresent() && dictionaryConf != null) {
-            throw new IllegalArgumentException("Specify exactly one of 'dictionaryField' or 'dictionary', not both");
+        if (dictionaryFieldOpt.isPresent() && dictionaryIdOpt.isPresent()) {
+            throw new IllegalArgumentException("Specify exactly one of 'dictionaryField' or 'dictionaryId', not both");
         }
-        if (!dictionaryFieldOpt.isPresent() && dictionaryConf == null) {
+        if (!dictionaryFieldOpt.isPresent() && !dictionaryIdOpt.isPresent()) {
             throw new IllegalArgumentException(
-                    "Missing config: exactly one of 'dictionaryField' or 'dictionary' is required");
+                    "Missing config: exactly one of 'dictionaryField' or 'dictionaryId' is required");
         }
 
-        if (dictionaryConf != null) {
-            final String name = ConfigUtils.getStringArg(dictionaryConf, "name").map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .orElseThrow(() -> new IllegalArgumentException("Missing config: dictionary.name"));
-            final String revision = ConfigUtils.getStringArg(dictionaryConf, "revision").map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .orElseThrow(() -> new IllegalArgumentException("Missing config: dictionary.revision"));
-            dictionaryRef = new DictionaryRef(name, revision);
+        if (dictionaryIdOpt.isPresent()) {
+            dictionaryId = dictionaryIdOpt.get();
             dictionaryField = null;
         } else {
             dictionaryField = dictionaryFieldOpt.get();
-            dictionaryRef = null;
+            dictionaryId = null;
         }
 
         lowerCaseInput = ConfigUtils.getArg(config, "lowerCaseInput", DEFAULT_LOWER_CASE_INPUT);
@@ -189,21 +171,13 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
 
         final Optional<String> dictionaryFieldOpt = ConfigUtils.getStringArg(config, "dictionaryField")
                 .map(String::trim).filter(s -> !s.isEmpty());
-        final Map<String, Object> dictionaryConf = (Map<String, Object>) config.get("dictionary");
+        final Optional<String> dictionaryIdOpt = ConfigUtils.getStringArg(config, "dictionaryId")
+                .map(String::trim).filter(s -> !s.isEmpty());
 
-        if (dictionaryFieldOpt.isPresent() && dictionaryConf != null) {
-            errors.add("Specify exactly one of 'dictionaryField' or 'dictionary', not both");
-        } else if (!dictionaryFieldOpt.isPresent() && dictionaryConf == null) {
-            errors.add("Missing config: exactly one of 'dictionaryField' or 'dictionary' is required");
-        } else if (dictionaryConf != null) {
-            if (!ConfigUtils.getStringArg(dictionaryConf, "name").map(String::trim)
-                    .filter(s -> !s.isEmpty()).isPresent()) {
-                errors.add("Missing config: dictionary.name");
-            }
-            if (!ConfigUtils.getStringArg(dictionaryConf, "revision").map(String::trim)
-                    .filter(s -> !s.isEmpty()).isPresent()) {
-                errors.add("Missing config: dictionary.revision");
-            }
+        if (dictionaryFieldOpt.isPresent() && dictionaryIdOpt.isPresent()) {
+            errors.add("Specify exactly one of 'dictionaryField' or 'dictionaryId', not both");
+        } else if (!dictionaryFieldOpt.isPresent() && !dictionaryIdOpt.isPresent()) {
+            errors.add("Missing config: exactly one of 'dictionaryField' or 'dictionaryId' is required");
         }
 
         ConfigUtils.getStringArg(config, "morphology").ifPresent(morphologyName -> {
@@ -244,16 +218,16 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     }
 
     /**
-     * When configured with a shard-side {@code dictionaryField} (not {@code dictionary}), {@code createRewriter(...)}
+     * When configured with a shard-side {@code dictionaryField} (not {@code dictionaryId}), {@code createRewriter(...)}
      * (below) needs a real shard-backed {@code IndexSearcher} (via {@code
      * adapter.getSearchExecutionContext().searcher()}) to build its {@link LuceneTermCorpus} - unlike every other
      * built-in rewriter, this one genuinely cannot run on a coordinating node with no shard access at all in that
-     * mode. Configured with a {@code dictionary} reference instead, it needs no shard access at all (see {@link
+     * mode. Configured with a {@code dictionaryId} instead, it needs no shard access at all (see {@link
      * #createRewriterFactory(IndexShard, DictionaryCorpusLoader)}), so it is coordinator-safe.
      */
     @Override
     public boolean isSupportedOnCoordinator() {
-        return dictionaryRef != null;
+        return dictionaryId != null;
     }
 
     @Override
@@ -283,21 +257,26 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
     }
 
     /**
-     * Configured with a {@code dictionary} reference, resolves the named/revisioned {@code term_corpus} document
-     * via {@code dictionaryCorpusLoader} - once here, not per rewrite - and builds the rewriter directly from it,
-     * ignoring {@code indexShard} entirely (so this also works in the classic per-shard {@code querqy} query, not
-     * only in the {@code querqy_rewrite} search pipeline). Configured with {@code dictionaryField} instead, falls
-     * back to {@link #createRewriterFactory(IndexShard)} unchanged.
+     * Configured with a {@code dictionaryId}, resolves that {@code term_corpus} document via {@code
+     * dictionaryCorpusLoader} - once here, not per rewrite - and builds the rewriter directly from it, ignoring
+     * {@code indexShard} entirely (so this also works in the classic per-shard {@code querqy} query, not only in the
+     * {@code querqy_rewrite} search pipeline). Records the checksum the dictionary was resolved at (see {@link
+     * #getDictionaryDependencyChecksums()}) so {@code RewriterFactoryLoader} can later notice a dictionary-only
+     * content change. Configured with {@code dictionaryField} instead, falls back to {@link
+     * #createRewriterFactory(IndexShard)} unchanged.
      */
     @Override
     public RewriterFactory createRewriterFactory(final IndexShard indexShard,
                                                  final DictionaryCorpusLoader dictionaryCorpusLoader) {
 
-        if (dictionaryRef == null) {
+        if (dictionaryId == null) {
+            dictionaryDependencyChecksums = Collections.emptyMap();
             return createRewriterFactory(indexShard);
         }
 
-        final TermCorpus corpus = dictionaryCorpusLoader.load(dictionaryRef.name, dictionaryRef.revision);
+        final DictionaryCorpusLoader.LoadedTermCorpus loaded = dictionaryCorpusLoader.load(dictionaryId);
+        dictionaryDependencyChecksums = Collections.singletonMap(dictionaryId, loaded.checksum);
+        final TermCorpus corpus = loaded.termCorpus;
 
         return new RewriterFactory(getRewriterId()) {
             @Override
@@ -315,16 +294,17 @@ public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory 
         };
     }
 
+    @Override
+    public Map<String, String> getDictionaryDependencyChecksums() {
+        return dictionaryDependencyChecksums;
+    }
+
     public String getDictionaryField() {
         return dictionaryField;
     }
 
-    public String getDictionaryName() {
-        return dictionaryRef == null ? null : dictionaryRef.name;
-    }
-
-    public String getDictionaryRevision() {
-        return dictionaryRef == null ? null : dictionaryRef.revision;
+    public String getDictionaryId() {
+        return dictionaryId;
     }
 
     public boolean isLowerCaseInput() {

@@ -21,41 +21,45 @@ package querqy.opensearch.rewriterstore;
 import org.opensearch.test.OpenSearchTestCase;
 import querqy.rewriter.wordbreak.TermCorpus;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.zip.GZIPOutputStream;
 
 public class TermCorpusConfigMappingTest extends OpenSearchTestCase {
 
-    private static byte[] gzip(final String content) throws IOException {
-        final ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        try (GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
-            gzip.write(content.getBytes(StandardCharsets.UTF_8));
-        }
-        return bos.toByteArray();
+    public void testDocId() {
+        assertEquals("dutch-compounds", TermCorpusConfigMapping.docId("dutch-compounds"));
     }
 
-    public void testDocId() {
-        assertEquals("dutch-compounds-r1", TermCorpusConfigMapping.docId("dutch-compounds", "r1"));
+    public void testComputeChecksumIsDeterministicAndContentSensitive() {
+        final byte[] data = "haus\t10\nboot\t5\n".getBytes(StandardCharsets.UTF_8);
+        final String checksum1 = TermCorpusConfigMapping.computeChecksum(data);
+        final String checksum2 = TermCorpusConfigMapping.computeChecksum(data);
+        assertEquals(checksum1, checksum2);
+        assertTrue(checksum1.startsWith("sha256:"));
+
+        final byte[] different = "haus\t11\nboot\t5\n".getBytes(StandardCharsets.UTF_8);
+        assertNotEquals(checksum1, TermCorpusConfigMapping.computeChecksum(different));
     }
 
     public void testRoundTripTsvDfGzipped() throws Exception {
 
-        final byte[] data = gzip("haus\t10\nboot\t5\n");
-        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d", "r1",
+        final byte[] data = "haus\t10\nboot\t5\n".getBytes(StandardCharsets.UTF_8);
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d",
                 TermCorpusConfigMapping.FORMAT_TSV_DF, true, 1000, null, data, System.currentTimeMillis());
 
         assertEquals(TermCorpusConfigMapping.TYPE_VALUE, source.get(TermCorpusConfigMapping.PROP_TYPE));
         assertEquals("d", source.get(TermCorpusConfigMapping.PROP_NAME));
-        assertEquals("r1", source.get(TermCorpusConfigMapping.PROP_REVISION));
 
-        final Map<String, Object> corpus = TermCorpusConfigMapping.getCorpus("d-r1", source);
+        final Map<String, Object> corpus = TermCorpusConfigMapping.getCorpus("d", source);
         assertEquals(TermCorpusConfigMapping.FORMAT_TSV_DF, TermCorpusConfigMapping.getFormat(corpus));
         assertTrue(TermCorpusConfigMapping.isGzip(corpus));
         assertEquals(Integer.valueOf(1000), TermCorpusConfigMapping.getNumDocs(corpus));
+        assertEquals(TermCorpusConfigMapping.computeChecksum(data), TermCorpusConfigMapping.getChecksum(corpus));
+
+        final byte[] rawData = TermCorpusConfigMapping.readData(corpus);
+        TermCorpusConfigMapping.verifyChecksum(corpus, rawData); // does not throw
 
         final TermCorpus termCorpus = TermCorpusConfigMapping.buildTermCorpus(corpus);
         assertTrue(termCorpus.exists("haus"));
@@ -68,14 +72,41 @@ public class TermCorpusConfigMappingTest extends OpenSearchTestCase {
     public void testRoundTripUncompressed() throws Exception {
 
         final byte[] data = "haus\t10\n".getBytes(StandardCharsets.UTF_8);
-        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d", "r1",
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d",
                 TermCorpusConfigMapping.FORMAT_TSV_DF, false, null, null, data, null);
 
-        final Map<String, Object> corpus = TermCorpusConfigMapping.getCorpus("d-r1", source);
+        final Map<String, Object> corpus = TermCorpusConfigMapping.getCorpus("d", source);
         assertFalse(TermCorpusConfigMapping.isGzip(corpus));
 
         final TermCorpus termCorpus = TermCorpusConfigMapping.buildTermCorpus(corpus);
         assertTrue(termCorpus.exists("haus"));
+    }
+
+    public void testVerifyChecksumRejectsMissingChecksum() {
+
+        final Map<String, Object> corpus = new HashMap<>();
+        corpus.put(TermCorpusConfigMapping.FIELD_FORMAT, TermCorpusConfigMapping.FORMAT_TSV_DF);
+        corpus.put(TermCorpusConfigMapping.FIELD_GZIP, false);
+        final byte[] data = "haus\t10\n".getBytes(StandardCharsets.UTF_8);
+        corpus.put(TermCorpusConfigMapping.FIELD_DATA, java.util.Base64.getEncoder().encodeToString(data));
+
+        final IOException e = expectThrows(IOException.class,
+                () -> TermCorpusConfigMapping.verifyChecksum(corpus, data));
+        assertTrue(e.getMessage().contains("checksum"));
+    }
+
+    public void testVerifyChecksumRejectsMismatchedChecksum() {
+
+        final Map<String, Object> corpus = new HashMap<>();
+        corpus.put(TermCorpusConfigMapping.FIELD_FORMAT, TermCorpusConfigMapping.FORMAT_TSV_DF);
+        corpus.put(TermCorpusConfigMapping.FIELD_GZIP, false);
+        corpus.put(TermCorpusConfigMapping.FIELD_CHECKSUM, "sha256:0000000000000000000000000000000000000000000000000000000000000000");
+        final byte[] data = "haus\t10\n".getBytes(StandardCharsets.UTF_8);
+        corpus.put(TermCorpusConfigMapping.FIELD_DATA, java.util.Base64.getEncoder().encodeToString(data));
+
+        final IOException e = expectThrows(IOException.class,
+                () -> TermCorpusConfigMapping.verifyChecksum(corpus, data));
+        assertTrue(e.getMessage().contains("does not match"));
     }
 
     public void testTsvDfCoocRequiresHashFunctions() throws Exception {

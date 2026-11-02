@@ -123,6 +123,22 @@ public abstract class OpenSearchRewriterFactory {
      */
     public abstract boolean isSupportedOnCoordinator();
 
+    /**
+     * The ids (in {@value querqy.opensearch.rewriterstore.Constants#QUERQY_INDEX_NAME}) of every {@code
+     * term_corpus} dictionary this factory's last {@link #createRewriterFactory(IndexShard, DictionaryCorpusLoader)}
+     * call resolved, mapped to the checksum ({@code DictionaryCorpusLoader.LoadedTermCorpus#checksum}) it was built
+     * from. Defaulted to an empty map so every rewriter factory with no such dependency - every built-in factory
+     * except {@code WordBreakCompoundRewriterFactory} configured with {@code dictionaryId}, and any third-party SPI
+     * implementation - needs no change at all. Used by {@code RewriterFactoryLoader} to extend its staleness checks
+     * ({@code RefreshMode#CHECK}, {@code RewriterCacheSweeper}) to also notice a dictionary-only content change, not
+     * just a change to this rewriter's own config document. Must only be read immediately after {@link
+     * #createRewriterFactory(IndexShard, DictionaryCorpusLoader)} has run - this instance isn't retained anywhere
+     * afterward, so the caller must capture the result right away.
+     */
+    public Map<String, String> getDictionaryDependencyChecksums() {
+        return Collections.emptyMap();
+    }
+
     public String getRewriterId() {
         return rewriterId;
     }

@@ -248,10 +248,9 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
         }
 
         final WordBreakCompoundRewriterFactory wordBreakFactory = (WordBreakCompoundRewriterFactory) factory;
-        final String name = wordBreakFactory.getDictionaryName();
-        final String revision = wordBreakFactory.getDictionaryRevision();
-        if (name != null && revision != null) {
-            dictionaryCorpusLoader.load(name, revision);
+        final String dictionaryId = wordBreakFactory.getDictionaryId();
+        if (dictionaryId != null) {
+            dictionaryCorpusLoader.load(dictionaryId);
         }
     }
 

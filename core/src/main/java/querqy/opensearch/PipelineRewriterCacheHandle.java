@@ -92,11 +92,18 @@ public final class PipelineRewriterCacheHandle {
         return current == null ? Collections.emptySet() : current.cachedRewriterIds();
     }
 
+    /** Used by {@link RewriterCacheSweeper} to fold dependency ids into its batched multi-get. */
+    public Set<String> cachedDictionaryDependencyIds() {
+        final RewriterFactoryLoader current = loader;
+        return current == null ? Collections.emptySet() : current.cachedDictionaryDependencyIds();
+    }
+
     /** Applies a {@link RewriterCacheSweeper} multi-get result to the pipeline's cache. */
-    public void applySweepResponses(final Map<String, GetResponse> responsesById) {
+    public void applySweepResponses(final Map<String, GetResponse> responsesById,
+                                    final boolean rewriterLevelChecksEnabled) {
         final RewriterFactoryLoader current = loader;
         if (current != null) {
-            current.applySweepResponses(responsesById);
+            current.applySweepResponses(responsesById, rewriterLevelChecksEnabled);
         }
     }
 }

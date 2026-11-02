@@ -49,7 +49,6 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -58,7 +57,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.GZIPOutputStream;
 
 /**
  * Validates, lists, fetches, or deletes a rewriter configuration directly against the {@code .opensearch-querqy}
@@ -73,38 +71,40 @@ import java.util.zip.GZIPOutputStream;
  * java -jar querqy-opensearch-tool.jar get --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar list --url https://host:9200 [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar delete --url https://host:9200 --id my_rewriter [--username ... --password ...]
- * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --dictionary-name dutch-compounds \
- *     --dictionary-revision r1 --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] \
+ * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
+ *     --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] \
  *     [--hash-functions N] [--username ... --password ...] [--replicas 1]
- * java -jar querqy-opensearch-tool.jar delete-dictionary --url https://host:9200 --dictionary-name dutch-compounds \
- *     --dictionary-revision r1 [--force] [--username ... --password ...]
+ * java -jar querqy-opensearch-tool.jar delete-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
+ *     [--force] [--username ... --password ...]
  * </pre>
  *
  * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
  * {@code config}, and optionally {@code info_logging}/{@code revision}. {@code --revision} (for {@code put} only)
- * sets the rewriter document's own optional revision tag - unrelated to a dictionary's revision, which is always
- * {@code --dictionary-revision}, to avoid exactly that confusion.
+ * sets the rewriter document's own optional revision tag - unrelated to a dictionary's id, which is always
+ * {@code --dictionary-id}, to avoid exactly that confusion.
  *
- * <p><b>{@code put-dictionary}:</b> gzips {@code --dictionary-file} (a two-column {@code term\tdocFreq} TSV for
- * {@code --format tsv_df}, the default; a three-column {@code term\tdocFreq\tbloomHex} TSV plus {@code
- * --hash-functions} for {@code tsv_df_cooc}, which also enables collation) and writes it as a {@code term_corpus}
- * document, id {@code <dictionary-name>-<dictionary-revision>}. A {@code WordBreakCompoundRewriterFactory} rewriter
- * config references it via {@code "dictionary": {"name": ..., "revision": ...}} instead of a shard-side {@code
- * dictionaryField}; that makes it usable from the {@code querqy_rewrite} search pipeline, which has no shard/index
- * access. The document is immutable by convention - write a new revision rather than overwriting one already in
- * use.</p>
+ * <p><b>{@code put-dictionary}:</b> computes a checksum of, then gzips, {@code --dictionary-file} (a two-column
+ * {@code term\tdocFreq} TSV for {@code --format tsv_df}, the default; a three-column {@code
+ * term\tdocFreq\tbloomHex} TSV plus {@code --hash-functions} for {@code tsv_df_cooc}, which also enables
+ * collation) and writes it as a {@code term_corpus} document, id {@code <dictionary-id>}. A {@code
+ * WordBreakCompoundRewriterFactory} rewriter config references it via {@code "dictionaryId": "..."} instead of a
+ * shard-side {@code dictionaryField}; that makes it usable from the {@code querqy_rewrite} search pipeline, which
+ * has no shard/index access. The document is intentionally mutable: writing a new {@code put-dictionary} with the
+ * same id updates its content in place - the server verifies the new checksum matches the new content, and any
+ * node that re-resolves the dictionary (synchronously via {@code RefreshMode#CHECK}/{@code FORCE}, or eventually via
+ * the periodic cache sweep) picks up the change. Save under a different id instead if an old version needs to stay
+ * addressable.</p>
  *
- * <p><b>{@code put} with a {@code dictionary} reference:</b> if {@code --config-file}'s rewriter is a {@code
- * WordBreakCompoundRewriterFactory} configured with {@code "dictionary": {"name": ..., "revision": ...}}, {@code
- * put} checks that document already exists before saving the rewriter - rejecting the command instead of saving a
- * rewriter config that would only fail later, the first time a query tries to use it. Pass {@code
- * --dictionary-file} (plus {@code --format}/{@code --hash-functions} as needed, same as {@code put-dictionary}) to
- * upload the dictionary as part of the same command instead of requiring a separate {@code put-dictionary} call
- * first. {@code --dictionary-name}/{@code --dictionary-revision} are rejected on {@code put}: that reference
- * always comes from {@code --config-file} itself, never from a flag.</p>
+ * <p><b>{@code put} with a {@code dictionaryId} reference:</b> if {@code --config-file}'s rewriter is a {@code
+ * WordBreakCompoundRewriterFactory} configured with {@code "dictionaryId": "..."}, {@code put} checks that document
+ * already exists before saving the rewriter - rejecting the command instead of saving a rewriter config that would
+ * only fail later, the first time a query tries to use it. Pass {@code --dictionary-file} (plus {@code --format}/
+ * {@code --hash-functions} as needed, same as {@code put-dictionary}) to upload the dictionary as part of the same
+ * command instead of requiring a separate {@code put-dictionary} call first. {@code --dictionary-id} is rejected on
+ * {@code put}: that reference always comes from {@code --config-file} itself, never from a flag.</p>
  *
  * <p><b>{@code delete-dictionary}:</b> refuses to delete a dictionary still referenced by any stored {@code
- * word_break_compound} rewriter's {@code dictionary} block, listing which rewriter(s) reference it, unless
+ * word_break_compound} rewriter's {@code dictionaryId}, listing which rewriter(s) reference it, unless
  * {@code --force} is given. This matters because deleting the document doesn't affect an already-cached {@code
  * TermCorpus} - it keeps being served from memory - so the danger is silent and deferred: the rewriter looks fine
  * until its cache entry is next rebuilt for any reason (a reload, a restart, an unrelated config change), at which
@@ -208,7 +208,7 @@ public final class RewriterConfigTool {
             return;
         }
 
-        final DictionaryReference dictionaryReference = findWordBreakDictionaryReference(content);
+        final String dictionaryId = findWordBreakDictionaryReference(content);
         final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
 
         final HttpHost host = parseHost(args);
@@ -216,8 +216,8 @@ public final class RewriterConfigTool {
             final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
             indexManager.ensureIndexExists(args.replicas);
 
-            if (dictionaryReference != null) {
-                ensureDictionaryExists(indexManager, dictionaryReference, args);
+            if (dictionaryId != null) {
+                ensureDictionaryExists(indexManager, dictionaryId, args);
             }
 
             indexManager.putRewriter(args.id, source);
@@ -228,103 +228,78 @@ public final class RewriterConfigTool {
     }
 
     /**
-     * @return The {@code dictionary.name}/{@code dictionary.revision} a {@code WordBreakCompoundRewriterFactory}
-     * config refers to, or {@code null} if {@code content} isn't that class, or is configured with a shard-side
-     * {@code dictionaryField} instead (nothing to check in either case).
+     * @return The {@code dictionaryId} a {@code WordBreakCompoundRewriterFactory} config refers to, or {@code null}
+     * if {@code content} isn't that class, or is configured with a shard-side {@code dictionaryField} instead
+     * (nothing to check in either case).
      */
     @SuppressWarnings("unchecked")
-    private static DictionaryReference findWordBreakDictionaryReference(final Map<String, Object> content) {
+    private static String findWordBreakDictionaryReference(final Map<String, Object> content) {
 
         if (!WordBreakCompoundRewriterFactory.class.getName().equals(content.get("class"))) {
             return null;
         }
 
         final Map<String, Object> config = (Map<String, Object>) content.get("config");
-        final Map<String, Object> dictionary = config == null ? null : (Map<String, Object>) config.get("dictionary");
-        if (dictionary == null) {
-            return null;
-        }
-
-        final Object name = dictionary.get("name");
-        final Object revision = dictionary.get("revision");
-        // malformed (missing name/revision) is already rejected by validate() above - nothing to check here
-        return (name == null || revision == null) ? null : new DictionaryReference(name.toString(),
-                revision.toString());
+        final Object dictionaryId = config == null ? null : config.get("dictionaryId");
+        // malformed (missing dictionaryId) is already rejected by validate() above - nothing to check here
+        return dictionaryId == null ? null : dictionaryId.toString();
     }
 
     /**
-     * For a {@code word_break_compound} rewriter configured with a {@code dictionary} reference: if {@code
-     * --dictionary-file} was given, gzips and writes it as that dictionary's {@code term_corpus} document (same as
-     * {@code put-dictionary}); otherwise checks the referenced document already exists, failing clearly - before
-     * the rewriter config is saved - if it doesn't, rather than letting the rewriter save successfully only to
-     * fail later, confusingly, the first time a live query tries to use it.
+     * For a {@code word_break_compound} rewriter configured with a {@code dictionaryId} reference: if {@code
+     * --dictionary-file} was given, writes it as that dictionary's {@code term_corpus} document (same as {@code
+     * put-dictionary}); otherwise checks the referenced document already exists, failing clearly - before the
+     * rewriter config is saved - if it doesn't, rather than letting the rewriter save successfully only to fail
+     * later, confusingly, the first time a live query tries to use it.
      */
     private static void ensureDictionaryExists(final HttpQuerqyIndexManager indexManager,
-                                               final DictionaryReference dictionaryReference, final CliArgs args)
-            throws IOException {
+                                               final String dictionaryId, final CliArgs args) throws IOException {
 
-        final String docId = TermCorpusConfigMapping.docId(dictionaryReference.name, dictionaryReference.revision);
+        final String docId = TermCorpusConfigMapping.docId(dictionaryId);
 
         if (args.dictionaryFile != null) {
-            final Map<String, Object> source = buildDictionarySource(dictionaryReference.name,
-                    dictionaryReference.revision, args.dictionaryFile, args.dictionaryFormat, args.hashFunctions);
+            final Map<String, Object> source = buildDictionarySource(dictionaryId, args.dictionaryFile,
+                    args.dictionaryFormat, args.hashFunctions);
             indexManager.putDictionary(docId, source);
-            System.out.println("Saved dictionary '" + dictionaryReference.name + "' revision '"
-                    + dictionaryReference.revision + "'.");
+            System.out.println("Saved dictionary '" + dictionaryId + "'.");
             return;
         }
 
         if (!indexManager.documentExists(docId)) {
-            throw new IllegalArgumentException("Rewriter '" + args.id + "' references dictionary '"
-                    + dictionaryReference.name + "' revision '" + dictionaryReference.revision + "', which does not "
-                    + "exist in the index. Either run 'put-dictionary' first, or pass --dictionary-file to upload "
-                    + "it as part of this command.");
+            throw new IllegalArgumentException("Rewriter '" + args.id + "' references dictionary '" + dictionaryId
+                    + "', which does not exist in the index. Either run 'put-dictionary' first, or pass "
+                    + "--dictionary-file to upload it as part of this command.");
         }
     }
 
-    private record DictionaryReference(String name, String revision) {
-    }
-
     /**
-     * Gzips {@code --dictionary-file} and writes it as a {@code term_corpus} document (see {@link
-     * TermCorpusConfigMapping}) - the dictionary a coordinator-safe {@code word_break} rewriter can reference by
-     * {@code name}/{@code revision} instead of a shard-side {@code dictionaryField}. Always writes {@code gzip:
-     * true}; someone hand-writing a small, uncompressed dictionary directly via a raw {@code PUT} (not through this
-     * tool) can set {@code gzip: false} instead.
+     * Computes a checksum of, then gzips, {@code --dictionary-file} and writes it as a {@code term_corpus}
+     * document (see {@link TermCorpusConfigMapping}) - the dictionary a coordinator-safe {@code word_break}
+     * rewriter can reference by {@code dictionaryId} instead of a shard-side {@code dictionaryField}. Always
+     * writes {@code gzip: true}; someone hand-writing a small, uncompressed dictionary directly via a raw
+     * {@code PUT} (not through this tool) can set {@code gzip: false} instead.
      */
     private static void runPutDictionary(final CliArgs args) throws IOException {
 
-        final Map<String, Object> source = buildDictionarySource(args.dictionaryName, args.dictionaryRevision,
-                args.dictionaryFile, args.dictionaryFormat, args.hashFunctions);
+        final Map<String, Object> source = buildDictionarySource(args.dictionaryId, args.dictionaryFile,
+                args.dictionaryFormat, args.hashFunctions);
 
         final HttpHost host = parseHost(args);
         try (RestClient client = buildClient(args, host)) {
             final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
             indexManager.ensureIndexExists(args.replicas);
-            indexManager.putDictionary(TermCorpusConfigMapping.docId(args.dictionaryName, args.dictionaryRevision),
-                    source);
+            indexManager.putDictionary(TermCorpusConfigMapping.docId(args.dictionaryId), source);
         }
 
-        System.out.println("Saved dictionary '" + args.dictionaryName + "' revision '" + args.dictionaryRevision
-                + "'.");
+        System.out.println("Saved dictionary '" + args.dictionaryId + "'.");
         printFreshnessNote();
     }
 
-    private static Map<String, Object> buildDictionarySource(final String name, final String revision,
-                                                              final String file, final String format,
+    private static Map<String, Object> buildDictionarySource(final String id, final String file, final String format,
                                                               final Integer hashFunctions) throws IOException {
         final byte[] tsvBytes = Files.readAllBytes(Path.of(file));
-        final byte[] gzipped = gzip(tsvBytes);
-        return TermCorpusConfigMapping.toLuceneSource(name, revision, format, true, null, hashFunctions, gzipped,
+        return TermCorpusConfigMapping.toLuceneSource(id, format, true, null, hashFunctions, tsvBytes,
                 System.currentTimeMillis());
-    }
-
-    private static byte[] gzip(final byte[] data) throws IOException {
-        final ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        try (GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
-            gzip.write(data);
-        }
-        return bos.toByteArray();
     }
 
     private static void runGet(final CliArgs args) throws IOException {
@@ -361,7 +336,7 @@ public final class RewriterConfigTool {
 
     /**
      * Unless {@code --force} is given, refuses to delete a dictionary that's still referenced by any stored
-     * {@code word_break_compound} rewriter's {@code dictionary} block - deleting a dictionary document doesn't
+     * {@code word_break_compound} rewriter's {@code dictionaryId} - deleting a dictionary document doesn't
      * affect an already-cached {@code TermCorpus} (it keeps being served from memory until that rewriter's cache
      * entry is next rebuilt for some unrelated reason), so the danger is silent and deferred: the rewriter looks
      * fine until the next reload/restart, at which point it fails outright because the dictionary it still points
@@ -369,7 +344,7 @@ public final class RewriterConfigTool {
      */
     private static void runDeleteDictionary(final CliArgs args) throws IOException {
 
-        final String docId = TermCorpusConfigMapping.docId(args.dictionaryName, args.dictionaryRevision);
+        final String docId = TermCorpusConfigMapping.docId(args.dictionaryId);
 
         final HttpHost host = parseHost(args);
         try (RestClient client = buildClient(args, host)) {
@@ -377,35 +352,32 @@ public final class RewriterConfigTool {
 
             if (!args.force) {
                 final List<String> referencingRewriters = findRewritersReferencingDictionary(indexManager,
-                        args.dictionaryName, args.dictionaryRevision);
+                        args.dictionaryId);
                 if (!referencingRewriters.isEmpty()) {
-                    throw new IllegalArgumentException("Dictionary '" + args.dictionaryName + "' revision '"
-                            + args.dictionaryRevision + "' is still referenced by rewriter(s) "
-                            + referencingRewriters + " - update or delete them first, or pass --force to delete "
-                            + "the dictionary anyway (any rewriter still referencing it will fail the next time "
-                            + "its cache is reloaded).");
+                    throw new IllegalArgumentException("Dictionary '" + args.dictionaryId + "' is still referenced "
+                            + "by rewriter(s) " + referencingRewriters + " - update or delete them first, or pass "
+                            + "--force to delete the dictionary anyway (any rewriter still referencing it will fail "
+                            + "the next time its cache is reloaded).");
                 }
             }
 
             final boolean deleted = indexManager.deleteDictionary(docId);
             System.out.println(deleted
-                    ? "Deleted dictionary '" + args.dictionaryName + "' revision '" + args.dictionaryRevision + "'."
-                    : "Dictionary '" + args.dictionaryName + "' revision '" + args.dictionaryRevision
-                            + "' was already absent.");
+                    ? "Deleted dictionary '" + args.dictionaryId + "'."
+                    : "Dictionary '" + args.dictionaryId + "' was already absent.");
         }
         printFreshnessNote();
     }
 
     /**
-     * @return The ids of every stored {@code word_break_compound} rewriter whose {@code dictionary} reference
-     * matches {@code (name, revision)}. {@link HttpQuerqyIndexManager#listRewriters()} omits config (configs can
-     * be large), so each word-break candidate's full config is fetched individually to check - acceptable since
-     * the rewriter index holds at most a few hundred small documents.
+     * @return The ids of every stored {@code word_break_compound} rewriter whose {@code dictionaryId} matches
+     * {@code dictionaryId}. {@link HttpQuerqyIndexManager#listRewriters()} omits config (configs can be large), so
+     * each word-break candidate's full config is fetched individually to check - acceptable since the rewriter
+     * index holds at most a few hundred small documents.
      */
     @SuppressWarnings("unchecked")
     static List<String> findRewritersReferencingDictionary(final HttpQuerqyIndexManager indexManager,
-                                                            final String name, final String revision)
-            throws IOException {
+                                                            final String dictionaryId) throws IOException {
 
         final List<String> referencing = new ArrayList<>();
         for (final RewriterInfo listed : indexManager.listRewriters()) {
@@ -417,9 +389,8 @@ public final class RewriterConfigTool {
                 continue; // deleted concurrently between list and get - no longer a reference either way
             }
             final Map<String, Object> config = full.getConfig();
-            final Map<String, Object> dictionary = config == null ? null
-                    : (Map<String, Object>) config.get("dictionary");
-            if (dictionary != null && name.equals(dictionary.get("name")) && revision.equals(dictionary.get("revision"))) {
+            final Object referencedId = config == null ? null : config.get("dictionaryId");
+            if (dictionaryId.equals(referencedId)) {
                 referencing.add(listed.getRewriterId());
             }
         }
@@ -550,10 +521,10 @@ public final class RewriterConfigTool {
         System.err.println("  java -jar querqy-opensearch-tool.jar delete --url <url> --id <rewriterId> "
                 + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> "
-                + "--dictionary-name <name> --dictionary-revision <revision> --dictionary-file <tsvFile> "
+                + "--dictionary-id <id> --dictionary-file <tsvFile> "
                 + "[--format tsv_df|tsv_df_cooc] [--hash-functions <n>] " + authOptions + " [--replicas <n>]");
         System.err.println("  java -jar querqy-opensearch-tool.jar delete-dictionary --url <url> "
-                + "--dictionary-name <name> --dictionary-revision <revision> [--force] " + authOptions);
+                + "--dictionary-id <id> [--force] " + authOptions);
     }
 
     static final class ValidationFailedException extends RuntimeException {

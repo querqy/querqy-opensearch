@@ -98,14 +98,11 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         assertTrue(errors == null || errors.isEmpty());
     }
 
-    public void testConfigureRejectsBothDictionaryFieldAndDictionary() {
+    public void testConfigureRejectsBothDictionaryFieldAndDictionaryId() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         final Map<String, Object> config = new HashMap<>();
         config.put("dictionaryField", "f1");
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", "d");
-        dictionary.put("revision", "r1");
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", "d");
 
         final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> factory.configure(config));
@@ -115,36 +112,26 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
     public void testConfigureAcceptsDictionaryReference() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         final Map<String, Object> config = new HashMap<>();
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", "dutch-compounds");
-        dictionary.put("revision", "2026-01");
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", "dutch-compounds");
 
         factory.configure(config);
 
         assertNull(factory.getDictionaryField());
-        assertEquals("dutch-compounds", factory.getDictionaryName());
-        assertEquals("2026-01", factory.getDictionaryRevision());
+        assertEquals("dutch-compounds", factory.getDictionaryId());
     }
 
-    public void testConfigureRequiresDictionaryNameAndRevision() {
+    public void testConfigureRequiresNonEmptyDictionaryId() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
-        final Map<String, Object> config = new HashMap<>();
-        config.put("dictionary", Collections.singletonMap("name", "d"));
-
         final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
-                () -> factory.configure(config));
-        assertTrue(e.getMessage().contains("revision"));
+                () -> factory.configure(Collections.singletonMap("dictionaryId", " ")));
+        assertTrue(e.getMessage().contains("exactly one"));
     }
 
-    public void testValidateRejectsBothDictionaryFieldAndDictionary() {
+    public void testValidateRejectsBothDictionaryFieldAndDictionaryId() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         final Map<String, Object> config = new HashMap<>();
         config.put("dictionaryField", "f1");
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", "d");
-        dictionary.put("revision", "r1");
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", "d");
 
         final List<String> errors = factory.validateConfiguration(config);
         assertEquals(1, errors.size());
@@ -154,10 +141,7 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
     public void testValidateAcceptsDictionaryReferenceOnly() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         final Map<String, Object> config = new HashMap<>();
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", "d");
-        dictionary.put("revision", "r1");
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", "d");
 
         final List<String> errors = factory.validateConfiguration(config);
         assertTrue(errors == null || errors.isEmpty());
@@ -178,10 +162,7 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
 
         final WordBreakCompoundRewriterFactory dictionaryFactory = new WordBreakCompoundRewriterFactory("r2");
         final Map<String, Object> config = new HashMap<>();
-        final Map<String, Object> dictionary = new HashMap<>();
-        dictionary.put("name", "d");
-        dictionary.put("revision", "r1");
-        config.put("dictionary", dictionary);
+        config.put("dictionaryId", "d");
         dictionaryFactory.configure(config);
         assertTrue(dictionaryFactory.isSupportedOnCoordinator());
     }
