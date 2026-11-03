@@ -66,14 +66,14 @@ import java.util.Map;
  *
  * <pre>
  * java -jar querqy-opensearch-tool.jar put --url https://host:9200 --id my_rewriter --config-file ./my-rewriter.json \
- *     [--revision r42] [--dictionary-file ./dict.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N]] \
- *     [--username admin --password '***'] [--replicas 1] [--insecure] [--validate-only]
+ *     [--revision r42] [--dictionary-file ./dict.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N] \
+ *     [--num-docs N]] [--username admin --password '***'] [--replicas 1] [--insecure] [--validate-only]
  * java -jar querqy-opensearch-tool.jar get --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar list --url https://host:9200 [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar delete --url https://host:9200 --id my_rewriter [--username ... --password ...]
  * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
  *     --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] \
- *     [--hash-functions N] [--username ... --password ...] [--replicas 1]
+ *     [--hash-functions N] [--num-docs N] [--username ... --password ...] [--replicas 1]
  * java -jar querqy-opensearch-tool.jar delete-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
  *     [--force] [--username ... --password ...]
  * </pre>
@@ -86,7 +86,10 @@ import java.util.Map;
  * <p><b>{@code put-dictionary}:</b> computes a checksum of, then gzips, {@code --dictionary-file} (a two-column
  * {@code term\tdocFreq} TSV for {@code --format tsv_df}, the default; a three-column {@code
  * term\tdocFreq\tbloomHex} TSV plus {@code --hash-functions} for {@code tsv_df_cooc}, which also enables
- * collation) and writes it as a {@code term_corpus} document, id {@code <dictionary-id>}. A {@code
+ * collation) and writes it as a {@code term_corpus} document, id {@code <dictionary-id>}. {@code --num-docs} is
+ * optional on either format - the total document count the dictionary's frequencies were computed over, used by
+ * {@code TsvDfTermCorpus}/{@code TsvDfCoocTermCorpus} to normalize suggestion scoring (must be {@code > 0} if
+ * given); omitted, it falls back to an estimate (100x the number of distinct terms). A {@code
  * WordBreakCompoundRewriterFactory} rewriter config references it via {@code "dictionaryId": "..."} instead of a
  * shard-side {@code dictionaryField}; that makes it usable from the {@code querqy_rewrite} search pipeline, which
  * has no shard/index access. The document is intentionally mutable: writing a new {@code put-dictionary} with the
@@ -259,7 +262,7 @@ public final class RewriterConfigTool {
 
         if (args.dictionaryFile != null) {
             final Map<String, Object> source = buildDictionarySource(dictionaryId, args.dictionaryFile,
-                    args.dictionaryFormat, args.hashFunctions);
+                    args.dictionaryFormat, args.hashFunctions, args.numDocs);
             indexManager.putDictionary(docId, source);
             System.out.println("Saved dictionary '" + dictionaryId + "'.");
             return;
@@ -282,7 +285,7 @@ public final class RewriterConfigTool {
     private static void runPutDictionary(final CliArgs args) throws IOException {
 
         final Map<String, Object> source = buildDictionarySource(args.dictionaryId, args.dictionaryFile,
-                args.dictionaryFormat, args.hashFunctions);
+                args.dictionaryFormat, args.hashFunctions, args.numDocs);
 
         final HttpHost host = parseHost(args);
         try (RestClient client = buildClient(args, host)) {
@@ -296,9 +299,10 @@ public final class RewriterConfigTool {
     }
 
     private static Map<String, Object> buildDictionarySource(final String id, final String file, final String format,
-                                                              final Integer hashFunctions) throws IOException {
+                                                              final Integer hashFunctions, final Integer numDocs)
+            throws IOException {
         final byte[] tsvBytes = Files.readAllBytes(Path.of(file));
-        return TermCorpusConfigMapping.toLuceneSource(id, format, true, null, hashFunctions, tsvBytes,
+        return TermCorpusConfigMapping.toLuceneSource(id, format, true, numDocs, hashFunctions, tsvBytes,
                 System.currentTimeMillis());
     }
 
@@ -513,8 +517,8 @@ public final class RewriterConfigTool {
         System.err.println("Usage:");
         System.err.println("  java -jar querqy-opensearch-tool.jar put --url <url> --id <rewriterId> "
                 + "--config-file <file> [--revision <revision>] "
-                + "[--dictionary-file <tsvFile> [--format tsv_df|tsv_df_cooc] [--hash-functions <n>]] "
-                + authOptions + " [--replicas <n>] [--validate-only]");
+                + "[--dictionary-file <tsvFile> [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] "
+                + "[--num-docs <n>]] " + authOptions + " [--replicas <n>] [--validate-only]");
         System.err.println("  java -jar querqy-opensearch-tool.jar get --url <url> --id <rewriterId> "
                 + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> " + authOptions);
@@ -522,7 +526,8 @@ public final class RewriterConfigTool {
                 + authOptions);
         System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> "
                 + "--dictionary-id <id> --dictionary-file <tsvFile> "
-                + "[--format tsv_df|tsv_df_cooc] [--hash-functions <n>] " + authOptions + " [--replicas <n>]");
+                + "[--format tsv_df|tsv_df_cooc] [--hash-functions <n>] [--num-docs <n>] " + authOptions
+                + " [--replicas <n>]");
         System.err.println("  java -jar querqy-opensearch-tool.jar delete-dictionary --url <url> "
                 + "--dictionary-id <id> [--force] " + authOptions);
     }
