@@ -61,10 +61,21 @@ import java.util.zip.GZIPOutputStream;
  * {@code corpus} is a single JSON-string-valued field (like {@code config_v_005} on a rewriter document), so a
  * write-time field mapper ({@code QuerqyTermCorpusFieldMapper}) can see {@code format}/{@code gzip}/
  * {@code numDocs}/{@code hashFunctions}/{@code checksum}/{@code data} together, actually build the corpus to
- * validate it, and verify {@code checksum} matches the content. The document is intentionally mutable: updating a
- * dictionary's content in place (same id, new content, new checksum) is the supported way to change it - see
- * {@code DictionaryCorpusLoader}, which re-verifies the checksum on every load rather than assuming the content
- * never changes. If an old version needs to stay addressable, save it under a different id instead.
+ * validate it, and verify {@code checksum} matches the content. Unlike {@code config_v_005}, whose version suffix
+ * exists because of real migration history (it started as plain {@code config} and only got a version baked into
+ * the field name once a later, incompatible format needed to coexist with documents already written under the old
+ * one - an OpenSearch mapping can't change a field's type in place), this is a brand-new document type with no such
+ * history yet: the field is named plainly ({@code corpus}), and the top-level {@code version} integer tracks the
+ * <em>document schema generation</em> instead - it is always {@link #CURRENT_MAPPING_VERSION} today and has nothing
+ * to do with a dictionary's own content: it never changes just because a dictionary is updated, only if the
+ * {@code corpus} field's own JSON shape ever needs an incompatible change (which would mint a new field, e.g.
+ * {@code corpus_v2}, and bump {@code version}, the same way the rewriter document's own history did). Content
+ * identity/change detection is {@code checksum}'s job (see below), not {@code version}'s.
+ *
+ * <p>The document is intentionally mutable: updating a dictionary's content in place (same id, new content, new
+ * checksum) is the supported way to change it - see {@code DictionaryCorpusLoader}, which re-verifies the checksum
+ * on every load rather than assuming the content never changes. If an old version needs to stay addressable, save
+ * it under a different id instead.
  */
 public final class TermCorpusConfigMapping {
 
@@ -85,7 +96,21 @@ public final class TermCorpusConfigMapping {
     public static final String FIELD_CHECKSUM = "checksum";
     public static final String FIELD_DATA = "data";
 
+    /**
+     * {@code data} is a TSV file with lines of the form {@code term<TAB>docFreq} (see {@code TsvDfTermCorpus}).
+     * No co-occurrence information is available, so {@code TermCorpus#isCollationSupported()} is {@code false} -
+     * only usable when the {@code word_break_compound} rewriter is configured with {@code verifyCollation: false}
+     * (the default). {@link #FIELD_HASH_FUNCTIONS} is not used with this format.
+     */
     public static final String FORMAT_TSV_DF = "tsv_df";
+
+    /**
+     * {@code data} is a TSV file with lines of the form {@code term<TAB>docFreq<TAB>bloomHex} (see {@code
+     * TsvDfCoocTermCorpus}), where {@code bloomHex} is a lowercase hex string encoding a Bloom filter representing
+     * that term's co-occurrence with other terms. Requires {@link #FIELD_HASH_FUNCTIONS} (the number of hash
+     * functions the Bloom filter was built with, needed to interpret it) - the only format that supports
+     * co-occurrence/collation, i.e. the only one usable when {@code verifyCollation: true} is configured.
+     */
     public static final String FORMAT_TSV_DF_COOC = "tsv_df_cooc";
 
     private static final String CHECKSUM_ALGORITHM = "SHA-256";
