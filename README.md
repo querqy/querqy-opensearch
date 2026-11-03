@@ -42,23 +42,119 @@ unchanged.
  
 **Installation note**: In the above command, please make sure to use the `file://` protocol as the path prefix.
 
+## Running Querqy from a search pipeline (coordinator-side rewriting)
+
+In addition to the classic per-shard `querqy` query (used inside a normal `_search` request body, rewritten
+independently by every shard), this plugin registers a `SearchPipelinePlugin` processor pair, `querqy_rewrite`,
+that runs the full Querqy parse-and-rewrite chain **once, on the coordinating node**, before the request is
+dispatched to any shard. This is needed for two things the per-shard query structurally can't do:
+
+* **Hybrid/neural-search query visibility** - a shard-side query builder cannot see or restructure a `hybrid`
+  query's other legs; the pipeline runs before fan-out, so a filter query Querqy produces gets pushed onto every
+  leg of a `hybrid` query, not just the one the `querqy` clause lives in.
+* **Response-level decorations** - Common Rules `DECORATE` output and rewrite-chain debug/log data are attached
+  to the response under `ext.querqy`, which only a response processor can do; the classic per-shard path has no
+  such hook.
+
+Set it up once (per index, or as a cluster-level default pipeline):
+
+```shell
+curl -X PUT "https://<host>:9200/_search/pipeline/my_pipeline" \
+    -H "Content-Type: application/json" \
+    -u admin:'<password>' \
+    -d '{
+  "request_processors": [ { "querqy_rewrite": {} } ],
+  "response_processors": [ { "querqy_rewrite": {} } ]
+}'
+```
+
+Then reference it on a search request, with the same `querqy` query DSL you'd use without it:
+
+```shell
+curl -X GET "https://<host>:9200/my-index/_search?search_pipeline=my_pipeline" \
+    -H "Content-Type: application/json" \
+    -u admin:'<password>' \
+    -d '{
+  "query": {
+    "querqy": {
+      "matching_query": { "query": "laptop" },
+      "query_fields": ["title", "description"],
+      "rewriters": ["common_rules"]
+    }
+  }
+}'
+```
+
+**Config options:** the request processor's `ignore_missing` (default `false`) controls what happens when a
+request has no `querqy` query anywhere in it - `false` fails clearly, `true` lets the request pass through
+unchanged. The response processor's `info_logging` (same shape as the query DSL's own `info_logging` field) sets
+a pipeline-level default for rewrite-chain logging; a query's own `info_logging` overrides it for that one query.
+
+**Limitation:** a rewriter that needs direct access to a shard's live index - `word_break_compound` configured
+with a shard-side `dictionaryField` - cannot run from this pipeline at all; the first search request that
+references it fails clearly rather than the rewriter silently doing the wrong thing. Configure it with
+`dictionaryId` instead (see below) to make it coordinator-safe.
+
+### Word-break-compound dictionaries (`dictionaryId`)
+
+`word_break_compound`'s usual `dictionaryField` derives term frequencies straight from a shard's live index -
+which needs direct shard access the pipeline above doesn't have. As an alternative, a standalone word-frequency
+dictionary can be stored as its own document in `.opensearch-querqy` and referenced by `dictionaryId` instead
+(mutually exclusive with `dictionaryField`); unlike `dictionaryField`, this also works from the classic per-shard
+`querqy` query, not just the pipeline.
+
+A dictionary is a TSV file, in one of two formats:
+* `tsv_df` (the default) - two columns, `term<TAB>docFreq`, no co-occurrence/collation support.
+* `tsv_df_cooc` - three columns, `term<TAB>docFreq<TAB>bloomHex`, plus `--hash-functions <n>` (the number of hash
+  functions the Bloom filter was built with) - needed when the rewriter is configured with `verifyCollation: true`.
+
+Upload it with the CLI (`put-dictionary`, or `put --dictionary-file` to upload the dictionary and the rewriter
+config together in one command):
+
+```shell
+bin/querqy-opensearch-config-cli put-dictionary --url https://<host>:9200 --dictionary-id dutch-compounds \
+    --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] \
+    [--num-docs <n>] [--username ... --password ...]
+```
+
+`--num-docs` is optional - the total document count the frequencies were computed over, used to normalize
+suggestion scoring; omitted, it falls back to an estimate. `delete-dictionary` refuses to delete a dictionary
+still referenced by any stored `word_break_compound` rewriter's `dictionaryId`, unless `--force`.
+
+Reference it from the rewriter config:
+
+```json
+{
+  "class": "querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory",
+  "config": {
+    "dictionaryId": "dutch-compounds",
+    "decompound": { "verifyCollation": true }
+  }
+}
+```
+
+A dictionary is mutable: writing `put-dictionary` again with the same `--dictionary-id` updates its content in
+place (checksum-verified, picked up automatically - no restart or manual cache-clear needed). Keeping an old
+version addressable means saving it under a different id and repointing the rewriter at it.
+
 ## Managing rewriters without the REST API (core-only)
 
 On an install of `querqy-opensearch-core` (no `ActionPlugin`, no REST API), a rewriter configuration is just a
 document in the `.opensearch-querqy` index, and there are two ways to write it:
 
-* **The `querqy-opensearch-tool` CLI** (module `tool`, built at
-  `tool/build/distributions/querqy-opensearch-tool-<version>.zip` - unzip it and run `bin/querqy-opensearch-tool`, or
-  run it directly from a checkout via `./gradlew tool:run --args="..."`). It mirrors the REST API's
+* **The `querqy-opensearch-config-cli` CLI** (module `config-cli`, built at
+  `config-cli/build/distributions/querqy-opensearch-config-cli-<version>.zip` - unzip it and run
+  `bin/querqy-opensearch-config-cli`, or run it directly from a checkout via
+  `./gradlew config-cli:run --args="..."`). It mirrors the REST API's
   `PUT`/`GET`/`DELETE` rewriter actions (plus listing) as four subcommands - `put`, `get`, `list`, `delete` - each
   taking `--url` and, except for `list`, `--id`:
 
   ```shell
-  bin/querqy-opensearch-tool put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
+  bin/querqy-opensearch-config-cli put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
       [--revision r42] [--username admin --password '***'] [--insecure] [--validate-only]
-  bin/querqy-opensearch-tool get --url https://<host>:9200 --id common_rules [--username ... --password ...]
-  bin/querqy-opensearch-tool list --url https://<host>:9200 [--username ... --password ...]
-  bin/querqy-opensearch-tool delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  bin/querqy-opensearch-config-cli get --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  bin/querqy-opensearch-config-cli list --url https://<host>:9200 [--username ... --password ...]
+  bin/querqy-opensearch-config-cli delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
   ```
 
   `put` validates the configuration locally (the same checks the REST API applies) before writing it, and creates or
@@ -82,7 +178,7 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   it to `aoss` for OpenSearch Serverless, which only supports IAM auth:
 
   ```shell
-  bin/querqy-opensearch-tool list --url https://<domain-endpoint> --sigv4 \
+  bin/querqy-opensearch-config-cli list --url https://<domain-endpoint> --sigv4 \
       [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
   ```
 
@@ -228,5 +324,5 @@ Querqy for OpenSearch can be used in the same way as Querqy for Elasticsearch, w
   ```
   
 * Developer documentation can be found [here](docs/opensearch_dev_documentation.md)
-* Architecture decisions (e.g. the core/full/tool module split) are recorded under [docs/adr](docs/adr)
+* Architecture decisions (e.g. the core/full/config-cli module split) are recorded under [docs/adr](docs/adr)
 * Developer channel: Join #querqy on the [Search Relevancy Slack space](https://opensourceconnections.com/slack)

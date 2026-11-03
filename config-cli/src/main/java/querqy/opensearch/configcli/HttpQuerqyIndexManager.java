@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package querqy.opensearch.tool;
+package querqy.opensearch.configcli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
