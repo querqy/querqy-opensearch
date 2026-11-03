@@ -1,4 +1,4 @@
-# 1. Split into core/full/tool modules and a validated rewriter-config index format
+# 1. Split into core/full/config-cli modules and a validated rewriter-config index format
 
 Date: 2026-10-09
 
@@ -34,7 +34,7 @@ branch; a `SearchPipelinePlugin` processor and dictionary support are addressed 
    - Root module (unchanged plugin name/classname `querqy.opensearch.QuerqyPlugin`):
      depends on `core`, extends `QuerqyCorePlugin`, adds back `ActionPlugin` (the existing
      REST/transport rewriter-management API). Zero behavior change for existing installs.
-   - `tool`: a standalone CLI that validates a rewriter config and writes it directly to the
+   - `config-cli`: a standalone CLI that validates a rewriter config and writes it directly to the
      `.opensearch-querqy` index over HTTP — the AWS-compatible replacement for the REST PUT
      action, since `core` has no REST surface to do this.
    - Both `core` and the root module use the same plugin `name`, so only one of the two can
@@ -47,7 +47,7 @@ branch; a `SearchPipelinePlugin` processor and dictionary support are addressed 
    a validator needs class and config together to resolve and validate a rewriter factory.
    Reading continues to support every older stored format (pre-v3, v3, v4) via the existing
    per-version-singleton dispatch in `RewriterConfigMapping`; writing (from both the
-   REST/`ActionPlugin` path and the new `core`/`tool` path) always uses only the new format.
+   REST/`ActionPlugin` path and the new `core`/`config-cli` path) always uses only the new format.
    Unlike `config_v_003` (a real, if unindexed, Lucene keyword field, hence subject to
    Lucene's 32766-byte term-length limit), `config_v_005` uses the custom field type from the
    next point, which never creates a Lucene field at all - so, confirmed experimentally, that
@@ -100,5 +100,5 @@ branch; a `SearchPipelinePlugin` processor and dictionary support are addressed 
   validation-logic changes as needing a data migration, not a casual change. No toggle to
   disable this enforcement exists yet; add one if this risk proves troublesome in practice.
 - Not addressed in this round: the `SearchPipelinePlugin` processor, the full Phase-2
-  background config observer, AWS SigV4 signing in the CLI tool, and publishing `core`/`tool`
+  background config observer, AWS SigV4 signing in the CLI tool, and publishing `core`/`config-cli`
   as released artifacts.
