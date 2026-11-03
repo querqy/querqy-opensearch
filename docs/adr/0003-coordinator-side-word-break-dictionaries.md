@@ -22,23 +22,18 @@ pipeline.
 
 querqy-core (4.3.0) already ships two `TermCorpus` implementations that need no index at all:
 `TsvDfTermCorpus` (`term\tdocFreq`) and `TsvDfCoocTermCorpus` (`term\tdocFreq\tbloomHex`, which also
-supports collation). Nothing in querqy-opensearch wired them up. The
-`querqy-opensearch-core-briefing.md` (decision 6) had already sketched a design for this: one
-immutable document per dictionary revision, gzip-compressed, referenced by name+revision from the
-rewriter config. This ADR records the design actually implemented, which follows that sketch with
-two adjustments made after further review:
+supports collation). Nothing in querqy-opensearch wired them up. This ADR introduces `term_corpus`
+documents for them: one immutable document per dictionary revision, gzip-compressed, referenced by
+name+revision from the rewriter config.
 
-- The briefing's original sketch called for *asynchronous* dictionary loading with a *fail-open*
-  fallback (skip the rewriter, log), specifically to avoid blocking `SearchPipelinePlugin.Factory
-  #create`. That concern doesn't apply here: dictionary resolution happens inside
+- Dictionary resolution is synchronous, like every other rewriter-config concern: it happens inside
   `RewriterFactoryLoader.buildFactoryAndLogging`, which already does a blocking `Client` `GET` to
   load the rewriter's own config - on a request thread, not the cluster-applier thread, and
-  identically for the per-shard and node-level paths. A dictionary load fits the same model: it is
-  synchronous, and a missing/malformed dictionary fails the request clearly, the same way every
-  other bad rewriter configuration already does. No separate fail-open path was introduced.
+  identically for the per-shard and node-level paths. A missing/malformed dictionary fails the
+  request clearly, the same way every other bad rewriter configuration already does; there is no
+  separate fail-open (skip-the-rewriter-and-log) path.
 - Dictionaries are shared, process-wide state rather than something tied to one rewriter's config,
-  so the loader is a node-level singleton with weak-reference caching (see below), not something
-  built fresh for the asynchronous path alone.
+  so the loader is a node-level singleton with weak-reference caching (see below).
 
 ## Decision
 
@@ -145,8 +140,7 @@ hand.
   a `dictionary` reference - the one built-in rewriter that previously could not run there at all.
 - A dictionary is a static snapshot: it does not reflect live index content the way
   `dictionaryField` does. Operators who need frequency statistics derived from their own, changing
-  index content must still rebuild and write a new revision themselves; this is unchanged from the
-  briefing's original plan and is not addressed here.
+  index content must still rebuild and write an updated dictionary themselves; not addressed here.
 - `verifyDecompoundCollation` continues to require a collation-capable corpus (`tsv_df_cooc` via a
   `dictionary` reference, or the Lucene-backed path); a `tsv_df` dictionary does not support it -
   unchanged from the existing `TermCorpus#isCollationSupported()` contract.
