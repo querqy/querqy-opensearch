@@ -20,6 +20,7 @@ package querqy.opensearch;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.get.GetResponse;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -28,14 +29,16 @@ import org.opensearch.index.IndexService;
 import org.opensearch.transport.client.Client;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Per-shard entry point for resolving rewriters, keyed by {@link ShardId}. The actual loading/caching/
  * refresh logic lives in {@link RewriterFactoryLoader}, which this class supplies with this shard's real
  * {@link org.opensearch.index.shard.IndexShard} (resolved freshly on each load, matching this class's
  * previous behavior, in case the shard reference changes while this context is alive). A coordinator-side
- * consumer with no shard at all uses {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean)}
- * directly instead of this class.
+ * consumer with no shard at all uses {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean,
+ * DictionaryCorpusLoader)} directly instead of this class.
  */
 public class RewriterShardContext {
 
@@ -78,9 +81,10 @@ public class RewriterShardContext {
     private final RewriterFactoryLoader loader;
 
     public RewriterShardContext(final ShardId shardId, final IndexService indexService, final Settings settings,
-                                final Client client, final boolean asyncRefreshEnabled) {
+                                final Client client, final boolean asyncRefreshEnabled,
+                                final DictionaryCorpusLoader dictionaryCorpusLoader) {
         this.loader = new RewriterFactoryLoader(() -> indexService.getShard(shardId.id()), settings, client,
-                asyncRefreshEnabled);
+                asyncRefreshEnabled, dictionaryCorpusLoader);
         LOGGER.info("Context loaded for shard {} {}. Async refresh enabled: {}", shardId, shardId.getIndex(),
                 asyncRefreshEnabled);
     }
@@ -103,5 +107,18 @@ public class RewriterShardContext {
 
     public RewriterFactoryAndLogging loadFactory(final String rewriterId, final boolean forceLoad) {
         return loader.loadFactory(rewriterId, forceLoad);
+    }
+
+    public Set<String> cachedRewriterIds() {
+        return loader.cachedRewriterIds();
+    }
+
+    public Set<String> cachedDictionaryDependencyIds() {
+        return loader.cachedDictionaryDependencyIds();
+    }
+
+    public void applySweepResponses(final Map<String, GetResponse> responsesById,
+                                    final boolean rewriterLevelChecksEnabled) {
+        loader.applySweepResponses(responsesById, rewriterLevelChecksEnabled);
     }
 }

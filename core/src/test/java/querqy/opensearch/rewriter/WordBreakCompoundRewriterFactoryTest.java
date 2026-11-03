@@ -98,6 +98,75 @@ public class WordBreakCompoundRewriterFactoryTest extends OpenSearchTestCase {
         assertTrue(errors == null || errors.isEmpty());
     }
 
+    public void testConfigureRejectsBothDictionaryFieldAndDictionaryId() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryField", "f1");
+        config.put("dictionaryId", "d");
+
+        final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
+                () -> factory.configure(config));
+        assertTrue(e.getMessage().contains("exactly one"));
+    }
+
+    public void testConfigureAcceptsDictionaryReference() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryId", "dutch-compounds");
+
+        factory.configure(config);
+
+        assertNull(factory.getDictionaryField());
+        assertEquals("dutch-compounds", factory.getDictionaryId());
+    }
+
+    public void testConfigureRequiresNonEmptyDictionaryId() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
+                () -> factory.configure(Collections.singletonMap("dictionaryId", " ")));
+        assertTrue(e.getMessage().contains("exactly one"));
+    }
+
+    public void testValidateRejectsBothDictionaryFieldAndDictionaryId() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryField", "f1");
+        config.put("dictionaryId", "d");
+
+        final List<String> errors = factory.validateConfiguration(config);
+        assertEquals(1, errors.size());
+        assertTrue(errors.getFirst().contains("exactly one"));
+    }
+
+    public void testValidateAcceptsDictionaryReferenceOnly() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryId", "d");
+
+        final List<String> errors = factory.validateConfiguration(config);
+        assertTrue(errors == null || errors.isEmpty());
+    }
+
+    public void testValidateRequiresNeitherEmpty() {
+        final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
+        final List<String> errors = factory.validateConfiguration(Collections.emptyMap());
+        assertEquals(1, errors.size());
+        assertTrue(errors.getFirst().contains("exactly one"));
+    }
+
+    public void testIsSupportedOnCoordinatorReflectsConfiguration() {
+
+        final WordBreakCompoundRewriterFactory shardFieldFactory = new WordBreakCompoundRewriterFactory("r1");
+        shardFieldFactory.configure(Collections.singletonMap("dictionaryField", "f1"));
+        assertFalse(shardFieldFactory.isSupportedOnCoordinator());
+
+        final WordBreakCompoundRewriterFactory dictionaryFactory = new WordBreakCompoundRewriterFactory("r2");
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryId", "d");
+        dictionaryFactory.configure(config);
+        assertTrue(dictionaryFactory.isSupportedOnCoordinator());
+    }
+
     public void testValidateRefusesInvalidMorphology() {
         final WordBreakCompoundRewriterFactory factory = new WordBreakCompoundRewriterFactory("r1");
         final Map<String, Object> config = new HashMap<>();

@@ -92,6 +92,22 @@ public abstract class OpenSearchRewriterFactory {
     public abstract RewriterFactory createRewriterFactory(IndexShard indexShard) throws OpenSearchException;
 
     /**
+     * Like {@link #createRewriterFactory(IndexShard)}, but also hands in a {@link DictionaryCorpusLoader} - a
+     * node-level, shared, weak-reference cache of parsed dictionaries, already carrying the {@code Client} it
+     * needs (see {@link DictionaryCorpusLoader#setClient}) - for resolving a coordinator-safe dictionary reference
+     * (see {@code WordBreakCompoundRewriterFactory}'s {@code dictionary} config, backed by a {@code term_corpus}
+     * document rather than a shard's live index). Default implementation delegates to {@link
+     * #createRewriterFactory(IndexShard)} unchanged, so every built-in rewriter factory except {@code
+     * WordBreakCompoundRewriterFactory}, and any third-party SPI factory, keeps compiling and behaving exactly as
+     * before without needing to know this method exists.
+     */
+    public RewriterFactory createRewriterFactory(final IndexShard indexShard,
+                                                 final DictionaryCorpusLoader dictionaryCorpusLoader)
+            throws OpenSearchException {
+        return createRewriterFactory(indexShard);
+    }
+
+    /**
      * Whether this rewriter can run on a coordinating node with no shard access at all - e.g. inside the
      * {@code querqy_rewrite} search pipeline request processor, which runs once per request before any shard is
      * involved. {@link #createRewriterFactory(IndexShard)} is unused-in-body by every built-in rewriter factory, but
@@ -106,6 +122,22 @@ public abstract class OpenSearchRewriterFactory {
      * default that may not hold for it.
      */
     public abstract boolean isSupportedOnCoordinator();
+
+    /**
+     * The ids (in {@value querqy.opensearch.rewriterstore.Constants#QUERQY_INDEX_NAME}) of every {@code
+     * term_corpus} dictionary this factory's last {@link #createRewriterFactory(IndexShard, DictionaryCorpusLoader)}
+     * call resolved, mapped to the checksum ({@code DictionaryCorpusLoader.LoadedTermCorpus#checksum}) it was built
+     * from. Defaulted to an empty map so every rewriter factory with no such dependency - every built-in factory
+     * except {@code WordBreakCompoundRewriterFactory} configured with {@code dictionaryId}, and any third-party SPI
+     * implementation - needs no change at all. Used by {@code RewriterFactoryLoader} to extend its staleness checks
+     * ({@code RefreshMode#CHECK}, {@code RewriterCacheSweeper}) to also notice a dictionary-only content change, not
+     * just a change to this rewriter's own config document. Must only be read immediately after {@link
+     * #createRewriterFactory(IndexShard, DictionaryCorpusLoader)} has run - this instance isn't retained anywhere
+     * afterward, so the caller must capture the result right away.
+     */
+    public Map<String, String> getDictionaryDependencyChecksums() {
+        return Collections.emptyMap();
+    }
 
     public String getRewriterId() {
         return rewriterId;

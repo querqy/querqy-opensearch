@@ -64,6 +64,11 @@ public class QuerqyPlugin extends QuerqyCorePlugin implements ActionPlugin {
         // core's async refresh-after-write check redundant here - and, since both write to the same cache with no
         // version check between them, a source of an unguarded race between the two paths.
         rewriterShardContexts.disableAsyncRefresh();
+        // same reasoning, narrower scope: the sweep's rewriter-level check exists only to catch rewriter-doc
+        // changes core-only installs (no ActionPlugin) can't push-notify; redundant and racy here for the same
+        // reason as above. Its dictionary-dependency check stays on regardless - there is no push-based mechanism
+        // for dictionary writes on any install type, so it has nothing to be redundant or racy with.
+        rewriterCacheSweeper.disableRewriterLevelChecks();
     }
 
     @Override

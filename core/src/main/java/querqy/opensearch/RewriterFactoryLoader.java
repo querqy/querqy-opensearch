@@ -23,6 +23,9 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.OpenSearchException;
 import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.get.GetResponse;
+import org.opensearch.action.get.MultiGetItemResponse;
+import org.opensearch.action.get.MultiGetRequest;
+import org.opensearch.action.get.MultiGetResponse;
 import org.opensearch.common.cache.Cache;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.action.ActionListener;
@@ -32,11 +35,14 @@ import org.opensearch.transport.client.Client;
 import querqy.opensearch.query.RefreshMode;
 import querqy.opensearch.rewriterstore.LoadRewriterConfig;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
+import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
 import querqy.rewrite.RewriteChain;
 import querqy.rewrite.RewriterFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -75,22 +81,26 @@ public class RewriterFactoryLoader {
     private final boolean requireCoordinatorSafe;
     private final long refreshAfterWriteNanos;
     private final boolean asyncRefreshEnabled;
+    private final DictionaryCorpusLoader dictionaryCorpusLoader;
 
     /** Rewriter ids currently being refreshed in the background, to avoid firing duplicate concurrent refreshes. */
     private final Set<String> refreshing = ConcurrentHashMap.newKeySet();
 
     public RewriterFactoryLoader(final Supplier<IndexShard> indexShardSupplier, final Settings settings,
-                                 final Client client, final boolean asyncRefreshEnabled) {
-        this(indexShardSupplier, settings, client, asyncRefreshEnabled, false);
+                                 final Client client, final boolean asyncRefreshEnabled,
+                                 final DictionaryCorpusLoader dictionaryCorpusLoader) {
+        this(indexShardSupplier, settings, client, asyncRefreshEnabled, false, dictionaryCorpusLoader);
     }
 
     private RewriterFactoryLoader(final Supplier<IndexShard> indexShardSupplier, final Settings settings,
                                   final Client client, final boolean asyncRefreshEnabled,
-                                  final boolean requireCoordinatorSafe) {
+                                  final boolean requireCoordinatorSafe,
+                                  final DictionaryCorpusLoader dictionaryCorpusLoader) {
         this.indexShardSupplier = indexShardSupplier;
         this.client = client;
         this.asyncRefreshEnabled = asyncRefreshEnabled;
         this.requireCoordinatorSafe = requireCoordinatorSafe;
+        this.dictionaryCorpusLoader = dictionaryCorpusLoader;
         this.factories = Caches.buildCache(RewriterShardContext.CACHE_EXPIRE_AFTER_READ.get(settings),
                 RewriterShardContext.CACHE_EXPIRE_AFTER_WRITE.get(settings));
         this.refreshAfterWriteNanos = RewriterShardContext.CACHE_REFRESH_AFTER_WRITE.get(settings).nanos();
@@ -101,12 +111,16 @@ public class RewriterFactoryLoader {
      * pipeline processor, via {@code SearchPipelinePlugin.Parameters#client}), where there is no shard
      * access of any kind - see the class Javadoc for why this is safe for the built-in rewriter factories.
      * Unlike the per-shard constructor, this also enforces {@link OpenSearchRewriterFactory
-     * #isSupportedOnCoordinator()}: a rewriter that needs real shard access (e.g. word-break-compound) fails
-     * clearly here instead of failing confusingly later when its rewrite actually runs with no shard behind it.
+     * #isSupportedOnCoordinator()}: a rewriter that needs real shard access (e.g. word-break-compound configured
+     * with a shard-side {@code dictionaryField}) fails clearly here instead of failing confusingly later when its
+     * rewrite actually runs with no shard behind it. A word-break-compound rewriter configured with a {@code
+     * dictionary} reference instead needs no shard access at all and is supported here.
      */
     public static RewriterFactoryLoader nodeLevel(final Settings settings, final Client client,
-                                                  final boolean asyncRefreshEnabled) {
-        return new RewriterFactoryLoader(() -> null, settings, client, asyncRefreshEnabled, true);
+                                                  final boolean asyncRefreshEnabled,
+                                                  final DictionaryCorpusLoader dictionaryCorpusLoader) {
+        return new RewriterFactoryLoader(() -> null, settings, client, asyncRefreshEnabled, true,
+                dictionaryCorpusLoader);
     }
 
     /**
@@ -173,14 +187,83 @@ public class RewriterFactoryLoader {
     }
 
     /**
+     * The rewriter ids currently cached by this loader, as a snapshot - used by {@link RewriterCacheSweeper} to
+     * know which ids to check in its next sweep.
+     */
+    public Set<String> cachedRewriterIds() {
+        final Set<String> ids = new HashSet<>();
+        factories.keys().forEach(ids::add);
+        return ids;
+    }
+
+    /**
+     * The {@code term_corpus} dictionary ids every currently cached rewriter factory depends on (see {@link
+     * OpenSearchRewriterFactory#getDictionaryDependencyChecksums()}), unioned across every cached rewriter - used
+     * by {@link RewriterCacheSweeper} to fold dependency ids into its batched multi-get alongside rewriter ids.
+     */
+    public Set<String> cachedDictionaryDependencyIds() {
+        final Set<String> ids = new HashSet<>();
+        for (final String rewriterId : cachedRewriterIds()) {
+            final RewriterFactoryAndLogging current = factories.get(rewriterId);
+            if (current != null) {
+                ids.addAll(current.dictionaryDependencyChecksums.keySet());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Applies the result of a {@link RewriterCacheSweeper} multi-get round trip: for each currently cached
+     * rewriter id that was part of the sweep, checks it (and any dictionary it depends on) against the fetched
+     * responses using the same comparison as {@link #checkAndReloadIfChanged}. Unlike that method, this never
+     * blocks and never throws - the sweep already has the responses in hand. If a rebuild fails because the id
+     * (or a dictionary it depends on) is confirmed gone or now the wrong document type, the cache entry is
+     * evicted, matching {@link #maybeRefreshAsync}'s handling of the same cases; any other failure (e.g. a
+     * replacement document that fails to parse) just keeps the previous version and logs. An id missing from
+     * {@code responsesById} (not part of this sweep's batch) or no longer cached (evicted/replaced concurrently)
+     * is silently skipped.
+     *
+     * @param responsesById Every id (rewriter and dictionary dependency) the sweep fetched, by id
+     * @param rewriterLevelChecksEnabled Whether to also evict/rebuild based on the rewriter document's own
+     *                                  existence/seqNo/primaryTerm - {@code false} on the full ({@code ActionPlugin})
+     *                                  plugin, where push-based reload already owns that synchronously and a
+     *                                  concurrent sweep-driven check of it would be an unguarded race; dependency
+     *                                  checksum checking always stays on, since there is no push-based equivalent
+     *                                  for dictionary writes on either install type.
+     */
+    public void applySweepResponses(final Map<String, GetResponse> responsesById,
+                                    final boolean rewriterLevelChecksEnabled) {
+        for (final String id : cachedRewriterIds()) {
+            final GetResponse response = responsesById.get(id);
+            final RewriterFactoryAndLogging current = factories.get(id);
+            if (response == null || current == null) {
+                continue;
+            }
+            try {
+                applyFreshResponse(id, current, response, responsesById, rewriterLevelChecksEnabled);
+            } catch (final ResourceNotFoundException e) {
+                LOGGER.info("Rewriter {} can no longer be built ({}), evicting from cache", id, e.getMessage());
+                factories.invalidate(id);
+            } catch (final InvalidTypeNameException e) {
+                LOGGER.warn("Rewriter {} can no longer be built ({}), evicting from cache", id, e.getMessage());
+                factories.invalidate(id);
+            } catch (final Exception e) {
+                LOGGER.error("Could not apply sweep result for rewriter " + id + ", keeping previous version", e);
+            }
+        }
+    }
+
+    /**
      * If {@code current} is older than {@code RewriterShardContext#CACHE_REFRESH_AFTER_WRITE} and no refresh
      * of this rewriter is already in flight, kicks off a non-blocking reload from the index. The cached value
      * keeps being served as-is while the refresh is in flight. On success the cache is updated; if the
-     * rewriter document has been deleted, the cache entry is evicted instead (so the next lookup fails clearly
-     * with "not found", as it would for an id that was never cached, rather than going on serving a deleted
-     * rewriter forever); on any other failure (e.g. a transient connectivity problem, or a replacement
-     * document that fails to parse/validate) the previous version is kept and the failure is logged. The
-     * calling thread is never blocked by any of this.
+     * rewriter document has been deleted, or is confirmed to now be the wrong document type (e.g. its id got
+     * reused for a {@code term_corpus} dictionary, or a dictionary it depends on got reused for something
+     * else), the cache entry is evicted instead (so the next lookup fails clearly with "not found"/"wrong
+     * type", as it would for an id that was never cached, rather than going on serving a stale rewriter
+     * forever); on any other failure (e.g. a transient connectivity problem, or a replacement document that
+     * fails to parse/validate) the previous version is kept and the failure is logged. The calling thread is
+     * never blocked by any of this.
      */
     private void maybeRefreshAsync(final String rewriterId, final RewriterFactoryAndLogging current) {
 
@@ -197,18 +280,38 @@ public class RewriterFactoryLoader {
 
             @Override
             public void onResponse(final GetResponse response) {
-                try {
-                    if (response.isExists()) {
-                        factories.put(rewriterId, buildFactoryAndLogging(rewriterId, response));
-                    } else {
-                        LOGGER.info("Rewriter {} no longer exists in the index, evicting from cache", rewriterId);
-                        factories.invalidate(rewriterId);
-                    }
-                } catch (final Exception e) {
-                    LOGGER.error("Could not refresh rewriter " + rewriterId + ", keeping previous version", e);
-                } finally {
+                if (!response.isExists()) {
+                    LOGGER.info("Rewriter {} no longer exists in the index, evicting from cache", rewriterId);
+                    factories.invalidate(rewriterId);
                     refreshing.remove(rewriterId);
+                    return;
                 }
+                // Dispatch off this get-pool callback thread before rebuilding: rebuilding a rewriter that
+                // depends on a term_corpus dictionary (e.g. word_break_compound with dictionaryId) re-resolves
+                // it via another blocking Client call (DictionaryCorpusLoader#load) - doing that directly here
+                // would risk the thread-pool self-starvation deadlock this project already hit once (see
+                // TransportPutRewriterAction's own threadPool.generic() dispatch, for the same reason; see also
+                // DictionaryCorpusLoader's class javadoc). The dispatch must happen here, before calling
+                // buildFactoryAndLogging - merely dispatching the nested GET inside load() itself would not be
+                // enough, since this thread would still sit blocked, still occupying its pool's one slot, either
+                // way.
+                dictionaryCorpusLoader.threadPool().generic().execute(() -> {
+                    try {
+                        factories.put(rewriterId, buildFactoryAndLogging(rewriterId, response));
+                    } catch (final ResourceNotFoundException e) {
+                        LOGGER.info("Rewriter {} can no longer be built ({}), evicting from cache", rewriterId,
+                                e.getMessage());
+                        factories.invalidate(rewriterId);
+                    } catch (final InvalidTypeNameException e) {
+                        LOGGER.warn("Rewriter {} can no longer be built ({}), evicting from cache", rewriterId,
+                                e.getMessage());
+                        factories.invalidate(rewriterId);
+                    } catch (final Exception e) {
+                        LOGGER.error("Could not refresh rewriter " + rewriterId + ", keeping previous version", e);
+                    } finally {
+                        refreshing.remove(rewriterId);
+                    }
+                });
             }
 
             @Override
@@ -222,33 +325,166 @@ public class RewriterFactoryLoader {
     /**
      * Implements {@link RefreshMode#CHECK}: blocks on one round trip to the index (same cost as
      * {@link RefreshMode#FORCE}/{@link #loadFactory(String, boolean)} with {@code forceLoad=true}), but only
-     * rebuilds the rewriter if its document's sequence number/primary term actually changed since it was last
-     * loaded - cheaper than {@code FORCE} when nothing changed, at the same network cost. If the document has
-     * been deleted, evicts the cache entry and throws {@link ResourceNotFoundException}, consistent with the
-     * async-refresh path.
+     * rebuilds the rewriter if its document's sequence number/primary term - or, if it depends on one or more
+     * {@code term_corpus} dictionaries (see {@link OpenSearchRewriterFactory#getDictionaryDependencyChecksums()}),
+     * any of their checksums - actually changed since it was last loaded. Cheaper than {@code FORCE} when nothing
+     * changed, at the same network cost: with no dependencies this is a single {@code GET}, unchanged from before;
+     * with dependencies, one {@code MultiGetRequest} covers the rewriter's own document and every dependency in one
+     * round trip. If the rewriter document has been deleted, evicts the cache entry and throws {@link
+     * ResourceNotFoundException}; if it (or a dictionary it depends on) is confirmed to now be the wrong document
+     * type, evicts the cache entry and throws {@link InvalidTypeNameException} instead - either way, the cache is
+     * left clean rather than going on to serve a stale rewriter on a later plain lookup, consistent with the
+     * async-refresh path. Always evaluates both the rewriter's own staleness and its dependencies' - {@code
+     * RefreshMode#CHECK} is a synchronous, per-request check, not a background one, so it has nothing to race
+     * against push-based reload the way {@link RewriterCacheSweeper} does.
      */
     private RewriterFactoryAndLogging checkAndReloadIfChanged(final String rewriterId,
                                                                final RewriterFactoryAndLogging current) {
 
-        final GetResponse response;
+        if (current.dictionaryDependencyChecksums.isEmpty()) {
+
+            final GetResponse response;
+            try {
+                response = client.prepareGet(QUERQY_INDEX_NAME, rewriterId).execute().get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new OpenSearchException("Could not check rewriter " + rewriterId, e);
+            }
+
+            if (!response.isExists()) {
+                factories.invalidate(rewriterId);
+                throw new ResourceNotFoundException("Rewriter not found: " + rewriterId);
+            }
+
+            return applyFreshResponseOrEvict(rewriterId, current, response, Collections.emptyMap());
+        }
+
+        final MultiGetRequest request = new MultiGetRequest();
+        request.add(QUERQY_INDEX_NAME, rewriterId);
+        current.dictionaryDependencyChecksums.keySet().forEach(depId -> request.add(QUERQY_INDEX_NAME, depId));
+
+        final MultiGetResponse multiResponse;
         try {
-            response = client.prepareGet(QUERQY_INDEX_NAME, rewriterId).execute().get();
+            multiResponse = client.multiGet(request).get();
         } catch (InterruptedException | ExecutionException e) {
             throw new OpenSearchException("Could not check rewriter " + rewriterId, e);
         }
 
-        if (!response.isExists()) {
+        final Map<String, GetResponse> byId = toResponseMap(multiResponse);
+        final GetResponse response = byId.get(rewriterId);
+        if (response == null || !response.isExists()) {
             factories.invalidate(rewriterId);
             throw new ResourceNotFoundException("Rewriter not found: " + rewriterId);
         }
 
-        if (response.getSeqNo() == current.seqNo && response.getPrimaryTerm() == current.primaryTerm) {
-            return current; // unchanged - skip rebuilding the rewriter
+        return applyFreshResponseOrEvict(rewriterId, current, response, byId);
+    }
+
+    /**
+     * Calls {@link #applyFreshResponse} with {@code rewriterLevelChecksEnabled=true} (always the case for {@link
+     * #checkAndReloadIfChanged}, the only caller), additionally evicting the cache entry before rethrowing if the
+     * rebuild fails because the rewriter (or a dictionary it depends on) is confirmed gone ({@link
+     * ResourceNotFoundException}) or now the wrong document type ({@link InvalidTypeNameException}) - so a
+     * {@code CHECK} query that fails loudly also leaves the cache clean, rather than reverting to serving the
+     * stale entry on the next plain lookup.
+     */
+    private RewriterFactoryAndLogging applyFreshResponseOrEvict(final String rewriterId,
+                                                                final RewriterFactoryAndLogging current,
+                                                                final GetResponse response,
+                                                                final Map<String, GetResponse> dependencyResponses) {
+        try {
+            return applyFreshResponse(rewriterId, current, response, dependencyResponses, true);
+        } catch (final ResourceNotFoundException | InvalidTypeNameException e) {
+            factories.invalidate(rewriterId);
+            throw e;
+        }
+    }
+
+    private static Map<String, GetResponse> toResponseMap(final MultiGetResponse response) {
+        final Map<String, GetResponse> byId = new HashMap<>();
+        for (final MultiGetItemResponse item : response.getResponses()) {
+            if (!item.isFailed()) {
+                byId.put(item.getId(), item.getResponse());
+            }
+        }
+        return byId;
+    }
+
+    /**
+     * Shared by {@link #checkAndReloadIfChanged} and {@link #applySweepResponses}: given a rewriter's current
+     * cached entry and a freshly fetched {@link GetResponse} for it, evicts the cache entry if the document has
+     * been deleted (and {@code rewriterLevelChecksEnabled}), leaves the entry untouched if nothing relevant
+     * changed, or rebuilds and replaces it otherwise.
+     *
+     * @param dependencyResponses Every dependency doc id the caller fetched, by id - used to evaluate {@link
+     *                           OpenSearchRewriterFactory#getDictionaryDependencyChecksums()}; may be missing ids
+     *                           this rewriter doesn't actually depend on (harmless, never consulted) or lack ids it
+     *                           does (treated as "changed", forcing a rebuild that then fails clearly if the
+     *                           dependency is genuinely gone)
+     * @param rewriterLevelChecksEnabled Whether to evict/rebuild based on the rewriter document's own existence/
+     *                                  seqNo/primaryTerm at all - see {@link #applySweepResponses} for why this is
+     *                                  sometimes {@code false}; always {@code true} from {@link
+     *                                  #checkAndReloadIfChanged}, a synchronous per-request check with no
+     *                                  background push-based reload to race.
+     */
+    private RewriterFactoryAndLogging applyFreshResponse(final String rewriterId,
+                                                          final RewriterFactoryAndLogging current,
+                                                          final GetResponse response,
+                                                          final Map<String, GetResponse> dependencyResponses,
+                                                          final boolean rewriterLevelChecksEnabled) {
+
+        if (rewriterLevelChecksEnabled && !response.isExists()) {
+            LOGGER.info("Rewriter {} no longer exists in the index, evicting from cache", rewriterId);
+            factories.invalidate(rewriterId);
+            return current;
+        }
+
+        final boolean rewriterUnchanged = !rewriterLevelChecksEnabled
+                || (response.getSeqNo() == current.seqNo && response.getPrimaryTerm() == current.primaryTerm);
+
+        if (rewriterUnchanged && !hasDependencyChanged(current, dependencyResponses)) {
+            return current; // nothing relevant changed - skip rebuilding the rewriter
+        }
+
+        if (!response.isExists()) {
+            // only reachable with rewriterLevelChecksEnabled=false and a dependency change: the rewriter's own
+            // document is also (independently) missing from this batch - nothing to rebuild from right now, a
+            // later sweep cycle will pick it up once/if it reappears.
+            return current;
         }
 
         final RewriterFactoryAndLogging fresh = buildFactoryAndLogging(rewriterId, response);
         factories.put(rewriterId, fresh);
         return fresh;
+    }
+
+    /** Whether any dictionary {@code current} depends on now has a different checksum than it was built from. */
+    private static boolean hasDependencyChanged(final RewriterFactoryAndLogging current,
+                                                final Map<String, GetResponse> dependencyResponses) {
+        for (final Map.Entry<String, String> dependency : current.dictionaryDependencyChecksums.entrySet()) {
+            final String liveChecksum = extractDictionaryChecksum(dependency.getKey(),
+                    dependencyResponses.get(dependency.getKey()));
+            if (!dependency.getValue().equals(liveChecksum)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** @return The dependency document's current checksum, or {@code null} if missing/malformed/not fetched. */
+    private static String extractDictionaryChecksum(final String dictionaryId, final GetResponse response) {
+        if (response == null || !response.isExists()) {
+            return null;
+        }
+        final Map<String, Object> source = response.getSource();
+        if (source == null) {
+            return null;
+        }
+        try {
+            final Map<String, Object> corpus = TermCorpusConfigMapping.getCorpus(dictionaryId, source);
+            return TermCorpusConfigMapping.getChecksum(corpus);
+        } catch (final Exception e) {
+            return null;
+        }
     }
 
     public synchronized RewriterFactoryAndLogging loadFactory(final String rewriterId, final boolean forceLoad) {
@@ -265,7 +501,14 @@ public class RewriterFactoryLoader {
                 throw new OpenSearchException("Could not load rewriter " + rewriterId, e);
             }
 
-            factoryAndLogging = buildFactoryAndLogging(rewriterId, response);
+            try {
+                factoryAndLogging = buildFactoryAndLogging(rewriterId, response);
+            } catch (final ResourceNotFoundException | InvalidTypeNameException e) {
+                // confirmed gone, or confirmed to now be the wrong document type - evict before rethrowing so a
+                // later plain lookup doesn't fall back to serving this (now provably stale) cache entry
+                factories.invalidate(rewriterId);
+                throw e;
+            }
             factories.put(rewriterId, factoryAndLogging);
 
         }
@@ -313,8 +556,13 @@ public class RewriterFactoryLoader {
                     + "remove it from this request.");
         }
 
-        final RewriterFactory factory = configuredFactory.createRewriterFactory(indexShardSupplier.get());
+        final RewriterFactory factory = configuredFactory.createRewriterFactory(indexShardSupplier.get(),
+                dictionaryCorpusLoader);
+        // Must be read immediately after createRewriterFactory(...) - configuredFactory isn't retained anywhere
+        // else, see OpenSearchRewriterFactory#getDictionaryDependencyChecksums's javadoc.
+        final Map<String, String> dictionaryDependencyChecksums = configuredFactory.getDictionaryDependencyChecksums();
 
-        return new RewriterFactoryAndLogging(factory, loggingEnabled, response.getSeqNo(), response.getPrimaryTerm());
+        return new RewriterFactoryAndLogging(factory, loggingEnabled, response.getSeqNo(), response.getPrimaryTerm(),
+                dictionaryDependencyChecksums);
     }
 }

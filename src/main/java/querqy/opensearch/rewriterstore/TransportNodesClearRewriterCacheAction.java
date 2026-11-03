@@ -28,6 +28,7 @@ import org.opensearch.indices.IndicesService;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
+import querqy.opensearch.PipelineRewriterCacheHandle;
 import querqy.opensearch.RewriterShardContexts;
 
 import java.io.IOException;
@@ -38,6 +39,7 @@ public class TransportNodesClearRewriterCacheAction extends TransportNodesAction
         NodesClearRewriterCacheResponse, NodesClearRewriterCacheRequest.NodeRequest, NodesClearRewriterCacheResponse.NodeResponse> {
 
     protected RewriterShardContexts rewriterShardContexts;
+    protected PipelineRewriterCacheHandle pipelineRewriterCacheHandle;
 
 
     @Inject
@@ -46,12 +48,14 @@ public class TransportNodesClearRewriterCacheAction extends TransportNodesAction
                                               final ActionFilters actionFilters,
                                               final IndicesService indexServices,
                                               final Client client,
-                                              final RewriterShardContexts rewriterShardContexts) {
+                                              final RewriterShardContexts rewriterShardContexts,
+                                              final PipelineRewriterCacheHandle pipelineRewriterCacheHandle) {
 
         super(NodesClearRewriterCacheAction.NAME, threadPool, clusterService, transportService, actionFilters,
                 NodesClearRewriterCacheRequest::new, NodesClearRewriterCacheRequest.NodeRequest::new,
                 ThreadPool.Names.MANAGEMENT, NodesClearRewriterCacheResponse.NodeResponse.class);
         this.rewriterShardContexts = rewriterShardContexts;
+        this.pipelineRewriterCacheHandle = pipelineRewriterCacheHandle;
     }
 
 
@@ -80,8 +84,10 @@ public class TransportNodesClearRewriterCacheAction extends TransportNodesAction
         final Optional<String> rewriterId = request.getRewriterId();
         if (rewriterId.isPresent()) {
             rewriterId.ifPresent(rewriterShardContexts::clearRewriter);
+            rewriterId.ifPresent(pipelineRewriterCacheHandle::clearRewriter);
         } else {
             rewriterShardContexts.clearRewriters();
+            pipelineRewriterCacheHandle.clearRewriters();
         }
 
         return new NodesClearRewriterCacheResponse.NodeResponse(clusterService.localNode());

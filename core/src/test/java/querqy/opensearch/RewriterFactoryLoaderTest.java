@@ -25,20 +25,24 @@ import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.support.WriteRequest;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.index.IndexNotFoundException;
+import org.opensearch.indices.InvalidTypeNameException;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import querqy.opensearch.rewriterstore.QuerqyIndexManager;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
+import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
 import querqy.rewrite.RewriterFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Proves the central claim behind {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean)}: loading
+ * Proves the central claim behind {@link RewriterFactoryLoader#nodeLevel(Settings, Client, boolean,
+ * DictionaryCorpusLoader)}: loading
  * and building a {@link RewriterFactory} from a rewriter-config document needs nothing shard-specific at all -
  * no {@code IndexService}, no {@code IndexShard}, not even an index with any local shard on this node. This is
  * the prerequisite a coordinator-side consumer (e.g. a future search pipeline processor, which runs with no
@@ -67,6 +71,18 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 .setMapping(QuerqyIndexManager.readMappingResource()).get();
     }
 
+    /**
+     * In the real plugin, {@code QuerqyCorePlugin#createComponents} calls {@link DictionaryCorpusLoader#setClient}
+     * the moment a real {@link org.opensearch.transport.client.Client} is available; tests that construct a
+     * {@link RewriterFactoryLoader} directly (bypassing that plugin wiring) must do the same themselves.
+     */
+    private DictionaryCorpusLoader newDictionaryCorpusLoader() {
+        final DictionaryCorpusLoader loader = new DictionaryCorpusLoader();
+        loader.setClient(client());
+        loader.setThreadPool(getInstanceFromNode(org.opensearch.threadpool.ThreadPool.class));
+        return loader;
+    }
+
     private void writeCommonRulesRewriter(final String rewriterId, final String rules) throws Exception {
 
         final Map<String, Object> content = new HashMap<>();
@@ -93,7 +109,8 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         ensureRewriterIndexExists();
         writeCommonRulesRewriter("node_level_rewriter", "k =>\nSYNONYM: c");
 
-        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
 
         final RewriterFactoryAndLogging loaded = loader.loadFactory("node_level_rewriter", false);
 
@@ -111,7 +128,8 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
 
         ensureRewriterIndexExists();
 
-        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
 
         final ResourceNotFoundException e = expectThrows(ResourceNotFoundException.class,
                 () -> loader.loadFactory("does_not_exist", false));
@@ -129,7 +147,8 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
         ensureRewriterIndexExists();
         writeWordBreakCompoundRewriter("word_break_rewriter");
 
-        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false);
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
 
         final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> loader.loadFactory("word_break_rewriter", false));
@@ -149,5 +168,105 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();
+    }
+
+    /**
+     * Unlike {@link #testWordBreakCompoundFailsClearlyOnTheNodeLevelLoader()}, a word-break-compound rewriter
+     * configured with a {@code dictionary} reference (a {@code term_corpus} document) instead of a shard-side
+     * {@code dictionaryField} needs no shard access at all, so it must succeed on the node-level loader.
+     */
+    public void testWordBreakCompoundWithDictionaryReferenceSucceedsOnTheNodeLevelLoader() throws Exception {
+
+        ensureRewriterIndexExists();
+        writeTermCorpus("compounds", "haus\t10\nboot\t5\n");
+        writeWordBreakCompoundRewriterWithDictionary("word_break_rewriter", "compounds");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
+
+        final RewriterFactoryAndLogging loaded = loader.loadFactory("word_break_rewriter", false);
+
+        assertNotNull(loaded);
+        assertNotNull(loaded.rewriterFactory);
+        assertEquals("word_break_rewriter", loaded.rewriterFactory.getRewriterId());
+    }
+
+    private void writeWordBreakCompoundRewriterWithDictionary(final String rewriterId, final String dictionaryId)
+            throws Exception {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory.class.getName());
+        final Map<String, Object> config = new HashMap<>();
+        config.put("dictionaryId", dictionaryId);
+        content.put("config", config);
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
+                .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    private void writeTermCorpus(final String id, final String tsv) throws Exception {
+
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id,
+                TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, tsv.getBytes(StandardCharsets.UTF_8),
+                System.currentTimeMillis());
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(id))
+                .setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    /**
+     * Nothing in {@code .opensearch-querqy} prevents a {@code term_corpus} dictionary document from being written
+     * to the same id as an existing rewriter (or vice versa). Before this was fixed, FORCE-reloading a cached
+     * rewriter whose id had been overwritten this way failed loudly for that one call ({@link
+     * InvalidTypeNameException}) but left the stale cache entry in place, so the very next plain lookup would
+     * silently keep serving the pre-overwrite rewriter forever. Proves the cache entry is evicted instead: a plain
+     * lookup right after the failed FORCE also fails clearly, rather than silently succeeding from the stale cache.
+     */
+    public void testForceReloadEvictsCacheEntryWhenIdNowHoldsADifferentDocumentType() throws Exception {
+
+        ensureRewriterIndexExists();
+        writeCommonRulesRewriter("id1", "k =>\nSYNONYM: c");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
+
+        loader.loadFactory("id1", false); // populates the cache
+
+        writeTermCorpus("id1", "haus\t10\n"); // same id, a different document type entirely
+
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("id1", true));
+
+        // if the cache entry had survived, this would silently return the pre-overwrite rewriter with no error
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("id1", false));
+    }
+
+    /**
+     * Same gap, reverse direction: a {@code word_break_compound} rewriter's {@code dictionaryId} gets overwritten
+     * by a different document type. {@link DictionaryCorpusLoader#load} throws {@link InvalidTypeNameException}
+     * from inside the <em>dependent rewriter's</em> rebuild attempt - proves that failure also evicts the
+     * dependent rewriter's own cache entry, not just logs-and-keeps it.
+     */
+    public void testForceReloadEvictsDependentRewriterWhenItsDictionaryIdNowHoldsADifferentDocumentType()
+            throws Exception {
+
+        ensureRewriterIndexExists();
+        writeTermCorpus("compounds", "haus\t10\nboot\t5\n");
+        writeWordBreakCompoundRewriterWithDictionary("word_break_rewriter", "compounds");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
+
+        loader.loadFactory("word_break_rewriter", false); // populates the cache, including the dependency checksum
+
+        writeCommonRulesRewriter("compounds", "k =>\nSYNONYM: c"); // same id, now a rewriter document instead
+
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("word_break_rewriter", true));
+
+        // if the cache entry had survived, this would silently return the pre-overwrite rewriter with no error
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("word_break_rewriter", false));
     }
 }
