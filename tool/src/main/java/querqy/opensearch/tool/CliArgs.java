@@ -27,14 +27,14 @@ import java.util.Locale;
 public final class CliArgs {
 
     public enum Action {
-        PUT, GET, LIST, DELETE;
+        PUT, GET, LIST, DELETE, PUT_DICTIONARY, DELETE_DICTIONARY;
 
         static Action fromString(final String s) {
             try {
-                return Action.valueOf(s.toUpperCase(Locale.ROOT));
+                return Action.valueOf(s.toUpperCase(Locale.ROOT).replace('-', '_'));
             } catch (final IllegalArgumentException e) {
                 throw new IllegalArgumentException("Unknown action '" + s + "', expected one of: put, get, list, "
-                        + "delete");
+                        + "delete, put-dictionary, delete-dictionary");
             }
         }
     }
@@ -53,11 +53,18 @@ public final class CliArgs {
     public final String awsRegion;
     public final String awsService;
     public final String awsProfile;
+    public final String dictionaryId;
+    public final String dictionaryFile;
+    public final String dictionaryFormat;
+    public final Integer hashFunctions;
+    public final boolean force;
 
     private CliArgs(final Action action, final String url, final String id, final String configFile,
                     final String revision, final String username, final String password, final int replicas,
                     final boolean insecure, final boolean validateOnly, final boolean sigv4, final String awsRegion,
-                    final String awsService, final String awsProfile) {
+                    final String awsService, final String awsProfile, final String dictionaryId,
+                    final String dictionaryFile, final String dictionaryFormat,
+                    final Integer hashFunctions, final boolean force) {
         this.action = action;
         this.url = url;
         this.id = id;
@@ -72,6 +79,11 @@ public final class CliArgs {
         this.awsRegion = awsRegion;
         this.awsService = awsService;
         this.awsProfile = awsProfile;
+        this.dictionaryId = dictionaryId;
+        this.dictionaryFile = dictionaryFile;
+        this.dictionaryFormat = dictionaryFormat;
+        this.hashFunctions = hashFunctions;
+        this.force = force;
     }
 
     public static CliArgs parse(final String[] args) {
@@ -95,9 +107,29 @@ public final class CliArgs {
         String awsRegion = null;
         String awsService = "es";
         String awsProfile = null;
+        String dictionaryId = null;
+        String dictionaryFile = null;
+        String dictionaryFormat = "tsv_df";
+        Integer hashFunctions = null;
+        boolean force = false;
 
         for (int i = 1; i < args.length; i++) {
             switch (args[i]) {
+                case "--force":
+                    force = true;
+                    break;
+                case "--dictionary-id":
+                    dictionaryId = requireValue(args, i++, "--dictionary-id");
+                    break;
+                case "--dictionary-file":
+                    dictionaryFile = requireValue(args, i++, "--dictionary-file");
+                    break;
+                case "--format":
+                    dictionaryFormat = requireValue(args, i++, "--format");
+                    break;
+                case "--hash-functions":
+                    hashFunctions = Integer.parseInt(requireValue(args, i++, "--hash-functions"));
+                    break;
                 case "--url":
                     url = requireValue(args, i++, "--url");
                     break;
@@ -108,6 +140,8 @@ public final class CliArgs {
                     configFile = requireValue(args, i++, "--config-file");
                     break;
                 case "--revision":
+                    // put only: the rewriter document's own optional revision tag (RewriterConfigMapping
+                    // .PROP_REVISION) - unrelated to a dictionary's id, which is always --dictionary-id
                     revision = requireValue(args, i++, "--revision");
                     break;
                 case "--username":
@@ -167,6 +201,19 @@ public final class CliArgs {
                 if (!validateOnly && url == null) {
                     throw new IllegalArgumentException("--url is required unless --validate-only is set");
                 }
+                // --dictionary-id is not used by put: a dictionary referenced via --dictionary-file always gets
+                // its id from --config-file's own "dictionaryId" field, never from a flag - reject it outright
+                // rather than silently ignoring what looks like it should matter.
+                if (dictionaryId != null) {
+                    throw new IllegalArgumentException("--dictionary-id is not used by put - the dictionary's "
+                            + "id always comes from --config-file's own 'dictionaryId' field");
+                }
+                // --dictionary-file is only meaningful for a WordBreakCompoundRewriterFactory config with a
+                // "dictionaryId" reference - RewriterConfigTool checks that once it has parsed --config-file: this
+                // only validates --format/--hash-functions together, the same way put-dictionary does below.
+                if (dictionaryFile != null) {
+                    validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
+                }
                 break;
             case GET:
             case DELETE:
@@ -182,12 +229,43 @@ public final class CliArgs {
                     throw new IllegalArgumentException("--url is required");
                 }
                 break;
+            case PUT_DICTIONARY:
+                if (dictionaryId == null) {
+                    throw new IllegalArgumentException("--dictionary-id is required");
+                }
+                if (dictionaryFile == null) {
+                    throw new IllegalArgumentException("--dictionary-file is required");
+                }
+                if (url == null) {
+                    throw new IllegalArgumentException("--url is required");
+                }
+                validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
+                break;
+            case DELETE_DICTIONARY:
+                if (dictionaryId == null) {
+                    throw new IllegalArgumentException("--dictionary-id is required");
+                }
+                if (url == null) {
+                    throw new IllegalArgumentException("--url is required");
+                }
+                break;
             default:
                 throw new IllegalStateException("Unhandled action: " + action);
         }
 
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
-                validateOnly, sigv4, awsRegion, awsService, awsProfile);
+                validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryId,
+                dictionaryFile, dictionaryFormat, hashFunctions, force);
+    }
+
+    private static void validateDictionaryFormatArgs(final String dictionaryFormat, final Integer hashFunctions) {
+        if (!dictionaryFormat.equals("tsv_df") && !dictionaryFormat.equals("tsv_df_cooc")) {
+            throw new IllegalArgumentException(
+                    "--format must be 'tsv_df' or 'tsv_df_cooc', got '" + dictionaryFormat + "'");
+        }
+        if (dictionaryFormat.equals("tsv_df_cooc") && hashFunctions == null) {
+            throw new IllegalArgumentException("--hash-functions is required for --format tsv_df_cooc");
+        }
     }
 
     private static String requireValue(final String[] args, final int flagIndex, final String flagName) {

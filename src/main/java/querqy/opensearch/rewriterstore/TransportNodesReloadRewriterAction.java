@@ -28,6 +28,7 @@ import org.opensearch.indices.IndicesService;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
+import querqy.opensearch.PipelineRewriterCacheHandle;
 import querqy.opensearch.RewriterShardContexts;
 
 import java.io.IOException;
@@ -37,6 +38,7 @@ public class TransportNodesReloadRewriterAction extends TransportNodesAction<Nod
         NodesReloadRewriterResponse, NodesReloadRewriterRequest.NodeRequest, NodesReloadRewriterResponse.NodeResponse> {
 
     protected RewriterShardContexts rewriterShardContexts;
+    protected PipelineRewriterCacheHandle pipelineRewriterCacheHandle;
     protected Client client;
     protected IndicesService indexServices;
 
@@ -46,12 +48,14 @@ public class TransportNodesReloadRewriterAction extends TransportNodesAction<Nod
                                               final ActionFilters actionFilters,
                                               final IndicesService indexServices,
                                               final Client client,
-                                              final RewriterShardContexts rewriterShardContexts) {
+                                              final RewriterShardContexts rewriterShardContexts,
+                                              final PipelineRewriterCacheHandle pipelineRewriterCacheHandle) {
 
         super(NodesReloadRewriterAction.NAME, threadPool, clusterService, transportService, actionFilters,
                 NodesReloadRewriterRequest::new, NodesReloadRewriterRequest.NodeRequest::new,
                 ThreadPool.Names.MANAGEMENT, NodesReloadRewriterResponse.NodeResponse.class);
         this.rewriterShardContexts = rewriterShardContexts;
+        this.pipelineRewriterCacheHandle = pipelineRewriterCacheHandle;
         this.client = client;
         this.indexServices = indexServices;
     }
@@ -78,6 +82,7 @@ public class TransportNodesReloadRewriterAction extends TransportNodesAction<Nod
             final NodesReloadRewriterRequest.NodeRequest request) {
         try {
             rewriterShardContexts.reloadRewriter(request.getRewriterId());
+            pipelineRewriterCacheHandle.reloadRewriter(request.getRewriterId());
             return new NodesReloadRewriterResponse.NodeResponse(clusterService.localNode(), null);
         } catch (final Exception e) {
             return new NodesReloadRewriterResponse.NodeResponse(clusterService.localNode(), e);

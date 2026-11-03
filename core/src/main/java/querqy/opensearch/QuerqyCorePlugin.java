@@ -50,10 +50,12 @@ import querqy.opensearch.pipeline.QuerqyRewriteRequestProcessor;
 import querqy.opensearch.pipeline.QuerqyRewriteResponseProcessor;
 import querqy.opensearch.query.QuerqyQueryBuilder;
 import querqy.opensearch.rewriterstore.mapper.QuerqyRewriterConfigFieldMapper;
+import querqy.opensearch.rewriterstore.mapper.QuerqyTermCorpusFieldMapper;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -69,10 +71,16 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
 
     protected final QuerqyProcessor querqyProcessor;
     protected final RewriterShardContexts rewriterShardContexts;
+    protected final DictionaryCorpusLoader dictionaryCorpusLoader;
+    protected final PipelineRewriterCacheHandle pipelineRewriterCacheHandle;
+    protected final RewriterCacheSweeper rewriterCacheSweeper;
 
     public QuerqyCorePlugin(final Settings settings) {
-        rewriterShardContexts = new RewriterShardContexts(settings);
+        dictionaryCorpusLoader = new DictionaryCorpusLoader();
+        rewriterShardContexts = new RewriterShardContexts(settings, dictionaryCorpusLoader);
         querqyProcessor = new QuerqyProcessor(rewriterShardContexts, new Log4jSink());
+        pipelineRewriterCacheHandle = new PipelineRewriterCacheHandle();
+        rewriterCacheSweeper = new RewriterCacheSweeper(rewriterShardContexts, pipelineRewriterCacheHandle);
     }
 
     @Override
@@ -104,7 +112,15 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
                                                final NamedWriteableRegistry namedWriteableRegistry,
                                                IndexNameExpressionResolver indexNameExpressionResolver,
                                                Supplier<RepositoriesService> repositoriesServiceSupplier) {
-        return Arrays.asList(rewriterShardContexts, querqyProcessor);
+        // DictionaryCorpusLoader is constructed in this plugin's own constructor, before a real Client/ThreadPool
+        // exist - wire the real ones in now, directly, the moment they're available (no need for @Inject-based
+        // deferred member-injection here, unlike RewriterShardContexts#setIndicesService, since Client/ThreadPool -
+        // unlike IndicesService - are already parameters of this very method).
+        dictionaryCorpusLoader.setClient(client);
+        dictionaryCorpusLoader.setThreadPool(threadPool);
+        rewriterCacheSweeper.start(environment.settings(), threadPool, client);
+        return Arrays.asList(rewriterShardContexts, querqyProcessor, dictionaryCorpusLoader,
+                pipelineRewriterCacheHandle);
     }
 
     @Override
@@ -113,22 +129,31 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
                 Setting.intSetting(SETTINGS_QUERQY_INDEX_NUM_REPLICAS, 1, 0, Setting.Property.NodeScope),
                 RewriterShardContext.CACHE_EXPIRE_AFTER_WRITE,
                 RewriterShardContext.CACHE_EXPIRE_AFTER_READ,
-                RewriterShardContext.CACHE_REFRESH_AFTER_WRITE);
+                RewriterShardContext.CACHE_REFRESH_AFTER_WRITE,
+                RewriterCacheSweeper.SWEEP_INTERVAL);
 
     }
 
     @Override
     public Map<String, Mapper.TypeParser> getMappers() {
-        return Collections.singletonMap(QuerqyRewriterConfigFieldMapper.CONTENT_TYPE,
-                new QuerqyRewriterConfigFieldMapper.TypeParser());
+        final Map<String, Mapper.TypeParser> mappers = new HashMap<>();
+        mappers.put(QuerqyRewriterConfigFieldMapper.CONTENT_TYPE, new QuerqyRewriterConfigFieldMapper.TypeParser());
+        mappers.put(QuerqyTermCorpusFieldMapper.CONTENT_TYPE, new QuerqyTermCorpusFieldMapper.TypeParser());
+        return mappers;
     }
 
     @Override
     public Map<String, Processor.Factory<SearchRequestProcessor>> getRequestProcessors(
             final SearchPipelinePlugin.Parameters parameters) {
+        // Built here (not inside the processor's own Factory) so pipelineRewriterCacheHandle - registered as a
+        // component back in createComponents, before this loader even exists - can be handed the real instance
+        // the moment it's available, letting TransportNodesClearRewriterCacheAction/TransportNodesReloadRewriterAction
+        // (full plugin module) reach this cache too, not just RewriterShardContexts.
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(parameters.env.settings(),
+                parameters.client, true, dictionaryCorpusLoader);
+        pipelineRewriterCacheHandle.setLoader(loader);
         return Collections.singletonMap(QuerqyRewriteRequestProcessor.TYPE,
-                new QuerqyRewriteRequestProcessor.Factory(parameters.client, parameters.env.settings(),
-                        querqyProcessor));
+                new QuerqyRewriteRequestProcessor.Factory(loader, querqyProcessor));
     }
 
     @Override

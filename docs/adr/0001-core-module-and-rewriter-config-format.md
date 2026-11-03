@@ -20,9 +20,9 @@ so AWS-targeted work branches from the latest odd-minor release tag
 (`opensearch-querqy-1.2.os3.7.0`) rather than `main` (currently on 3.8); it will be merged
 forward into `main` separately.
 
-A fuller design (module split, a `SearchPipelinePlugin` processor, dictionaries, etc.) is
-captured outside this repository in a briefing document; this ADR covers only the first
-phase implemented on the `issue179` branch.
+This ADR covers the module split and rewriter-config format implemented on the `issue179`
+branch; a `SearchPipelinePlugin` processor and dictionary support are addressed separately
+(see ADR 0002 and ADR 0003).
 
 ## Decision
 

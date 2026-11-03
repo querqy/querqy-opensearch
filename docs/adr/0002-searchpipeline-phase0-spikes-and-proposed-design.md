@@ -20,8 +20,7 @@ Not yet implemented/verified: AWS spike 1 (needs an AWS account; tracked separat
 ADR 0001 made `querqy-opensearch` installable on Amazon OpenSearch Service by moving rewriter
 *configuration storage* out of `ActionPlugin`. That is a closed problem; this ADR is not about
 it. What remains - adding Querqy as a `SearchPipelinePlugin` processor - is motivated by two
-things the existing shard-side `querqy` `QueryBuilder` structurally cannot do, per the briefing
-(`/Users/rene/Developer/projects/querqy/querqy-opensearch-core-briefing.md`, decision 5):
+things the existing shard-side `querqy` `QueryBuilder` structurally cannot do:
 
 1. **Hybrid query visibility.** `doToQuery(QueryShardContext)` runs per shard, after the
    coordinator has already fanned the request out - it cannot see or restructure a `neural-search`
@@ -32,13 +31,12 @@ things the existing shard-side `querqy` `QueryBuilder` structurally cannot do, p
    there is no hook back into the `SearchResponse` for Common Rules' `DECORATE` output or
    rewriter debug/logging data (today simply commented out with a TODO).
 
-The briefing's decision 5 ("cut at the Querqy model") proposes running the full rewrite chain
-**once, on the coordinator**, and shipping the *rewritten* `querqy.model.ExpandedQuery` to each
-shard, where only the existing `LuceneQueryBuilder` stage (shard analyzers,
-`DocumentFrequencyCorrection`/`DependentTermQuery`, field boost models) still runs - unchanged,
-with real per-shard document frequencies, nothing faked. The briefing was explicit that this is
-contingent on a decisive spike: is `querqy.model` actually serializable across that cut? This
-round of work ran that spike, plus the two spikes it depends on.
+The proposed design cuts at the Querqy model: run the full rewrite chain **once, on the
+coordinator**, and ship the *rewritten* `querqy.model.ExpandedQuery` to each shard, where only the
+existing `LuceneQueryBuilder` stage (shard analyzers, `DocumentFrequencyCorrection`/
+`DependentTermQuery`, field boost models) still runs - unchanged, with real per-shard document
+frequencies, nothing faked. This is contingent on a decisive spike: is `querqy.model` actually
+serializable across that cut? This round of work ran that spike, plus the two spikes it depends on.
 
 ## Decision: Phase-0 spike findings
 
@@ -220,7 +218,7 @@ turned out to be unnecessary complexity. The implemented design instead:
   `should`/`must` clause); a plain query gets wrapped in a new outer `BoolQueryBuilder`; and (per
   the same mechanism, untested here - see "Testing" below) `HybridQueryBuilder` pushes it onto
   every sub-query/leg in place, which is exactly the recall-preserving, pre-filter-the-ANN-search
-  behavior the briefing's decision 5 wanted. Note core's own shipped `filter_query` search-pipeline
+  behavior this design needs. Note core's own shipped `filter_query` search-pipeline
   processor does *not* use this polymorphic path - it unconditionally wraps the query in a new
   outer `bool` (a post-filter) - so this per-leg behavior is new, not something already available.
 - **Discovery is fully generic.** `QuerqyRewriteRequestProcessor.findQuerqyQueries` walks the
@@ -321,7 +319,7 @@ available, not something this repo's own automated suite can cover.
   real `HybridQueryBuilder` end-to-end validation (needs a neural-search-enabled cluster), and
   word-break-style rewriters running on the coordinator at all (explicitly out of scope - they
   fail clearly rather than being supported, per finding 1 above; a dictionary-based approach for
-  these is a later phase per the briefing's decision 6).
+  these is a later phase - see ADR 0003).
 - Finding 7's cache-bypass characteristic (correct on a cold load, bypassed on a cache hit) is not
   new to the `querqy_rewrite` pipeline work - it is identical, pre-existing behavior in the
   original per-shard path, already discussed in

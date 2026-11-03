@@ -20,7 +20,6 @@ package querqy.opensearch.pipeline;
 
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.action.search.SearchRequest;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 import org.opensearch.ingest.ConfigurationUtils;
@@ -30,7 +29,6 @@ import org.opensearch.search.pipeline.PipelineProcessingContext;
 import org.opensearch.search.pipeline.Processor;
 import org.opensearch.search.pipeline.SearchRequestProcessor;
 import org.opensearch.search.pipeline.StatefulSearchRequestProcessor;
-import org.opensearch.transport.client.Client;
 import querqy.model.ExpandedQuery;
 import querqy.model.MatchAllQuery;
 import querqy.model.QuerqyQuery;
@@ -243,8 +241,14 @@ public class QuerqyRewriteRequestProcessor extends AbstractProcessor implements 
         private final RewriterFactoryLoader loader;
         private final QuerqyProcessor querqyProcessor;
 
-        public Factory(final Client client, final Settings settings, final QuerqyProcessor querqyProcessor) {
-            this.loader = RewriterFactoryLoader.nodeLevel(settings, client, true);
+        /**
+         * @param loader Already built by the caller ({@code QuerqyCorePlugin#getRequestProcessors}), rather than
+         *               built here from a {@code Client}/{@code Settings}/{@code DictionaryCorpusLoader}, so the
+         *               plugin can also hand the same instance to {@code PipelineRewriterCacheHandle} the moment
+         *               it exists - letting the full plugin module's push-based cache invalidation reach it too.
+         */
+        public Factory(final RewriterFactoryLoader loader, final QuerqyProcessor querqyProcessor) {
+            this.loader = loader;
             this.querqyProcessor = querqyProcessor;
         }
 

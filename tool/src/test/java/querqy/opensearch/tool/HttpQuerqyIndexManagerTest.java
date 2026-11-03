@@ -176,6 +176,36 @@ public class HttpQuerqyIndexManagerTest {
     }
 
     @Test
+    public void testDeleteDictionaryReturnsTrueWhenDeleted() throws Exception {
+
+        final RestClient client = clientReturning("{\"_id\":\"d-r1\",\"result\":\"deleted\"}");
+
+        assertThat(new HttpQuerqyIndexManager(client).deleteDictionary("d-r1")).isTrue();
+    }
+
+    @Test
+    public void testDeleteDictionaryReturnsFalseWhenAlreadyAbsent() throws Exception {
+
+        final RestClient client = clientReturning("{\"_id\":\"d-r1\",\"result\":\"not_found\"}");
+
+        assertThat(new HttpQuerqyIndexManager(client).deleteDictionary("d-r1")).isFalse();
+    }
+
+    @Test
+    public void testDeleteDictionaryRequestShape() throws Exception {
+
+        final RestClient client = clientReturning("{\"result\":\"deleted\"}");
+
+        new HttpQuerqyIndexManager(client).deleteDictionary("d-r1");
+
+        verify(client).performRequest(argThat(request ->
+                "DELETE".equals(request.getMethod())
+                        && "/.opensearch-querqy/_doc/d-r1".equals(request.getEndpoint())
+                        && "404".equals(request.getParameters().get("ignore"))
+                        && "true".equals(request.getParameters().get("refresh"))));
+    }
+
+    @Test
     public void testRequestSignerIsInvokedBeforeEveryRequest() throws Exception {
 
         final RestClient client = clientReturning("{\"found\":false}");
