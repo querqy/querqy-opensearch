@@ -127,7 +127,7 @@ pipeline.
 
 ### Write tooling
 
-The `tool` module (already the AWS-compatible, `ActionPlugin`-free way to write rewriter configs
+The `config-cli` module (already the AWS-compatible, `ActionPlugin`-free way to write rewriter configs
 over HTTP) gained a `put-dictionary` command: gzips a local TSV file and writes it as a
 `term_corpus` document, reusing the same `HttpQuerqyIndexManager`/mapping-migration path as
 `put`. Writing directly via a raw `PUT <index>/_doc/<name>-<revision>` (no tooling at all) remains

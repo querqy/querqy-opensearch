@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package querqy.opensearch.tool;
+package querqy.opensearch.configcli;
 
 import org.junit.Test;
 
@@ -226,6 +226,7 @@ public class CliArgsTest {
         assertThat(args.dictionaryFile).isEqualTo("./dutch-compounds.tsv");
         assertThat(args.dictionaryFormat).isEqualTo("tsv_df");
         assertThat(args.hashFunctions).isNull();
+        assertThat(args.numDocs).isNull();
     }
 
     @Test
@@ -286,6 +287,16 @@ public class CliArgsTest {
     }
 
     @Test
+    public void testPutDictionaryParsesNumDocs() {
+        final CliArgs args = CliArgs.parse(new String[] {
+                "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
+                "--dictionary-file", "d.tsv", "--num-docs", "5083917"
+        });
+
+        assertThat(args.numDocs).isEqualTo(5083917);
+    }
+
+    @Test
     public void testPutAcceptsDictionaryFile() {
         final CliArgs args = CliArgs.parse(new String[] {
                 "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
@@ -294,6 +305,17 @@ public class CliArgsTest {
 
         assertThat(args.dictionaryFile).isEqualTo("d.tsv");
         assertThat(args.dictionaryFormat).isEqualTo("tsv_df");
+    }
+
+    @Test
+    public void testPutWithDictionaryFileParsesNumDocs() {
+        final CliArgs args = CliArgs.parse(new String[] {
+                "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
+                "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc", "--hash-functions", "5",
+                "--num-docs", "5083917"
+        });
+
+        assertThat(args.numDocs).isEqualTo(5083917);
     }
 
     @Test

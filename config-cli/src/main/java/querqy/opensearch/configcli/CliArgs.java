@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package querqy.opensearch.tool;
+package querqy.opensearch.configcli;
 
 import java.util.Locale;
 
@@ -57,6 +57,7 @@ public final class CliArgs {
     public final String dictionaryFile;
     public final String dictionaryFormat;
     public final Integer hashFunctions;
+    public final Integer numDocs;
     public final boolean force;
 
     private CliArgs(final Action action, final String url, final String id, final String configFile,
@@ -64,7 +65,7 @@ public final class CliArgs {
                     final boolean insecure, final boolean validateOnly, final boolean sigv4, final String awsRegion,
                     final String awsService, final String awsProfile, final String dictionaryId,
                     final String dictionaryFile, final String dictionaryFormat,
-                    final Integer hashFunctions, final boolean force) {
+                    final Integer hashFunctions, final Integer numDocs, final boolean force) {
         this.action = action;
         this.url = url;
         this.id = id;
@@ -83,6 +84,7 @@ public final class CliArgs {
         this.dictionaryFile = dictionaryFile;
         this.dictionaryFormat = dictionaryFormat;
         this.hashFunctions = hashFunctions;
+        this.numDocs = numDocs;
         this.force = force;
     }
 
@@ -111,6 +113,7 @@ public final class CliArgs {
         String dictionaryFile = null;
         String dictionaryFormat = "tsv_df";
         Integer hashFunctions = null;
+        Integer numDocs = null;
         boolean force = false;
 
         for (int i = 1; i < args.length; i++) {
@@ -129,6 +132,9 @@ public final class CliArgs {
                     break;
                 case "--hash-functions":
                     hashFunctions = Integer.parseInt(requireValue(args, i++, "--hash-functions"));
+                    break;
+                case "--num-docs":
+                    numDocs = Integer.parseInt(requireValue(args, i++, "--num-docs"));
                     break;
                 case "--url":
                     url = requireValue(args, i++, "--url");
@@ -255,7 +261,7 @@ public final class CliArgs {
 
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
                 validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryId,
-                dictionaryFile, dictionaryFormat, hashFunctions, force);
+                dictionaryFile, dictionaryFormat, hashFunctions, numDocs, force);
     }
 
     private static void validateDictionaryFormatArgs(final String dictionaryFormat, final Integer hashFunctions) {
