@@ -20,16 +20,16 @@ apply plugin: 'java'
 apply plugin: 'application'
 
 base {
-    archivesName = 'querqy-opensearch-tool'
+    archivesName = 'querqy-opensearch-config-cli'
 }
 
 application {
-    applicationName = 'querqy-opensearch-tool'
-    mainClass = 'querqy.opensearch.tool.RewriterConfigTool'
+    applicationName = 'querqy-opensearch-config-cli'
+    mainClass = 'querqy.opensearch.configcli.RewriterConfigTool'
 }
 
-// :tool is a plain CLI, not an OpenSearch plugin, so it doesn't apply opensearch.opensearchplugin and therefore
-// doesn't inherit that convention plugin's repository wiring - declare it explicitly.
+// :config-cli is a plain CLI, not an OpenSearch plugin, so it doesn't apply opensearch.opensearchplugin and
+// therefore doesn't inherit that convention plugin's repository wiring - declare it explicitly.
 repositories {
     maven { url = "https://aws.oss.sonatype.org/content/repositories/snapshots" }
     mavenCentral()
@@ -38,11 +38,12 @@ repositories {
 dependencies {
     implementation project(':core')
     // :core's own dependency on the OpenSearch server jar isn't `api`, so it doesn't propagate transitively here -
-    // :tool needs OpenSearch types directly to compile against OpenSearchRewriterFactory/RewriterConfigMapping's API
-    // surface. It only ever touches lightweight X-Content/exception types (never IndexShard or any other
-    // server-only class), so opensearch-core + opensearch-x-content (~400 KB combined) are enough - no need for the
-    // full org.opensearch:opensearch server jar (~18 MB, pulling in 14 Lucene modules, log4j-core, protobuf, jna,
-    // jts, etc., none of which this CLI's validate-and-push code path ever uses).
+    // :config-cli needs OpenSearch types directly to compile against OpenSearchRewriterFactory/
+    // RewriterConfigMapping's API surface. It only ever touches lightweight X-Content/exception types (never
+    // IndexShard or any other server-only class), so opensearch-core + opensearch-x-content (~400 KB combined)
+    // are enough - no need for the full org.opensearch:opensearch server jar (~18 MB, pulling in 14 Lucene
+    // modules, log4j-core, protobuf, jna, jts, etc., none of which this CLI's validate-and-push code path ever
+    // uses).
     implementation "org.opensearch:opensearch-core:${rootProject.ext.opensearch_version}"
     implementation "org.opensearch:opensearch-x-content:${rootProject.ext.opensearch_version}"
     // OpenSearchRewriterFactory.loadInstance(...) calls AccessController.doPrivileged(...) from this small

@@ -55,10 +55,10 @@ import java.util.Map;
  * {@code SourceFieldMapper} before any field mapper (including this one) ever runs, so this mapper can only
  * verify a claimed checksum against the content, never generate one itself (see
  * {@code docs/adr/0005-mutable-checksum-verified-dictionaries.md} for why a server-computed checksum isn't
- * possible here). The writer - e.g. the {@code tool} module's {@code put-dictionary}/{@code put --dictionary-file}
- * commands - computes it via the same {@link TermCorpusConfigMapping#computeChecksum(byte[])} this mapper calls to
- * verify it: SHA-256 over the raw, uncompressed TSV bytes, so the two can never disagree on algorithm or
- * encoding.</p>
+ * possible here). The writer - e.g. the {@code config-cli} module's {@code put-dictionary}/{@code
+ * put --dictionary-file} commands - computes it via the same {@link TermCorpusConfigMapping#computeChecksum(byte[])}
+ * this mapper calls to verify it: SHA-256 over the raw, uncompressed TSV bytes, so the two can never disagree on
+ * algorithm or encoding.</p>
  *
  * <p><b>Known limitation:</b> like {@code QuerqyRewriterConfigFieldMapper}, this runs on every shard copy (primary
  * and replicas) and again during translog replay on recovery - here that means gunzipping and fully parsing a

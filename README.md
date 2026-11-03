@@ -47,18 +47,19 @@ unchanged.
 On an install of `querqy-opensearch-core` (no `ActionPlugin`, no REST API), a rewriter configuration is just a
 document in the `.opensearch-querqy` index, and there are two ways to write it:
 
-* **The `querqy-opensearch-tool` CLI** (module `tool`, built at
-  `tool/build/distributions/querqy-opensearch-tool-<version>.zip` - unzip it and run `bin/querqy-opensearch-tool`, or
-  run it directly from a checkout via `./gradlew tool:run --args="..."`). It mirrors the REST API's
+* **The `querqy-opensearch-config-cli` CLI** (module `config-cli`, built at
+  `config-cli/build/distributions/querqy-opensearch-config-cli-<version>.zip` - unzip it and run
+  `bin/querqy-opensearch-config-cli`, or run it directly from a checkout via
+  `./gradlew config-cli:run --args="..."`). It mirrors the REST API's
   `PUT`/`GET`/`DELETE` rewriter actions (plus listing) as four subcommands - `put`, `get`, `list`, `delete` - each
   taking `--url` and, except for `list`, `--id`:
 
   ```shell
-  bin/querqy-opensearch-tool put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
+  bin/querqy-opensearch-config-cli put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
       [--revision r42] [--username admin --password '***'] [--insecure] [--validate-only]
-  bin/querqy-opensearch-tool get --url https://<host>:9200 --id common_rules [--username ... --password ...]
-  bin/querqy-opensearch-tool list --url https://<host>:9200 [--username ... --password ...]
-  bin/querqy-opensearch-tool delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  bin/querqy-opensearch-config-cli get --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  bin/querqy-opensearch-config-cli list --url https://<host>:9200 [--username ... --password ...]
+  bin/querqy-opensearch-config-cli delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
   ```
 
   `put` validates the configuration locally (the same checks the REST API applies) before writing it, and creates or
@@ -82,7 +83,7 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   it to `aoss` for OpenSearch Serverless, which only supports IAM auth:
 
   ```shell
-  bin/querqy-opensearch-tool list --url https://<domain-endpoint> --sigv4 \
+  bin/querqy-opensearch-config-cli list --url https://<domain-endpoint> --sigv4 \
       [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
   ```
 
@@ -228,5 +229,5 @@ Querqy for OpenSearch can be used in the same way as Querqy for Elasticsearch, w
   ```
   
 * Developer documentation can be found [here](docs/opensearch_dev_documentation.md)
-* Architecture decisions (e.g. the core/full/tool module split) are recorded under [docs/adr](docs/adr)
+* Architecture decisions (e.g. the core/full/config-cli module split) are recorded under [docs/adr](docs/adr)
 * Developer channel: Join #querqy on the [Search Relevancy Slack space](https://opensourceconnections.com/slack)

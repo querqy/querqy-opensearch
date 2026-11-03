@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package querqy.opensearch.tool;
+package querqy.opensearch.configcli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.hc.client5.http.auth.AuthScope;
@@ -65,17 +65,20 @@ import java.util.Map;
  * {@code ActionPlugin} (e.g. querqy-opensearch-core on Amazon OpenSearch Service) has no REST action to do this.
  *
  * <pre>
- * java -jar querqy-opensearch-tool.jar put --url https://host:9200 --id my_rewriter --config-file ./my-rewriter.json \
- *     [--revision r42] [--dictionary-file ./dict.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N] \
+ * java -jar querqy-opensearch-config-cli.jar put --url https://host:9200 --id my_rewriter \
+ *     --config-file ./my-rewriter.json [--revision r42] \
+ *     [--dictionary-file ./dict.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions N] \
  *     [--num-docs N]] [--username admin --password '***'] [--replicas 1] [--insecure] [--validate-only]
- * java -jar querqy-opensearch-tool.jar get --url https://host:9200 --id my_rewriter [--username ... --password ...]
- * java -jar querqy-opensearch-tool.jar list --url https://host:9200 [--username ... --password ...]
- * java -jar querqy-opensearch-tool.jar delete --url https://host:9200 --id my_rewriter [--username ... --password ...]
- * java -jar querqy-opensearch-tool.jar put-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
+ * java -jar querqy-opensearch-config-cli.jar get --url https://host:9200 --id my_rewriter \
+ *     [--username ... --password ...]
+ * java -jar querqy-opensearch-config-cli.jar list --url https://host:9200 [--username ... --password ...]
+ * java -jar querqy-opensearch-config-cli.jar delete --url https://host:9200 --id my_rewriter \
+ *     [--username ... --password ...]
+ * java -jar querqy-opensearch-config-cli.jar put-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
  *     --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] \
  *     [--hash-functions N] [--num-docs N] [--username ... --password ...] [--replicas 1]
- * java -jar querqy-opensearch-tool.jar delete-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
- *     [--force] [--username ... --password ...]
+ * java -jar querqy-opensearch-config-cli.jar delete-dictionary --url https://host:9200 \
+ *     --dictionary-id dutch-compounds [--force] [--username ... --password ...]
  * </pre>
  *
  * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
@@ -121,7 +124,7 @@ import java.util.Map;
  * region provider chain resolves; {@code --aws-service} defaults to {@code es} (managed domains) and should be
  * set to {@code aoss} for OpenSearch Serverless, the only auth mode Serverless supports:
  * <pre>
- * java -jar querqy-opensearch-tool.jar list --url https://host.region.es.amazonaws.com --sigv4 \
+ * java -jar querqy-opensearch-config-cli.jar list --url https://host.region.es.amazonaws.com --sigv4 \
  *     [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
  * </pre>
  *
@@ -515,20 +518,20 @@ public final class RewriterConfigTool {
         final String authOptions = "[--username <user> --password <password> | --sigv4 [--aws-region <region>] "
                 + "[--aws-service es|aoss] [--aws-profile <profile>]] [--insecure]";
         System.err.println("Usage:");
-        System.err.println("  java -jar querqy-opensearch-tool.jar put --url <url> --id <rewriterId> "
+        System.err.println("  java -jar querqy-opensearch-config-cli.jar put --url <url> --id <rewriterId> "
                 + "--config-file <file> [--revision <revision>] "
                 + "[--dictionary-file <tsvFile> [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] "
                 + "[--num-docs <n>]] " + authOptions + " [--replicas <n>] [--validate-only]");
-        System.err.println("  java -jar querqy-opensearch-tool.jar get --url <url> --id <rewriterId> "
+        System.err.println("  java -jar querqy-opensearch-config-cli.jar get --url <url> --id <rewriterId> "
                 + authOptions);
-        System.err.println("  java -jar querqy-opensearch-tool.jar list --url <url> " + authOptions);
-        System.err.println("  java -jar querqy-opensearch-tool.jar delete --url <url> --id <rewriterId> "
+        System.err.println("  java -jar querqy-opensearch-config-cli.jar list --url <url> " + authOptions);
+        System.err.println("  java -jar querqy-opensearch-config-cli.jar delete --url <url> --id <rewriterId> "
                 + authOptions);
-        System.err.println("  java -jar querqy-opensearch-tool.jar put-dictionary --url <url> "
+        System.err.println("  java -jar querqy-opensearch-config-cli.jar put-dictionary --url <url> "
                 + "--dictionary-id <id> --dictionary-file <tsvFile> "
                 + "[--format tsv_df|tsv_df_cooc] [--hash-functions <n>] [--num-docs <n>] " + authOptions
                 + " [--replicas <n>]");
-        System.err.println("  java -jar querqy-opensearch-tool.jar delete-dictionary --url <url> "
+        System.err.println("  java -jar querqy-opensearch-config-cli.jar delete-dictionary --url <url> "
                 + "--dictionary-id <id> [--force] " + authOptions);
     }
 
