@@ -25,6 +25,7 @@ import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.support.WriteRequest;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.index.IndexNotFoundException;
+import org.opensearch.indices.InvalidTypeNameException;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
@@ -215,5 +216,57 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 .setSource(source)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
                 .get();
+    }
+
+    /**
+     * Nothing in {@code .opensearch-querqy} prevents a {@code term_corpus} dictionary document from being written
+     * to the same id as an existing rewriter (or vice versa). Before this was fixed, FORCE-reloading a cached
+     * rewriter whose id had been overwritten this way failed loudly for that one call ({@link
+     * InvalidTypeNameException}) but left the stale cache entry in place, so the very next plain lookup would
+     * silently keep serving the pre-overwrite rewriter forever. Proves the cache entry is evicted instead: a plain
+     * lookup right after the failed FORCE also fails clearly, rather than silently succeeding from the stale cache.
+     */
+    public void testForceReloadEvictsCacheEntryWhenIdNowHoldsADifferentDocumentType() throws Exception {
+
+        ensureRewriterIndexExists();
+        writeCommonRulesRewriter("id1", "k =>\nSYNONYM: c");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
+
+        loader.loadFactory("id1", false); // populates the cache
+
+        writeTermCorpus("id1", "haus\t10\n"); // same id, a different document type entirely
+
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("id1", true));
+
+        // if the cache entry had survived, this would silently return the pre-overwrite rewriter with no error
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("id1", false));
+    }
+
+    /**
+     * Same gap, reverse direction: a {@code word_break_compound} rewriter's {@code dictionaryId} gets overwritten
+     * by a different document type. {@link DictionaryCorpusLoader#load} throws {@link InvalidTypeNameException}
+     * from inside the <em>dependent rewriter's</em> rebuild attempt - proves that failure also evicts the
+     * dependent rewriter's own cache entry, not just logs-and-keeps it.
+     */
+    public void testForceReloadEvictsDependentRewriterWhenItsDictionaryIdNowHoldsADifferentDocumentType()
+            throws Exception {
+
+        ensureRewriterIndexExists();
+        writeTermCorpus("compounds", "haus\t10\nboot\t5\n");
+        writeWordBreakCompoundRewriterWithDictionary("word_break_rewriter", "compounds");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
+
+        loader.loadFactory("word_break_rewriter", false); // populates the cache, including the dependency checksum
+
+        writeCommonRulesRewriter("compounds", "k =>\nSYNONYM: c"); // same id, now a rewriter document instead
+
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("word_break_rewriter", true));
+
+        // if the cache entry had survived, this would silently return the pre-overwrite rewriter with no error
+        expectThrows(InvalidTypeNameException.class, () -> loader.loadFactory("word_break_rewriter", false));
     }
 }

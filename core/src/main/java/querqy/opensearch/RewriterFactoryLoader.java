@@ -216,10 +216,12 @@ public class RewriterFactoryLoader {
      * Applies the result of a {@link RewriterCacheSweeper} multi-get round trip: for each currently cached
      * rewriter id that was part of the sweep, checks it (and any dictionary it depends on) against the fetched
      * responses using the same comparison as {@link #checkAndReloadIfChanged}. Unlike that method, this never
-     * blocks and never throws - the sweep already has the responses in hand, and a rebuild failure here (e.g. a
-     * replacement document that fails to parse) just keeps the previous version and logs, matching {@link
-     * #maybeRefreshAsync}'s fail-safe philosophy for a background path. An id missing from {@code responsesById}
-     * (not part of this sweep's batch) or no longer cached (evicted/replaced concurrently) is silently skipped.
+     * blocks and never throws - the sweep already has the responses in hand. If a rebuild fails because the id
+     * (or a dictionary it depends on) is confirmed gone or now the wrong document type, the cache entry is
+     * evicted, matching {@link #maybeRefreshAsync}'s handling of the same cases; any other failure (e.g. a
+     * replacement document that fails to parse) just keeps the previous version and logs. An id missing from
+     * {@code responsesById} (not part of this sweep's batch) or no longer cached (evicted/replaced concurrently)
+     * is silently skipped.
      *
      * @param responsesById Every id (rewriter and dictionary dependency) the sweep fetched, by id
      * @param rewriterLevelChecksEnabled Whether to also evict/rebuild based on the rewriter document's own
@@ -239,6 +241,12 @@ public class RewriterFactoryLoader {
             }
             try {
                 applyFreshResponse(id, current, response, responsesById, rewriterLevelChecksEnabled);
+            } catch (final ResourceNotFoundException e) {
+                LOGGER.info("Rewriter {} can no longer be built ({}), evicting from cache", id, e.getMessage());
+                factories.invalidate(id);
+            } catch (final InvalidTypeNameException e) {
+                LOGGER.warn("Rewriter {} can no longer be built ({}), evicting from cache", id, e.getMessage());
+                factories.invalidate(id);
             } catch (final Exception e) {
                 LOGGER.error("Could not apply sweep result for rewriter " + id + ", keeping previous version", e);
             }
@@ -249,11 +257,13 @@ public class RewriterFactoryLoader {
      * If {@code current} is older than {@code RewriterShardContext#CACHE_REFRESH_AFTER_WRITE} and no refresh
      * of this rewriter is already in flight, kicks off a non-blocking reload from the index. The cached value
      * keeps being served as-is while the refresh is in flight. On success the cache is updated; if the
-     * rewriter document has been deleted, the cache entry is evicted instead (so the next lookup fails clearly
-     * with "not found", as it would for an id that was never cached, rather than going on serving a deleted
-     * rewriter forever); on any other failure (e.g. a transient connectivity problem, or a replacement
-     * document that fails to parse/validate) the previous version is kept and the failure is logged. The
-     * calling thread is never blocked by any of this.
+     * rewriter document has been deleted, or is confirmed to now be the wrong document type (e.g. its id got
+     * reused for a {@code term_corpus} dictionary, or a dictionary it depends on got reused for something
+     * else), the cache entry is evicted instead (so the next lookup fails clearly with "not found"/"wrong
+     * type", as it would for an id that was never cached, rather than going on serving a stale rewriter
+     * forever); on any other failure (e.g. a transient connectivity problem, or a replacement document that
+     * fails to parse/validate) the previous version is kept and the failure is logged. The calling thread is
+     * never blocked by any of this.
      */
     private void maybeRefreshAsync(final String rewriterId, final RewriterFactoryAndLogging current) {
 
@@ -288,6 +298,14 @@ public class RewriterFactoryLoader {
                 dictionaryCorpusLoader.threadPool().generic().execute(() -> {
                     try {
                         factories.put(rewriterId, buildFactoryAndLogging(rewriterId, response));
+                    } catch (final ResourceNotFoundException e) {
+                        LOGGER.info("Rewriter {} can no longer be built ({}), evicting from cache", rewriterId,
+                                e.getMessage());
+                        factories.invalidate(rewriterId);
+                    } catch (final InvalidTypeNameException e) {
+                        LOGGER.warn("Rewriter {} can no longer be built ({}), evicting from cache", rewriterId,
+                                e.getMessage());
+                        factories.invalidate(rewriterId);
                     } catch (final Exception e) {
                         LOGGER.error("Could not refresh rewriter " + rewriterId + ", keeping previous version", e);
                     } finally {
@@ -313,9 +331,12 @@ public class RewriterFactoryLoader {
      * changed, at the same network cost: with no dependencies this is a single {@code GET}, unchanged from before;
      * with dependencies, one {@code MultiGetRequest} covers the rewriter's own document and every dependency in one
      * round trip. If the rewriter document has been deleted, evicts the cache entry and throws {@link
-     * ResourceNotFoundException}, consistent with the async-refresh path. Always evaluates both the rewriter's own
-     * staleness and its dependencies' - {@code RefreshMode#CHECK} is a synchronous, per-request check, not a
-     * background one, so it has nothing to race against push-based reload the way {@link RewriterCacheSweeper} does.
+     * ResourceNotFoundException}; if it (or a dictionary it depends on) is confirmed to now be the wrong document
+     * type, evicts the cache entry and throws {@link InvalidTypeNameException} instead - either way, the cache is
+     * left clean rather than going on to serve a stale rewriter on a later plain lookup, consistent with the
+     * async-refresh path. Always evaluates both the rewriter's own staleness and its dependencies' - {@code
+     * RefreshMode#CHECK} is a synchronous, per-request check, not a background one, so it has nothing to race
+     * against push-based reload the way {@link RewriterCacheSweeper} does.
      */
     private RewriterFactoryAndLogging checkAndReloadIfChanged(final String rewriterId,
                                                                final RewriterFactoryAndLogging current) {
@@ -334,7 +355,7 @@ public class RewriterFactoryLoader {
                 throw new ResourceNotFoundException("Rewriter not found: " + rewriterId);
             }
 
-            return applyFreshResponse(rewriterId, current, response, Collections.emptyMap(), true);
+            return applyFreshResponseOrEvict(rewriterId, current, response, Collections.emptyMap());
         }
 
         final MultiGetRequest request = new MultiGetRequest();
@@ -355,7 +376,27 @@ public class RewriterFactoryLoader {
             throw new ResourceNotFoundException("Rewriter not found: " + rewriterId);
         }
 
-        return applyFreshResponse(rewriterId, current, response, byId, true);
+        return applyFreshResponseOrEvict(rewriterId, current, response, byId);
+    }
+
+    /**
+     * Calls {@link #applyFreshResponse} with {@code rewriterLevelChecksEnabled=true} (always the case for {@link
+     * #checkAndReloadIfChanged}, the only caller), additionally evicting the cache entry before rethrowing if the
+     * rebuild fails because the rewriter (or a dictionary it depends on) is confirmed gone ({@link
+     * ResourceNotFoundException}) or now the wrong document type ({@link InvalidTypeNameException}) - so a
+     * {@code CHECK} query that fails loudly also leaves the cache clean, rather than reverting to serving the
+     * stale entry on the next plain lookup.
+     */
+    private RewriterFactoryAndLogging applyFreshResponseOrEvict(final String rewriterId,
+                                                                final RewriterFactoryAndLogging current,
+                                                                final GetResponse response,
+                                                                final Map<String, GetResponse> dependencyResponses) {
+        try {
+            return applyFreshResponse(rewriterId, current, response, dependencyResponses, true);
+        } catch (final ResourceNotFoundException | InvalidTypeNameException e) {
+            factories.invalidate(rewriterId);
+            throw e;
+        }
     }
 
     private static Map<String, GetResponse> toResponseMap(final MultiGetResponse response) {
@@ -460,7 +501,14 @@ public class RewriterFactoryLoader {
                 throw new OpenSearchException("Could not load rewriter " + rewriterId, e);
             }
 
-            factoryAndLogging = buildFactoryAndLogging(rewriterId, response);
+            try {
+                factoryAndLogging = buildFactoryAndLogging(rewriterId, response);
+            } catch (final ResourceNotFoundException | InvalidTypeNameException e) {
+                // confirmed gone, or confirmed to now be the wrong document type - evict before rethrowing so a
+                // later plain lookup doesn't fall back to serving this (now provably stale) cache entry
+                factories.invalidate(rewriterId);
+                throw e;
+            }
             factories.put(rewriterId, factoryAndLogging);
 
         }

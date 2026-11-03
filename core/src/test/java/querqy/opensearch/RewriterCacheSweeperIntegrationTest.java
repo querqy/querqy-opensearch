@@ -160,6 +160,30 @@ public class RewriterCacheSweeperIntegrationTest extends OpenSearchSingleNodeTes
         assertBusy(() -> assertDecompoundsHausboot(wordBreakRewriterId, false));
     }
 
+    /**
+     * Nothing in {@code .opensearch-querqy} prevents a {@code term_corpus} dictionary document from being written
+     * to the same id as an existing rewriter. Before this was fixed, the sweep's rebuild attempt in this situation
+     * threw {@code InvalidTypeNameException}, caught by a generic catch that only logged and kept the stale cache
+     * entry in place - repeating every sweep cycle forever. Proves the cache entry is evicted instead.
+     */
+    public void testSweepEvictsRewriterFromShardCacheWhenItsIdNowHoldsADifferentDocumentType() throws Exception {
+
+        ensureRewriterIndexExists();
+        indexTestDocs();
+        writeRewriter(REWRITER_ID, "k =>\nSYNONYM: z");
+
+        assertHitCount(1L); // warms the per-shard cache
+
+        final RewriterShardContexts shardContexts = getInstanceFromNode(RewriterShardContexts.class);
+        assertTrue(shardContexts.cachedRewriterIds().contains(REWRITER_ID));
+
+        writeTermCorpus(REWRITER_ID, "haus\t10\n"); // same id, a completely different document type
+
+        newSweeper().sweep(client());
+
+        assertBusy(() -> assertFalse(shardContexts.cachedRewriterIds().contains(REWRITER_ID)));
+    }
+
     private void writeTermCorpus(final String id, final String tsv) throws Exception {
         final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id,
                 TermCorpusConfigMapping.FORMAT_TSV_DF, true, null, null, tsv.getBytes(StandardCharsets.UTF_8),
