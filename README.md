@@ -14,10 +14,10 @@ integrating custom rewriting logic.
 This repository builds two plugin artifacts from the same code, sharing the same plugin name (so only one of them can
 ever be installed on a cluster at a time):
 
-* **`opensearch-querqy`** (module `.` / root) - the full plugin: the `querqy` query, the rewriters, *and* the REST API
+* **`opensearch-querqy`** (module `rest-api`) - the full plugin: the `querqy` query, the rewriters, *and* the REST API
   for managing rewriters (`PUT`/`GET`/`DELETE /_plugins/_querqy/rewriter/{id}`). This is what you want on a
   self-managed OpenSearch cluster, where you can install plugins using `ActionPlugin` (custom REST endpoints).
-* **`querqy-opensearch-core`** (module `core`) - the `querqy` query and the rewriters, but **no REST API**. Amazon
+* **`opensearch-querqy-core`** (module `core`) - the `querqy` query and the rewriters, but **no REST API**. Amazon
   OpenSearch Service's custom-plugin support doesn't allow `ActionPlugin`, so this is the artifact to install there.
   Without the REST API, rewriter configurations are managed by writing documents directly to the `.opensearch-querqy`
   index - see [Managing rewriters without the REST API](#managing-rewriters-without-the-rest-api-core-only) below.
@@ -34,8 +34,8 @@ unchanged.
 
 ## Installation with local build
 * First, you need to build the project by running `./gradlew build`.
-* The full plugin's zip is built at `build/distributions/opensearch-querqy-<version>.zip`; the core (AWS-compatible)
-  plugin's zip is built separately at `core/build/distributions/opensearch-querqy-<version>.zip`.
+* The full plugin's zip is built at `rest-api/build/distributions/opensearch-querqy-<version>.zip`; the core
+  (AWS-compatible) plugin's zip is built separately at `core/build/distributions/opensearch-querqy-core-<version>.zip`.
 * Querqy can be installed like all other OpenSearch plugins, e.g. using 
 
   `bin/opensearch-plugin install file:///path/to/file/opensearch-querqy.zip`
@@ -112,7 +112,7 @@ Upload it with the CLI (`put-dictionary`, or `put --dictionary-file` to upload t
 config together in one command):
 
 ```shell
-bin/querqy-opensearch-config-cli put-dictionary --url https://<host>:9200 --dictionary-id dutch-compounds \
+bin/opensearch-querqy-config-cli put-dictionary --url https://<host>:9200 --dictionary-id dutch-compounds \
     --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] \
     [--num-docs <n>] [--username ... --password ...]
 ```
@@ -139,22 +139,22 @@ version addressable means saving it under a different id and repointing the rewr
 
 ## Managing rewriters without the REST API (core-only)
 
-On an install of `querqy-opensearch-core` (no `ActionPlugin`, no REST API), a rewriter configuration is just a
+On an install of `opensearch-querqy-core` (no `ActionPlugin`, no REST API), a rewriter configuration is just a
 document in the `.opensearch-querqy` index, and there are two ways to write it:
 
-* **The `querqy-opensearch-config-cli` CLI** (module `config-cli`, built at
-  `config-cli/build/distributions/querqy-opensearch-config-cli-<version>.zip` - unzip it and run
-  `bin/querqy-opensearch-config-cli`, or run it directly from a checkout via
+* **The `opensearch-querqy-config-cli` CLI** (module `config-cli`, built at
+  `config-cli/build/distributions/opensearch-querqy-config-cli-<version>.zip` - unzip it and run
+  `bin/opensearch-querqy-config-cli`, or run it directly from a checkout via
   `./gradlew config-cli:run --args="..."`). It mirrors the REST API's
   `PUT`/`GET`/`DELETE` rewriter actions (plus listing) as four subcommands - `put`, `get`, `list`, `delete` - each
   taking `--url` and, except for `list`, `--id`:
 
   ```shell
-  bin/querqy-opensearch-config-cli put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
+  bin/opensearch-querqy-config-cli put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
       [--revision r42] [--username admin --password '***'] [--insecure] [--validate-only]
-  bin/querqy-opensearch-config-cli get --url https://<host>:9200 --id common_rules [--username ... --password ...]
-  bin/querqy-opensearch-config-cli list --url https://<host>:9200 [--username ... --password ...]
-  bin/querqy-opensearch-config-cli delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  bin/opensearch-querqy-config-cli get --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  bin/opensearch-querqy-config-cli list --url https://<host>:9200 [--username ... --password ...]
+  bin/opensearch-querqy-config-cli delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
   ```
 
   `put` validates the configuration locally (the same checks the REST API applies) before writing it, and creates or
@@ -178,7 +178,7 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   it to `aoss` for OpenSearch Serverless, which only supports IAM auth:
 
   ```shell
-  bin/querqy-opensearch-config-cli list --url https://<domain-endpoint> --sigv4 \
+  bin/opensearch-querqy-config-cli list --url https://<domain-endpoint> --sigv4 \
       [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
   ```
 
