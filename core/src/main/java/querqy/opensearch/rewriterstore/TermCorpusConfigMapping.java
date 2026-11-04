@@ -37,6 +37,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -144,7 +145,7 @@ public final class TermCorpusConfigMapping {
         final StringBuilder hex = new StringBuilder(CHECKSUM_PREFIX.length() + hash.length * 2);
         hex.append(CHECKSUM_PREFIX);
         for (final byte b : hash) {
-            hex.append(String.format("%02x", b));
+            hex.append(String.format(Locale.ROOT, "%02x", b));
         }
         return hex.toString();
     }
