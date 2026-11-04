@@ -64,9 +64,22 @@ This document chooses the best of both worlds and defines a way to ensure the co
 
 ### 2.6 Maven publish
 
-* Querqy packages are published in maven under the group `org.querqy`. 
-  This plugin would follow a similar route with artifact id `querqy-opensearch`.
-* Today publishing to Maven is a manual process, we will automate this soon.
+* Querqy packages are published in maven under the group `org.querqy`. The full plugin (with the
+  `ActionPlugin` REST API) uses artifact id `opensearch-querqy`; the `core` module, installable where
+  `ActionPlugin` is unsupported (e.g. Amazon OpenSearch Service), uses `opensearch-querqy-core`.
+  `./gradlew publish` is a standard Gradle lifecycle task that automatically publishes every
+  subproject that has a `maven-publish` configuration, so one command covers both - there's nothing
+  extra to wire up to release them together.
+* The `config-cli` module (the AWS-compatible CLI for managing rewriter configs/dictionaries without
+  the REST API) is **not** published to Maven Central - it's a standalone application, not a library
+  meant to be depended on, so its natural distribution channel is its own build output
+  (`config-cli/build/distributions/opensearch-querqy-config-cli-<version>.{zip,tar}`), attached as an
+  asset to the matching GitHub Release instead, e.g.:
+  ```shell
+  gh release upload <tag> config-cli/build/distributions/opensearch-querqy-config-cli-*.{zip,tar}
+  ```
+* Today publishing to Maven (and attaching the `config-cli` release asset) is a manual process, we
+  will automate this soon.
 
 Maven deployments require access to Sonatype. Credentials are provided via env variables:
 ```shell

@@ -2,3 +2,4 @@ rootProject.name = 'opensearch-querqy'
 
 include 'core'
 include 'config-cli'
+include 'rest-api'

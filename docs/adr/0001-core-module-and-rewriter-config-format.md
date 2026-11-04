@@ -31,13 +31,13 @@ branch; a `SearchPipelinePlugin` processor and dictionary support are addressed 
      loading, implementing only `SearchPlugin` (+ `MapperPlugin`, see below) — no
      `ActionPlugin`. Independently installable as its own OpenSearch plugin
      (`querqy.opensearch.QuerqyCorePlugin`), the artifact intended for AWS.
-   - Root module (unchanged plugin name/classname `querqy.opensearch.QuerqyPlugin`):
+   - `rest-api` (unchanged plugin name/classname `querqy.opensearch.QuerqyPlugin`):
      depends on `core`, extends `QuerqyCorePlugin`, adds back `ActionPlugin` (the existing
      REST/transport rewriter-management API). Zero behavior change for existing installs.
    - `config-cli`: a standalone CLI that validates a rewriter config and writes it directly to the
      `.opensearch-querqy` index over HTTP — the AWS-compatible replacement for the REST PUT
      action, since `core` has no REST surface to do this.
-   - Both `core` and the root module use the same plugin `name`, so only one of the two can
+   - Both `core` and `rest-api` use the same plugin `name`, so only one of the two can
      ever be installed on a given cluster at a time.
 
 2. **New rewriter-config index format (mapping version 5):** combine the rewriter's class
