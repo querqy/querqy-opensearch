@@ -24,10 +24,15 @@ import org.opensearch.index.shard.IndexShard;
 import querqy.opensearch.rewriterstore.LoadRewriterConfig;
 import querqy.rewrite.RewriterFactory;
 
-import org.opensearch.lucene.util.SPIClassIterator;
+import org.opensearch.common.SuppressForbidden;
 import org.opensearch.secure_sm.AccessController;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -38,20 +43,41 @@ public abstract class OpenSearchRewriterFactory {
     private static final Set<String> ALLOWED_CLASSES = loadAllowedClasses();
 
     /**
-     * Delegates the actual {@code META-INF/services/<type>} classpath scan to OpenSearch's own {@link
-     * SPIClassIterator} (vendored from Lucene) rather than hand-rolling it - see {@link
-     * ConfigUtils#loadAllowedInstances} for why. (Can't use {@code loadAllowedInstances} itself: this type
-     * doesn't have a parameterless constructor, so a plain {@code ServiceLoader}-based scan - which {@code
-     * SPIClassIterator} also avoids, resolving each class name without initializing it - isn't the issue;
-     * {@code loadAllowedInstances} is keyed by a cache that's unnecessary for this single, eagerly-loaded type.)
+     * See {@link ConfigUtils#loadAllowedInstances} for why this is a hand-rolled scan rather than {@code
+     * java.util.ServiceLoader} or {@code org.opensearch.lucene.util.SPIClassIterator}: this class is loaded
+     * by {@code config-cli} too (via rewriter config validation), which deliberately doesn't carry the full
+     * {@code org.opensearch:opensearch} server jar {@code SPIClassIterator} lives in.
      */
+    @SuppressForbidden(reason = "Reads a classpath SPI registration file, never a real network URL - "
+            + "see the javadoc above for why org.opensearch.lucene.util.SPIClassIterator (which already "
+            + "has this same suppression) can't be used here instead.")
     private static Set<String> loadAllowedClasses() {
+        // We cannot load ServiceLoader for the scan as OpenSearchRewriterFactory doesn't have a parameterless
+        // constructor
+        final String spiFile = "META-INF/services/" + OpenSearchRewriterFactory.class.getName();
         final ClassLoader cl = OpenSearchRewriterFactory.class.getClassLoader();
         final Set<String> allowed = new HashSet<>();
-        final SPIClassIterator<OpenSearchRewriterFactory> it =
-                SPIClassIterator.get(OpenSearchRewriterFactory.class, cl);
-        while (it.hasNext()) {
-            allowed.add(it.next().getName());
+        try {
+            final Enumeration<URL> resources = cl.getResources(spiFile);
+            while (resources.hasMoreElements()) {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(resources.nextElement().openStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        final int commentIdx = line.indexOf('#');
+                        if (commentIdx >= 0) {
+                            line = line.substring(0, commentIdx);
+                        }
+                        line = line.trim();
+                        if (!line.isEmpty()) {
+                            Class.forName(line, false, cl).asSubclass(OpenSearchRewriterFactory.class);
+                            allowed.add(line);
+                        }
+                    }
+                }
+            }
+        } catch (final Exception e) {
+            throw new RuntimeException("Failed to load OpenSearchRewriterFactory service providers", e);
         }
         return Collections.unmodifiableSet(allowed);
     }

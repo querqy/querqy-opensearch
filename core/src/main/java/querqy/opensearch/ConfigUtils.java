@@ -20,10 +20,15 @@ package querqy.opensearch;
 
 import querqy.trie.TrieMap;
 
-import org.opensearch.lucene.util.SPIClassIterator;
+import org.opensearch.common.SuppressForbidden;
 import org.opensearch.secure_sm.AccessController;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -35,23 +40,45 @@ public interface ConfigUtils {
     Map<Class<?>, Set<String>> ALLOWED_INSTANCES_CACHE = new ConcurrentHashMap<>();
 
     /**
-     * Delegates the actual {@code META-INF/services/<type>} classpath scan to OpenSearch's own {@link
-     * SPIClassIterator} (vendored from Lucene) rather than hand-rolling it: it already does exactly this -
-     * find every matching SPI file across the classpath, parse it line by line stripping {@code #} comments,
-     * resolve each class name via {@code Class.forName(name, false, loader)} without initializing it - and
-     * does so with its own {@code @SuppressForbidden}, so this class never needs to call {@code
-     * URL#openStream()} itself at all.
+     * Hand-rolled {@code META-INF/services/<type>} classpath scan rather than {@code
+     * java.util.ServiceLoader} (whose binding targets commonly lack a parameterless constructor) or {@code
+     * org.opensearch.lucene.util.SPIClassIterator}, which does the identical scan but lives in the full
+     * {@code org.opensearch:opensearch} server jar - a {@code compileOnly} dependency of {@code core} that
+     * never propagates to downstream consumers. {@code config-cli} calls into this method (via rewriter
+     * config validation) with only {@code opensearch-core}/{@code opensearch-x-content} on its runtime
+     * classpath, deliberately avoiding the full server jar - referencing {@code SPIClassIterator} here would
+     * throw {@code NoClassDefFoundError} the first time {@code config-cli} touched this class (confirmed:
+     * this is exactly what broke when this method briefly delegated to it).
      */
+    @SuppressForbidden(reason = "Reads a classpath SPI registration file, never a real network URL - "
+            + "see the javadoc above for why org.opensearch.lucene.util.SPIClassIterator (which already "
+            + "has this same suppression) can't be used here instead.")
     static <V> Set<String> loadAllowedInstances(final Class<V> type) {
-        return ALLOWED_INSTANCES_CACHE.computeIfAbsent(type, ignored -> {
-            // Not typeClass (the lambda's own parameter, typed Class<?> by the map's declared key type) -
-            // SPIClassIterator.get(Class<S>, ...) needs S to actually unify with V, which only the enclosing
-            // method's own `type` parameter is typed precisely enough to do.
+        return ALLOWED_INSTANCES_CACHE.computeIfAbsent(type, typeClass -> {
+            final String spiFile = "META-INF/services/" + typeClass.getName();
             final ClassLoader cl = ConfigUtils.class.getClassLoader();
             final Set<String> allowed = new HashSet<>();
-            final SPIClassIterator<V> it = SPIClassIterator.get(type, cl);
-            while (it.hasNext()) {
-                allowed.add(it.next().getName());
+            try {
+                final Enumeration<URL> resources = cl.getResources(spiFile);
+                while (resources.hasMoreElements()) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(resources.nextElement().openStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            final int commentIdx = line.indexOf('#');
+                            if (commentIdx >= 0) {
+                                line = line.substring(0, commentIdx);
+                            }
+                            line = line.trim();
+                            if (!line.isEmpty()) {
+                                Class.forName(line, false, cl).asSubclass(typeClass);
+                                allowed.add(line);
+                            }
+                        }
+                    }
+                }
+            } catch (final Exception e) {
+                throw new RuntimeException("Failed to load service providers for " + typeClass.getName(), e);
             }
             return Collections.unmodifiableSet(allowed);
         });
