@@ -23,18 +23,20 @@ apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'maven-publish'
 apply plugin: 'signing'
 
-base {
-    archivesName = 'querqy-opensearch-core'
-}
-
 // The opensearchplugin{} block below intentionally sets the same plugin `name` as the root project (so the two
-// can't be installed side by side, per design) - but the opensearch.opensearchplugin convention plugin ties the
-// `jar` task's archive name to that same `name`, which would make :core's jar collide (same filename) with root's
-// own jar when root's bundlePlugin copies both into one zip. Force the jar's own archive name back after the
-// convention plugin's own afterEvaluate has run, so the two are never filename-identical.
+// can't be installed side by side, per design) - but the opensearch.opensearchplugin convention plugin ties both
+// the `jar` task's AND the `bundlePlugin` task's archive name to that same `name` (it forces
+// base.archivesName = name in its own afterEvaluate, which runs before - and so would otherwise be overwritten by
+// - any base { archivesName = ... } set directly in this file). Left alone, that would make :core's jar collide
+// with root's own jar inside root's bundlePlugin zip, AND make :core's own installable zip collide (identical
+// filename) with root's. Force both tasks' archive names back after the convention plugin's own afterEvaluate has
+// run, so neither is ever filename-identical to root's.
 afterEvaluate {
     tasks.named('jar') {
-        archiveBaseName.set('querqy-opensearch-core')
+        archiveBaseName.set('opensearch-querqy-core')
+    }
+    tasks.named('bundlePlugin') {
+        archiveBaseName.set('opensearch-querqy-core')
     }
 }
 
@@ -149,7 +151,7 @@ publishing {
             }
 
             groupId = 'org.querqy'
-            artifactId = 'querqy-opensearch-core'
+            artifactId = 'opensearch-querqy-core'
             version = "$version"
 
             from components.java
@@ -224,7 +226,7 @@ tasks.named("signMavenJavaPublication") {
 // <dependency> entry on :core) reads :core's publications before this project's own afterEvaluate chain
 // completes, so a plain `afterEvaluate` here is too early; `gradle.projectsEvaluated` is not.
 gradle.projectsEvaluated {
-    publishing.publications.mavenJava.artifactId = 'querqy-opensearch-core'
+    publishing.publications.mavenJava.artifactId = 'opensearch-querqy-core'
     publishing.publications.nebula.groupId = 'org.querqy'
-    publishing.publications.nebula.artifactId = 'querqy-opensearch-core'
+    publishing.publications.nebula.artifactId = 'opensearch-querqy-core'
 }
