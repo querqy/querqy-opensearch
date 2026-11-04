@@ -54,7 +54,7 @@ import java.util.function.Supplier;
  * The full Querqy plugin: {@link QuerqyCorePlugin} (the {@code querqy} query, rewriters, index-based config) plus
  * the {@code ActionPlugin} REST/transport rewriter-management API (PUT/GET/DELETE rewriter, cluster-wide reload and
  * cache clear). This is the self-managed-cluster artifact; it is not installable on Amazon OpenSearch Service, which
- * doesn't support {@code ActionPlugin} - use {@code querqy-opensearch-core} there instead.
+ * doesn't support {@code ActionPlugin} - use {@code opensearch-querqy-core} there instead.
  */
 public class QuerqyPlugin extends QuerqyCorePlugin implements ActionPlugin {
 
