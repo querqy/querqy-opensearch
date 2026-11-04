@@ -135,7 +135,14 @@ tasks.whenTaskAdded { task ->
 }
 dependencyLicenses.enabled = false
 thirdPartyAudit.enabled = false
-forbiddenApis.ignoreFailures = true
+// forbiddenApisMain stays at its default (fail-on-violation) - it already caught a real bug once
+// (a default-locale String#toUpperCase() that broke under the Turkish locale). Only forbiddenApisTest is
+// lenient: its one violation is the @Test-without-extending-LuceneTestCase rule, and this test suite
+// deliberately uses plain JUnit/OpenSearchSingleNodeTestCase/Mockito instead - not something worth a
+// large, unrelated rewrite to satisfy.
+tasks.named('forbiddenApisTest') {
+    ignoreFailures = true
+}
 testingConventions.enabled = false
 loggerUsageCheck.enabled = false
 

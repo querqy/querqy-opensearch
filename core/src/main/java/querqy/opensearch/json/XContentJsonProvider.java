@@ -18,6 +18,7 @@
 
 package querqy.opensearch.json;
 
+import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
@@ -51,6 +52,9 @@ import java.util.Map;
  * target class via reflection - the binding targets querqy-core passes here (e.g. its NumberUnit rewriter's
  * config POJOs) are package-private, so constructors/setters are made accessible explicitly.</p>
  */
+@SuppressForbidden(reason = "Reflection-based generic POJO binding (see class javadoc): reads a POJO's own "
+        + "declared fields to serialize it, and makes a binding target's package-private constructor/setters "
+        + "accessible to deserialize into it - there's no XContent-native way to do either.")
 public class XContentJsonProvider implements JsonProvider {
 
     public static final JsonProvider INSTANCE = new XContentJsonProvider();

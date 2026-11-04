@@ -24,6 +24,7 @@ import org.opensearch.index.shard.IndexShard;
 import querqy.opensearch.rewriterstore.LoadRewriterConfig;
 import querqy.rewrite.RewriterFactory;
 
+import org.opensearch.common.SuppressForbidden;
 import org.opensearch.secure_sm.AccessController;
 
 import java.io.BufferedReader;
@@ -41,6 +42,15 @@ public abstract class OpenSearchRewriterFactory {
 
     private static final Set<String> ALLOWED_CLASSES = loadAllowedClasses();
 
+    /**
+     * See {@link ConfigUtils#loadAllowedInstances} for why this is a hand-rolled scan rather than {@code
+     * java.util.ServiceLoader} or {@code org.opensearch.lucene.util.SPIClassIterator}: this class is loaded
+     * by {@code config-cli} too (via rewriter config validation), which deliberately doesn't carry the full
+     * {@code org.opensearch:opensearch} server jar {@code SPIClassIterator} lives in.
+     */
+    @SuppressForbidden(reason = "Reads a classpath SPI registration file, never a real network URL - "
+            + "see the javadoc above for why org.opensearch.lucene.util.SPIClassIterator (which already "
+            + "has this same suppression) can't be used here instead.")
     private static Set<String> loadAllowedClasses() {
         // We cannot load ServiceLoader for the scan as OpenSearchRewriterFactory doesn't have a parameterless
         // constructor

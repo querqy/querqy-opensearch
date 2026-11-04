@@ -20,6 +20,7 @@ package querqy.opensearch;
 
 import querqy.trie.TrieMap;
 
+import org.opensearch.common.SuppressForbidden;
 import org.opensearch.secure_sm.AccessController;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -38,6 +39,20 @@ public interface ConfigUtils {
 
     Map<Class<?>, Set<String>> ALLOWED_INSTANCES_CACHE = new ConcurrentHashMap<>();
 
+    /**
+     * Hand-rolled {@code META-INF/services/<type>} classpath scan rather than {@code
+     * java.util.ServiceLoader} (whose binding targets commonly lack a parameterless constructor) or {@code
+     * org.opensearch.lucene.util.SPIClassIterator}, which does the identical scan but lives in the full
+     * {@code org.opensearch:opensearch} server jar - a {@code compileOnly} dependency of {@code core} that
+     * never propagates to downstream consumers. {@code config-cli} calls into this method (via rewriter
+     * config validation) with only {@code opensearch-core}/{@code opensearch-x-content} on its runtime
+     * classpath, deliberately avoiding the full server jar - referencing {@code SPIClassIterator} here would
+     * throw {@code NoClassDefFoundError} the first time {@code config-cli} touched this class (confirmed:
+     * this is exactly what broke when this method briefly delegated to it).
+     */
+    @SuppressForbidden(reason = "Reads a classpath SPI registration file, never a real network URL - "
+            + "see the javadoc above for why org.opensearch.lucene.util.SPIClassIterator (which already "
+            + "has this same suppression) can't be used here instead.")
     static <V> Set<String> loadAllowedInstances(final Class<V> type) {
         return ALLOWED_INSTANCES_CACHE.computeIfAbsent(type, typeClass -> {
             final String spiFile = "META-INF/services/" + typeClass.getName();
