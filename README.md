@@ -14,7 +14,7 @@ integrating custom rewriting logic.
 This repository builds two plugin artifacts from the same code, sharing the same plugin name (so only one of them can
 ever be installed on a cluster at a time):
 
-* **`opensearch-querqy`** (module `.` / root) - the full plugin: the `querqy` query, the rewriters, *and* the REST API
+* **`opensearch-querqy`** (module `rest-api`) - the full plugin: the `querqy` query, the rewriters, *and* the REST API
   for managing rewriters (`PUT`/`GET`/`DELETE /_plugins/_querqy/rewriter/{id}`). This is what you want on a
   self-managed OpenSearch cluster, where you can install plugins using `ActionPlugin` (custom REST endpoints).
 * **`opensearch-querqy-core`** (module `core`) - the `querqy` query and the rewriters, but **no REST API**. Amazon
@@ -34,8 +34,8 @@ unchanged.
 
 ## Installation with local build
 * First, you need to build the project by running `./gradlew build`.
-* The full plugin's zip is built at `build/distributions/opensearch-querqy-<version>.zip`; the core (AWS-compatible)
-  plugin's zip is built separately at `core/build/distributions/opensearch-querqy-core-<version>.zip`.
+* The full plugin's zip is built at `rest-api/build/distributions/opensearch-querqy-<version>.zip`; the core
+  (AWS-compatible) plugin's zip is built separately at `core/build/distributions/opensearch-querqy-core-<version>.zip`.
 * Querqy can be installed like all other OpenSearch plugins, e.g. using 
 
   `bin/opensearch-plugin install file:///path/to/file/opensearch-querqy.zip`
