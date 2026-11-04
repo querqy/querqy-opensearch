@@ -20,11 +20,11 @@ apply plugin: 'java'
 apply plugin: 'application'
 
 base {
-    archivesName = 'querqy-opensearch-config-cli'
+    archivesName = 'opensearch-querqy-config-cli'
 }
 
 application {
-    applicationName = 'querqy-opensearch-config-cli'
+    applicationName = 'opensearch-querqy-config-cli'
     mainClass = 'querqy.opensearch.configcli.RewriterConfigTool'
 }
 
