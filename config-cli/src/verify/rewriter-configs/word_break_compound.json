@@ -1,0 +1,9 @@
+{
+  "class": "querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory",
+  "config": {
+    "dictionaryId": "smoke-test-dictionary",
+    "decompound": {
+      "verifyCollation": true
+    }
+  }
+}
