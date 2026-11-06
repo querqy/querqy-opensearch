@@ -1,0 +1,6 @@
+{
+  "class": "querqy.opensearch.rewriter.NumberUnitRewriterFactory",
+  "config": {
+    "config": "{\"numberUnitDefinitions\": [{\"units\": [{\"term\": \"cm\"}], \"fields\": [{\"fieldName\": \"weight\"}]}]}"
+  }
+}

@@ -18,7 +18,6 @@
 
 package querqy.opensearch.configcli;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.hc.client5.http.auth.AuthScope;
 import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
 import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
@@ -49,7 +48,6 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -135,8 +133,6 @@ import java.util.Map;
  */
 public final class RewriterConfigTool {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     public static void main(final String[] args) {
         try {
             run(CliArgs.parse(args));
@@ -198,10 +194,9 @@ public final class RewriterConfigTool {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static void runPut(final CliArgs args) throws IOException {
 
-        final Map<String, Object> content = MAPPER.readValue(new File(args.configFile), Map.class);
+        final Map<String, Object> content = Json.parseMap(Path.of(args.configFile));
 
         if (args.revision != null) {
             content.put(RewriterConfigMapping.PROP_REVISION, args.revision);
