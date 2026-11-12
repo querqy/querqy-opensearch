@@ -197,4 +197,43 @@ public class TermCorpusConfigMappingTest extends OpenSearchTestCase {
 
         expectThrows(IOException.class, () -> TermCorpusConfigMapping.buildTermCorpus(corpus));
     }
+    public void testBuildVerifiedTermCorpusAcceptsAWrittenDictionary() throws Exception {
+
+        final byte[] data = "haus\t10\nboot\t5\n".getBytes(StandardCharsets.UTF_8);
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d",
+                TermCorpusConfigMapping.FORMAT_TSV_DF, true, 1000, null, data, System.currentTimeMillis());
+
+        assertNotNull(TermCorpusConfigMapping.buildVerifiedTermCorpus(TermCorpusConfigMapping.getCorpus("d", source)));
+    }
+
+    /**
+     * The index doesn't validate a term_corpus document at write time, so {@code buildVerifiedTermCorpus} (used by
+     * {@code DictionaryCorpusLoader} and the config CLI) is what must catch a checksum that doesn't match the data.
+     */
+    public void testBuildVerifiedTermCorpusRejectsChecksumMismatch() throws Exception {
+
+        final byte[] data = "haus\t10\nboot\t5\n".getBytes(StandardCharsets.UTF_8);
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d",
+                TermCorpusConfigMapping.FORMAT_TSV_DF, false, 1000, null, data, System.currentTimeMillis());
+        final Map<String, Object> corpus = new HashMap<>(TermCorpusConfigMapping.getCorpus("d", source));
+        corpus.put(TermCorpusConfigMapping.FIELD_CHECKSUM, TermCorpusConfigMapping.computeChecksum(
+                "something else\t1\n".getBytes(StandardCharsets.UTF_8)));
+
+        final IOException e = expectThrows(IOException.class,
+                () -> TermCorpusConfigMapping.buildVerifiedTermCorpus(corpus));
+        assertTrue(e.getMessage(), e.getMessage().contains("does not match"));
+    }
+
+    public void testBuildVerifiedTermCorpusRejectsMissingChecksum() throws Exception {
+
+        final Map<String, Object> corpus = new HashMap<>();
+        corpus.put(TermCorpusConfigMapping.FIELD_FORMAT, TermCorpusConfigMapping.FORMAT_TSV_DF);
+        corpus.put(TermCorpusConfigMapping.FIELD_GZIP, false);
+        corpus.put(TermCorpusConfigMapping.FIELD_DATA,
+                java.util.Base64.getEncoder().encodeToString("haus\t10\n".getBytes(StandardCharsets.UTF_8)));
+
+        final IOException e = expectThrows(IOException.class,
+                () -> TermCorpusConfigMapping.buildVerifiedTermCorpus(corpus));
+        assertTrue(e.getMessage(), e.getMessage().contains(TermCorpusConfigMapping.FIELD_CHECKSUM));
+    }
 }

@@ -119,7 +119,10 @@ java -jar opensearch-querqy-config-cli-<version>.jar put-dictionary --url https:
 
 `--num-docs` is optional - the total document count the frequencies were computed over, used to normalize
 suggestion scoring; omitted, it falls back to an estimate. `delete-dictionary` refuses to delete a dictionary
-still referenced by any stored `word_break_compound` rewriter's `dictionaryId`, unless `--force`.
+still referenced by any stored `word_break_compound` rewriter's `dictionaryId`, unless `--force`. The CLI parses
+and validates the dictionary file locally before uploading it - the index itself doesn't validate a dictionary
+document at write time, so a hand-written one is only checked (format, content, and that its `checksum` matches its
+`data`) when the plugin first loads it.
 
 Reference it from the rewriter config:
 
@@ -188,10 +191,11 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   **`delete` note:** unlike the REST API's `DELETE`, this cannot clear the deleted rewriter from every node's
   in-memory cache (that's an `ActionPlugin`-only transport action, unavailable over plain HTTP) - each node notices
   the deletion on its own within the same freshness window described below.
-* **A raw document write**, e.g. `PUT .opensearch-querqy/_doc/common_rules` with a hand-built document - the index
-  mapping validates the configuration at write time and rejects an invalid one, but building the document body
-  correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand. See the full worked
-  example below.
+* **A raw document write**, e.g. `PUT .opensearch-querqy/_doc/common_rules` with a hand-built document. The index does
+  **not** validate the configuration at write time - an invalid one is stored as-is and only fails once a query uses
+  the rewriter - so validate it first (e.g. `put --validate-only` with the CLI tool above). Building the document
+  body correctly (the combined `class`+`config` field) is also easier via the CLI tool than by hand. See the full
+  worked example below.
 
 **Freshness note**: without the REST API's push-based reload, a config change becomes visible on each node within
 `querqy.caches.rewriter.refresh_after_write` (default 30 seconds) of being written, not instantly - there is no
@@ -250,8 +254,8 @@ API examples elsewhere in this README). There is no separate "name" field.
 
 **The `.opensearch-querqy` index must already exist with the correct mapping before you do a raw write.** If the
 index doesn't exist yet, OpenSearch creates it automatically on the first write - but with a *dynamically guessed*
-mapping (`config_v_005` would become a plain `text`/`keyword` field), not the mapping that enables write-time
-validation. An invalid configuration would then be silently accepted instead of rejected. The CLI tool creates the
+mapping (`config_v_005` would become an analyzed `text` field with a `keyword` sub-field), not the bundled mapping,
+which keeps `config_v_005` (and a dictionary's `corpus`) in `_source` only, without indexing it. The CLI tool creates the
 index with the correct mapping (and the settings below) automatically; to create it by hand instead, `PUT` both the
 mapping bundled in the `core` module (`core/src/main/resources/querqy-mapping.json`) *and* explicit settings onto the
 index first. The file holds only the mapping (`{"properties": ...}`), while the create-index API expects it under a
@@ -294,17 +298,20 @@ curl -X PUT "https://<host>:9200/.opensearch-querqy/_doc/common_rules?refresh=tr
 A few things worth noting about this document:
 * `type` and `version` are always `"rewriter"` and `5` (the current rewriter-config mapping version) respectively.
 * `config_v_005` holds the rewriter's `class` and `config` combined into **one JSON string** (not a nested JSON
-  object) - this is what the write-time validator reads to resolve and validate the rewriter. The rules text itself
+  object) - this is what the plugin reads to resolve and configure the rewriter. The rules text itself
   uses a literal newline between the match and the instruction (`laptop =>` then `SYNONYM: macbook` on the next
   line), which is why it appears as `\\n` here: once for the inner JSON string, once more because that whole inner
   JSON document is itself embedded as a string value in the outer document.
 * `refresh=true` makes the write visible to search immediately, which is convenient when trying this out manually;
   omit it in a script that writes many rewriters back to back.
 
-If `config_v_005` doesn't parse as `{"class": ..., "config": {...}}`, if `class` isn't an allow-listed rewriter
-class, or if `validateConfiguration` rejects the `config`, the `PUT` above fails with a mapping/parsing error
-instead of silently storing a broken rewriter - that only holds once the index has the correct mapping, as described
-above.
+The index does not check this document: if `config_v_005` doesn't parse as `{"class": ..., "config": {...}}`, if
+`class` isn't an allow-listed rewriter class, or if the `config` is invalid, the `PUT` above still succeeds, and the
+error only shows up once a query uses the rewriter. Validate the configuration before writing it - the CLI tool's
+`put --validate-only` runs the same check as the REST API, without touching the cluster. (The plugin deliberately
+doesn't register a custom field type for write-time validation: an index using a plugin-provided field type can't
+be opened on a cluster without the plugin, which breaks e.g. uninstalling or updating the plugin on Amazon
+OpenSearch Service.)
 
 ## Additional resources
 A comprehensive documentation can be found here: [Querqy documentation](https://docs.querqy.org/querqy/index.html)

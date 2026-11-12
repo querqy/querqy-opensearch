@@ -159,63 +159,47 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
     }
 
     /**
-     * The {@code querqy_term_corpus} field mapper (registered via {@code QuerqyCorePlugin.getMappers()|}) validates
-     * a {@code term_corpus} document at write time by actually building the corpus it describes - a malformed TSV
-     * is rejected here, before {@link DictionaryCorpusLoader} ever sees it (see {@code TermCorpusConfigMappingTest}
-     * for coverage of {@code buildTermCorpus}'s own error cases at the unit level).
+     * The index doesn't validate a {@code term_corpus} document at write time (no plugin-provided field type, see
+     * querqy-opensearch#209), so a malformed TSV is stored as-is and rejected by {@link DictionaryCorpusLoader} when
+     * it builds the dictionary (see {@code TermCorpusConfigMappingTest} for coverage of {@code buildTermCorpus}'s own
+     * error cases at the unit level).
      */
-    public void testWriteTimeValidationRejectsMalformedTsv() {
+    public void testLoadRejectsMalformedTsv() throws Exception {
 
         ensureRewriterIndexExists();
+        writeTermCorpus("d", "no-tab-here", false);
 
-        final Exception e = expectThrows(Exception.class, () -> writeTermCorpus("d", "no-tab-here", false));
-        boolean foundValidationMessage = false;
-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause.getMessage() != null && cause.getMessage().contains("term corpus")) {
-                foundValidationMessage = true;
-                break;
-            }
-        }
-        assertTrue("Expected a 'term corpus' validation message somewhere in the cause chain of: " + e,
-                foundValidationMessage);
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
+        final Exception e = expectThrows(Exception.class, () -> loader.load("d"));
+        assertTrue("Expected a 'term corpus' message in: " + e, e.getMessage().contains("term corpus"));
     }
 
     /**
-     * Same write-time validation as {@link #testWriteTimeValidationRejectsMalformedTsv()}, but for a {@code
-     * tsv_df_cooc} dictionary with a bloom-filter hex value whose length isn't a multiple of 16 (see {@code
-     * querqy.BloomFilter.fromHex}) - caught because validation builds a real {@code TsvDfCoocTermCorpus} from the
-     * whole file, not by a separate length check (see also {@code TermCorpusConfigMappingTest
-     * #testTsvDfCoocRejectsBloomHexWithInvalidLength} for the same check at the unit level).
+     * Same as {@link #testLoadRejectsMalformedTsv()}, but for a {@code tsv_df_cooc} dictionary with a bloom-filter
+     * hex value whose length isn't a multiple of 16 (see {@code querqy.BloomFilter.fromHex}) - caught because the
+     * loader builds a real {@code TsvDfCoocTermCorpus} from the whole file, not by a separate length check (see also
+     * {@code TermCorpusConfigMappingTest#testTsvDfCoocRejectsBloomHexWithInvalidLength}).
      */
-    public void testWriteTimeValidationRejectsInvalidBloomHexLength() throws Exception {
+    public void testLoadRejectsInvalidBloomHexLength() throws Exception {
 
         ensureRewriterIndexExists();
 
         final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource("d",
                 TermCorpusConfigMapping.FORMAT_TSV_DF_COOC, false, null, 2,
                 "a\t1\t00\n".getBytes(StandardCharsets.UTF_8), System.currentTimeMillis());
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId("d")).setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).get();
 
-        final Exception e = expectThrows(Exception.class, () -> client().prepareIndex(QUERQY_INDEX_NAME)
-                .setId(TermCorpusConfigMapping.docId("d")).setSource(source)
-                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).get());
-
-        boolean foundValidationMessage = false;
-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause.getMessage() != null && cause.getMessage().contains("multiple of 16")) {
-                foundValidationMessage = true;
-                break;
-            }
-        }
-        assertTrue("Expected a bloom-hex-length validation message somewhere in the cause chain of: " + e,
-                foundValidationMessage);
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
+        final Exception e = expectThrows(Exception.class, () -> loader.load("d"));
+        assertTrue("Expected a bloom-hex-length message in the cause chain of: " + e,
+                causeChainContains(e, "multiple of 16"));
     }
 
     /**
-     * {@code QuerqyTermCorpusFieldMapper} rejects a write with no {@code checksum} field, the same way it rejects
-     * any other malformed content - confirming the mapper, not just {@link TermCorpusConfigMapping#verifyChecksum},
-     * is what actually enforces this.
+     * A document without a {@code checksum} field is rejected on load.
      */
-    public void testWriteTimeValidationRejectsMissingChecksum() {
+    public void testLoadRejectsMissingChecksum() throws Exception {
 
         ensureRewriterIndexExists();
 
@@ -224,24 +208,51 @@ public class DictionaryCorpusLoaderTest extends OpenSearchSingleNodeTestCase {
         final String corpusJson = "{\"format\":\"" + TermCorpusConfigMapping.FORMAT_TSV_DF + "\",\"gzip\":false,"
                 + "\"data\":\"" + java.util.Base64.getEncoder().encodeToString(
                         "haus\t10\n".getBytes(StandardCharsets.UTF_8)) + "\"}";
+        writeRawTermCorpus("d", corpusJson);
 
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
+        final Exception e = expectThrows(Exception.class, () -> loader.load("d"));
+        assertTrue("Expected a checksum message in the cause chain of: " + e, causeChainContains(e, "checksum"));
+    }
+
+    /**
+     * A document whose {@code checksum} doesn't match its {@code data} - which the index no longer rejects at write
+     * time - is rejected when the loader builds it, rather than being cached under a checksum that doesn't
+     * describe its content.
+     */
+    public void testLoadRejectsChecksumMismatch() throws Exception {
+
+        ensureRewriterIndexExists();
+
+        final String corpusJson = "{\"format\":\"" + TermCorpusConfigMapping.FORMAT_TSV_DF + "\",\"gzip\":false,"
+                + "\"checksum\":\"" + TermCorpusConfigMapping.computeChecksum(
+                        "other\t1\n".getBytes(StandardCharsets.UTF_8)) + "\","
+                + "\"data\":\"" + java.util.Base64.getEncoder().encodeToString(
+                        "haus\t10\n".getBytes(StandardCharsets.UTF_8)) + "\"}";
+        writeRawTermCorpus("d", corpusJson);
+
+        final DictionaryCorpusLoader loader = newDictionaryCorpusLoader();
+        final Exception e = expectThrows(Exception.class, () -> loader.load("d"));
+        assertTrue("Expected a checksum-mismatch message in the cause chain of: " + e,
+                causeChainContains(e, "does not match"));
+    }
+
+    private void writeRawTermCorpus(final String id, final String corpusJson) {
         final Map<String, Object> source = new HashMap<>();
         source.put(TermCorpusConfigMapping.PROP_TYPE, TermCorpusConfigMapping.TYPE_VALUE);
         source.put(TermCorpusConfigMapping.PROP_VERSION, TermCorpusConfigMapping.CURRENT_MAPPING_VERSION);
-        source.put(TermCorpusConfigMapping.PROP_NAME, "d");
+        source.put(TermCorpusConfigMapping.PROP_NAME, id);
         source.put(TermCorpusConfigMapping.PROP_CORPUS, corpusJson);
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(TermCorpusConfigMapping.docId(id)).setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).get();
+    }
 
-        final Exception e = expectThrows(Exception.class, () -> client().prepareIndex(QUERQY_INDEX_NAME)
-                .setId("d").setSource(source).setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE).get());
-
-        boolean foundValidationMessage = false;
+    private static boolean causeChainContains(final Throwable e, final String text) {
         for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause.getMessage() != null && cause.getMessage().contains("checksum")) {
-                foundValidationMessage = true;
-                break;
+            if (cause.getMessage() != null && cause.getMessage().contains(text)) {
+                return true;
             }
         }
-        assertTrue("Expected a checksum validation message somewhere in the cause chain of: " + e,
-                foundValidationMessage);
+        return false;
     }
 }

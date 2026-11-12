@@ -137,7 +137,7 @@ public final class RewriterConfigTool {
         try {
             run(CliArgs.parse(args));
         } catch (final ValidationFailedException e) {
-            System.err.println("Invalid rewriter configuration:");
+            System.err.println("Invalid " + e.subject + ":");
             for (final String error : e.errors) {
                 System.err.println("  - " + error);
             }
@@ -210,6 +210,11 @@ public final class RewriterConfigTool {
         }
 
         final String dictionaryId = findWordBreakDictionaryReference(content);
+        // built (and validated) before connecting, so an invalid --dictionary-file fails without touching the index
+        final Map<String, Object> dictionarySource = (dictionaryId != null && args.dictionaryFile != null)
+                ? buildDictionarySource(dictionaryId, args.dictionaryFile, args.dictionaryFormat, args.hashFunctions,
+                        args.numDocs)
+                : null;
         final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
 
         final HttpHost host = parseHost(args);
@@ -218,7 +223,7 @@ public final class RewriterConfigTool {
             indexManager.ensureIndexExists(args.replicas);
 
             if (dictionaryId != null) {
-                ensureDictionaryExists(indexManager, dictionaryId, args);
+                ensureDictionaryExists(indexManager, dictionaryId, dictionarySource, args);
             }
 
             indexManager.putRewriter(args.id, source);
@@ -248,20 +253,20 @@ public final class RewriterConfigTool {
 
     /**
      * For a {@code word_break_compound} rewriter configured with a {@code dictionaryId} reference: if {@code
-     * --dictionary-file} was given, writes it as that dictionary's {@code term_corpus} document (same as {@code
+     * --dictionary-file} was given ({@code dictionarySource} is its already-validated document), writes it as that dictionary's {@code term_corpus} document (same as {@code
      * put-dictionary}); otherwise checks the referenced document already exists, failing clearly - before the
      * rewriter config is saved - if it doesn't, rather than letting the rewriter save successfully only to fail
      * later, confusingly, the first time a live query tries to use it.
      */
     private static void ensureDictionaryExists(final HttpQuerqyIndexManager indexManager,
-                                               final String dictionaryId, final CliArgs args) throws IOException {
+                                               final String dictionaryId,
+                                               final Map<String, Object> dictionarySource,
+                                               final CliArgs args) throws IOException {
 
         final String docId = TermCorpusConfigMapping.docId(dictionaryId);
 
-        if (args.dictionaryFile != null) {
-            final Map<String, Object> source = buildDictionarySource(dictionaryId, args.dictionaryFile,
-                    args.dictionaryFormat, args.hashFunctions, args.numDocs);
-            indexManager.putDictionary(docId, source);
+        if (dictionarySource != null) {
+            indexManager.putDictionary(docId, dictionarySource);
             System.out.println("Saved dictionary '" + dictionaryId + "'.");
             return;
         }
@@ -296,12 +301,38 @@ public final class RewriterConfigTool {
         printFreshnessNote();
     }
 
-    private static Map<String, Object> buildDictionarySource(final String id, final String file, final String format,
-                                                              final Integer hashFunctions, final Integer numDocs)
+    /**
+     * Builds the {@code term_corpus} document for {@code file} and validates it locally (see {@link
+     * #validateDictionarySource}) - the index doesn't validate a dictionary at write time, so this is the check that
+     * keeps a malformed dictionary out of it.
+     *
+     * @throws ValidationFailedException if the dictionary is invalid
+     */
+    static Map<String, Object> buildDictionarySource(final String id, final String file, final String format,
+                                                     final Integer hashFunctions, final Integer numDocs)
             throws IOException {
         final byte[] tsvBytes = Files.readAllBytes(Path.of(file));
-        return TermCorpusConfigMapping.toLuceneSource(id, format, true, numDocs, hashFunctions, tsvBytes,
-                System.currentTimeMillis());
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id, format, true, numDocs,
+                hashFunctions, tsvBytes, System.currentTimeMillis());
+        validateDictionarySource(id, source);
+        return source;
+    }
+
+    /**
+     * Local, no-network validation of a {@code term_corpus} document: decodes it, verifies its checksum and builds
+     * the {@code TermCorpus} it describes - the same {@link TermCorpusConfigMapping#buildVerifiedTermCorpus} check
+     * {@code DictionaryCorpusLoader} runs when it loads the dictionary.
+     *
+     * @throws ValidationFailedException if the dictionary is invalid
+     */
+    static void validateDictionarySource(final String id, final Map<String, Object> source) {
+        try {
+            TermCorpusConfigMapping.buildVerifiedTermCorpus(
+                    TermCorpusConfigMapping.getCorpus(TermCorpusConfigMapping.docId(id), source));
+        } catch (final Exception e) {
+            throw new ValidationFailedException("dictionary '" + id + "'",
+                    Collections.singletonList(String.valueOf(e.getMessage())));
+        }
     }
 
     private static void runGet(final CliArgs args) throws IOException {
@@ -422,8 +453,9 @@ public final class RewriterConfigTool {
     }
 
     /**
-     * Local, no-network validation: the same check {@code PutRewriterRequest.validate()} and the write-time field
-     * mapper both run - class allow-list plus {@code validateConfiguration}.
+     * Local, no-network validation: the same check {@code PutRewriterRequest.validate()} runs for the REST API -
+     * class allow-list plus {@code validateConfiguration}. The index itself doesn't validate anything at write
+     * time, so this is the only check a config gets on an install without the REST API.
      */
     @SuppressWarnings("unchecked")
     static void validate(final String rewriterId, final Map<String, Object> content) {
@@ -531,10 +563,16 @@ public final class RewriterConfigTool {
     }
 
     static final class ValidationFailedException extends RuntimeException {
+        final String subject;
         final List<String> errors;
 
         ValidationFailedException(final List<String> errors) {
-            super("Invalid rewriter configuration: " + errors);
+            this("rewriter configuration", errors);
+        }
+
+        ValidationFailedException(final String subject, final List<String> errors) {
+            super("Invalid " + subject + ": " + errors);
+            this.subject = subject;
             this.errors = errors;
         }
     }

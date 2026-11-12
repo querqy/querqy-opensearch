@@ -69,9 +69,9 @@ public abstract class RewriterConfigMapping {
     /**
      * Mapping version 5: class and config are combined into one canonical-JSON field
      * ({@code config_v_005}, holding {@code {"class": ..., "config": {...}}}) instead of
-     * separate {@code class} and {@code config_v_003} fields. This lets a write-time
-     * validator (a custom field mapper, see {@code QuerqyIndexManager}) see class and config
-     * together. See the class and config of a document using this mapping must always be
+     * separate {@code class} and {@code config_v_003} fields. The field is mapped as a disabled
+     * ({@code "enabled": false}) object, i.e. it lives in {@code _source} only and OpenSearch
+     * never parses or indexes it. The class and config of a document using this mapping must always be
      * read through {@link #rejoinStoredString(Map, String)} first, since the stored value may
      * have been split across multiple array elements by {@link #stringToSourceValue}.
      */
@@ -91,9 +91,10 @@ public abstract class RewriterConfigMapping {
          * {@inheritDoc}
          *
          * @return the class name, or null if {@code config_v_005} is absent from {@code source} entirely, or present
-         * but without a {@code "class"} entry - the write-time field mapper rejects a new document in either state,
-         * so this is only reachable for a document written before that mapper existed, or written by some other
-         * means that bypassed it (e.g. bulk indexing, reindexing, or restoring a snapshot).
+         * but without a {@code "class"} entry - the REST API and the {@code config-cli} tool never write a document
+         * in either state, but the index itself doesn't validate anything at write time, so this is reachable for a
+         * document written by some other means (e.g. a raw {@code PUT}, bulk indexing, reindexing, or restoring a
+         * snapshot).
          */
         @Override
         public String getRewriterClassName(final String rewriterId, final Map<String, Object> source) {
@@ -248,8 +249,8 @@ public abstract class RewriterConfigMapping {
             source.put(PROP_REVISION, revision.toString());
         }
 
-        // Class and config are combined into a single canonical-JSON field so that a write-time validator can see
-        // both together. We store it in canonical form so that the config hash can be derived from the stored value
+        // Class and config are combined into a single canonical-JSON field (so that a document is self-contained
+        // and both can be validated together). We store it in canonical form so that the config hash can be derived from the stored value
         // without parsing it again and so that it doesn't depend on map iteration order.
         final Map<String, Object> combined = new HashMap<>(2);
         combined.put("class", putRequestContent.get("class"));
@@ -260,9 +261,9 @@ public abstract class RewriterConfigMapping {
         final String jsonString = toCanonicalJsonString(combined);
         // Older mapping versions stored this as a real (index:false, doc_values:false) Lucene keyword field, which
         // still enforced Lucene's 32766-byte term-length limit - hence stringToSourceValue(), used to split such
-        // values (see its javadoc). The config_v_005 field (CURRENT) uses a custom field type that never creates a
-        // Lucene field at all (validated at write time, otherwise _source-only), so that particular limit no longer
-        // applies and the value is stored as a single string (ordinary request-size limits still apply, of course).
+        // values (see its javadoc). The config_v_005 field (CURRENT) is mapped as a disabled object
+        // ("enabled": false), which never creates a Lucene field at all (_source-only), so that particular limit
+        // no longer applies and the value is stored as a single string (ordinary request-size limits still apply, of course).
         // Reading still supports an already-split value (for documents written by an older version of this code, or
         // by V3_MAPPING/V4_MAPPING), see rejoinStoredString().
         source.put(CURRENT.getConfigStringProperty(), jsonString);
