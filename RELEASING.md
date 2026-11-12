@@ -72,12 +72,17 @@ This document chooses the best of both worlds and defines a way to ensure the co
   extra to wire up to release them together.
 * The `config-cli` module (the AWS-compatible CLI for managing rewriter configs/dictionaries without
   the REST API) is **not** published to Maven Central - it's a standalone application, not a library
-  meant to be depended on, so its natural distribution channel is its own build output
-  (`config-cli/build/distributions/opensearch-querqy-config-cli-<version>.{zip,tar}`), attached as an
-  asset to the matching GitHub Release instead, e.g.:
+  meant to be depended on, so its natural distribution channel is its own build output, attached as an
+  asset to the matching GitHub Release instead. It is shipped as one self-contained ("fat") jar, run with
+  `java -jar` (no zip/tar distribution):
   ```shell
-  gh release upload <tag> config-cli/build/distributions/opensearch-querqy-config-cli-*.{zip,tar}
+  ./gradlew :config-cli:check   # builds the jar, then verifyShadowJar checks it and smoke-tests `java -jar`
+  gh release upload <tag> config-cli/build/libs/opensearch-querqy-config-cli-<version>.jar
   ```
+  Don't upload the `*-thin.jar` next to it - that one only contains the module's own classes. If a new dependency
+  makes `verifyShadowJar` fail (e.g. "duplicate zip entry" or "lost providers"), fix the merge in
+  `config-cli/build.gradle` (`shadowJar { ... }`) rather than weakening the check: a silently dropped service file
+  only breaks the one code path that needs it.
 * Today publishing to Maven (and attaching the `config-cli` release asset) is a manual process, we
   will automate this soon.
 

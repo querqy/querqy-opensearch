@@ -112,7 +112,7 @@ Upload it with the CLI (`put-dictionary`, or `put --dictionary-file` to upload t
 config together in one command):
 
 ```shell
-bin/opensearch-querqy-config-cli put-dictionary --url https://<host>:9200 --dictionary-id dutch-compounds \
+java -jar opensearch-querqy-config-cli-<version>.jar put-dictionary --url https://<host>:9200 --dictionary-id dutch-compounds \
     --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] \
     [--num-docs <n>] [--username ... --password ...]
 ```
@@ -142,19 +142,20 @@ version addressable means saving it under a different id and repointing the rewr
 On an install of `opensearch-querqy-core` (no `ActionPlugin`, no REST API), a rewriter configuration is just a
 document in the `.opensearch-querqy` index, and there are two ways to write it:
 
-* **The `opensearch-querqy-config-cli` CLI** (module `config-cli`, built at
-  `config-cli/build/distributions/opensearch-querqy-config-cli-<version>.zip` - unzip it and run
-  `bin/opensearch-querqy-config-cli`, or run it directly from a checkout via
-  `./gradlew config-cli:run --args="..."`). It mirrors the REST API's
+* **The `opensearch-querqy-config-cli` CLI** (module `config-cli`). It is a single, self-contained jar (needs Java
+  21 or later): download `opensearch-querqy-config-cli-<version>.jar` from the GitHub release, or build it with
+  `./gradlew config-cli:shadowJar` (written to `config-cli/build/libs/`), and run it with `java -jar` as shown
+  below. From a checkout you can also run it via `./gradlew config-cli:run --args="..."`. JVM options (heap, trust
+  store, proxy, ...) go in front of `-jar`, e.g. `java -Djavax.net.ssl.trustStore=... -jar ...`. It mirrors the REST API's
   `PUT`/`GET`/`DELETE` rewriter actions (plus listing) as four subcommands - `put`, `get`, `list`, `delete` - each
   taking `--url` and, except for `list`, `--id`:
 
   ```shell
-  bin/opensearch-querqy-config-cli put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
+  java -jar opensearch-querqy-config-cli-<version>.jar put --url https://<host>:9200 --id common_rules --config-file ./common_rules.json \
       [--revision r42] [--username admin --password '***'] [--insecure] [--validate-only]
-  bin/opensearch-querqy-config-cli get --url https://<host>:9200 --id common_rules [--username ... --password ...]
-  bin/opensearch-querqy-config-cli list --url https://<host>:9200 [--username ... --password ...]
-  bin/opensearch-querqy-config-cli delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  java -jar opensearch-querqy-config-cli-<version>.jar get --url https://<host>:9200 --id common_rules [--username ... --password ...]
+  java -jar opensearch-querqy-config-cli-<version>.jar list --url https://<host>:9200 [--username ... --password ...]
+  java -jar opensearch-querqy-config-cli-<version>.jar delete --url https://<host>:9200 --id common_rules [--username ... --password ...]
   ```
 
   `put` validates the configuration locally (the same checks the REST API applies) before writing it, and creates or
@@ -178,7 +179,7 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   it to `aoss` for OpenSearch Serverless, which only supports IAM auth:
 
   ```shell
-  bin/opensearch-querqy-config-cli list --url https://<domain-endpoint> --sigv4 \
+  java -jar opensearch-querqy-config-cli-<version>.jar list --url https://<domain-endpoint> --sigv4 \
       [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
   ```
 

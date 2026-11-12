@@ -18,7 +18,6 @@
 
 package querqy.opensearch.configcli;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import querqy.opensearch.rewriterstore.RewriterConfigMapping;
 
@@ -30,14 +29,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@code RewriterConfigTool} sends the document body built by {@code RewriterConfigMapping.toLuceneSource(...)} to
- * the cluster as plain JSON (via Jackson, see {@code HttpQuerqyIndexManager.putRewriter}) and has no special-case
+ * the cluster as plain JSON (via {@link Json}, see {@code HttpQuerqyIndexManager.putRewriter}) and has no special-case
  * code of its own for a large config: the config_v_005 field type never creates a Lucene field (validated at write
  * time, otherwise {@code _source}-only), so it has no 32766-byte term-length limit to respect, and
  * {@code toLuceneSource} stores even a large combined class+config JSON as a single string.
  */
 public class LargeConfigSerializationTest {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static String largeRules() {
         final StringBuilder rules = new StringBuilder();
@@ -63,16 +60,15 @@ public class LargeConfigSerializationTest {
         assertThat(configV005).as("a large config is no longer split on write").isInstanceOf(String.class);
 
         // this is exactly what HttpQuerqyIndexManager.putRewriter sends as the request body
-        final String json = MAPPER.writeValueAsString(source);
+        final String json = Json.toJson(source);
 
-        @SuppressWarnings("unchecked")
-        final Map<String, Object> roundTripped = MAPPER.readValue(json, Map.class);
+        final Map<String, Object> roundTripped = Json.parseMap(json);
         assertThat(roundTripped.get("config_v_005")).isEqualTo(configV005);
     }
 
     /**
      * A document split by an older version of this code (or by a third party) must still be handled correctly if
-     * the tool ever reads one back - confirms Jackson round-trips an already-split value as a proper JSON array
+     * the tool ever reads one back - confirms an already-split value round-trips as a proper JSON array
      * (not e.g. {@code toString()}'d), and that it rejoins to the original config.
      */
     @Test
@@ -93,13 +89,13 @@ public class LargeConfigSerializationTest {
         assertThat(source.get("config_v_005")).as("test assumption: the config must actually be split")
                 .isInstanceOf(String[].class);
 
-        final String json = MAPPER.writeValueAsString(source);
+        final String json = Json.toJson(source);
 
-        final Map<String, Object> roundTripped = MAPPER.readValue(json, Map.class);
+        final Map<String, Object> roundTripped = Json.parseMap(json);
         final Object roundTrippedValue = roundTripped.get("config_v_005");
 
         assertThat(roundTrippedValue)
-                .as("Jackson must serialize the split value as a JSON array, not e.g. Arrays.toString() it")
+                .as("the split value must be serialized as a JSON array, not e.g. Arrays.toString()'d")
                 .isInstanceOf(List.class);
 
         final String rejoined = String.join("", (List<String>) roundTrippedValue);
