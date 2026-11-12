@@ -100,7 +100,7 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
     }
 
     /**
-     * No index named in this test ever has any document indexed into it (other than {@code .opensearch-querqy}
+     * No index named in this test ever has any document indexed into it (other than {@code opensearch-querqy-store}
      * itself, which the loader only ever accesses via plain document GETs, never via a shard reference) - so
      * there is no "target" {@code IndexShard} anywhere this loader could have reached for even if it wanted to.
      */
@@ -219,7 +219,7 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
     }
 
     /**
-     * Nothing in {@code .opensearch-querqy} prevents a {@code term_corpus} dictionary document from being written
+     * Nothing in {@code opensearch-querqy-store} prevents a {@code term_corpus} dictionary document from being written
      * to the same id as an existing rewriter (or vice versa). Before this was fixed, FORCE-reloading a cached
      * rewriter whose id had been overwritten this way failed loudly for that one call ({@link
      * InvalidTypeNameException}) but left the stale cache entry in place, so the very next plain lookup would

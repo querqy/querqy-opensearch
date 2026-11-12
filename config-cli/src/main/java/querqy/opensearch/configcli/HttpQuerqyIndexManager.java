@@ -42,6 +42,7 @@ import java.util.Map;
 final class HttpQuerqyIndexManager {
 
     private static final String INDEX_PATH = "/" + Constants.QUERQY_INDEX_NAME;
+    private static final String LEGACY_INDEX_PATH = "/" + Constants.LEGACY_QUERQY_INDEX_NAME;
 
     private final RestClient client;
     private final RequestSigner signer;
@@ -67,6 +68,23 @@ final class HttpQuerqyIndexManager {
         // the client never turns a 404 into a ResponseException for a HEAD request - just check the status code
         final Response response = performRequest(new Request("HEAD", INDEX_PATH));
         return response.getStatusLine().getStatusCode() == 200;
+    }
+
+    /**
+     * Best effort: checks whether the pre-2.0 rewriter index ({@value Constants#LEGACY_QUERQY_INDEX_NAME}) still
+     * exists, so the tool can warn that rewriters stored there are no longer read. Never fails the command: any
+     * error (e.g. the user has no permission on that index) is reported as {@code false}.
+     *
+     * @return true iff the legacy index exists
+     */
+    boolean legacyIndexExists() {
+        try {
+            // same reasoning as indexExists(): HEAD never turns a 404 into a ResponseException
+            final Response response = performRequest(new Request("HEAD", LEGACY_INDEX_PATH));
+            return response.getStatusLine().getStatusCode() == 200;
+        } catch (final IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /**

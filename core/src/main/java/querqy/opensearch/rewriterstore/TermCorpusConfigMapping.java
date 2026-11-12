@@ -123,7 +123,7 @@ public final class TermCorpusConfigMapping {
     }
 
     /**
-     * The {@code .opensearch-querqy} document id for a dictionary id - currently just the id itself. Kept as a
+     * The {@code opensearch-querqy-store} document id for a dictionary id - currently just the id itself. Kept as a
      * named indirection point (rather than using the id directly at every call site) in case that ever changes.
      */
     public static String docId(final String id) {

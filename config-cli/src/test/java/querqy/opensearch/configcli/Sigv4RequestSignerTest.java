@@ -49,7 +49,7 @@ public class Sigv4RequestSignerTest {
                 Region.US_EAST_1, "es",
                 StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIDEXAMPLE", "secret")));
 
-        final Request request = new Request("GET", "/.opensearch-querqy/_search");
+        final Request request = new Request("GET", "/opensearch-querqy-store/_search");
         request.addParameter("ignore", "404");
 
         signer.sign(request);
@@ -71,7 +71,7 @@ public class Sigv4RequestSignerTest {
                 StaticCredentialsProvider.create(
                         AwsSessionCredentials.create("AKIDEXAMPLE", "secret", "session-token")));
 
-        final Request request = new Request("PUT", "/.opensearch-querqy/_doc/my_rewriter");
+        final Request request = new Request("PUT", "/opensearch-querqy-store/_doc/my_rewriter");
         request.setJsonEntity("{\"type\":\"rewriter\"}");
 
         signer.sign(request);
@@ -96,9 +96,9 @@ public class Sigv4RequestSignerTest {
                 Region.US_EAST_1, "es",
                 StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIDEXAMPLE", "secret")));
 
-        final Request withIgnore = new Request("GET", "/.opensearch-querqy/_doc/r1");
+        final Request withIgnore = new Request("GET", "/opensearch-querqy-store/_doc/r1");
         withIgnore.addParameter("ignore", "404");
-        final Request withoutIgnore = new Request("GET", "/.opensearch-querqy/_doc/r1");
+        final Request withoutIgnore = new Request("GET", "/opensearch-querqy-store/_doc/r1");
 
         signer.sign(withIgnore);
         signer.sign(withoutIgnore);
@@ -115,7 +115,7 @@ public class Sigv4RequestSignerTest {
                 Region.US_EAST_1, "es",
                 StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIDEXAMPLE", "secret")));
 
-        final Request request = new Request("PUT", "/.opensearch-querqy/_doc/my_rewriter");
+        final Request request = new Request("PUT", "/opensearch-querqy-store/_doc/my_rewriter");
         request.setJsonEntity("{\"type\":\"rewriter\"}");
 
         signer.sign(request);

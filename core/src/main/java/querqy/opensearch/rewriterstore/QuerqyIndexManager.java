@@ -25,8 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Pure (client-free) logic for creating/migrating the {@code .opensearch-querqy} index mapping. {@code core} has no
- * dependency on either caller: the full plugin module applies this via a node-local {@code IndicesAdminClient} (see
+ * Pure (client-free) logic for creating/migrating the {@code opensearch-querqy-store} index mapping. {@code core}
+ * has no dependency on either caller: the full plugin module applies this via a node-local {@code IndicesAdminClient} (see
  * its transport action for saving a rewriter), and the {@code config-cli} module's HTTP-based equivalent applies it
  * via a REST client, since it has no {@code IndicesAdminClient}. Keeping the computation here means both callers
  * stay consistent with the mapping resource and field names defined in {@code core}, without {@code core} needing
@@ -46,7 +46,7 @@ public final class QuerqyIndexManager {
 
     /**
      * @return The content of the {@code querqy-mapping.json} resource bundled with this module - the mapping to use
-     * when creating the {@code .opensearch-querqy} index from scratch.
+     * when creating the {@code opensearch-querqy-store} index from scratch.
      */
     public static String readMappingResource() {
         try (InputStream in = QuerqyIndexManager.class.getClassLoader().getResourceAsStream("querqy-mapping.json")) {

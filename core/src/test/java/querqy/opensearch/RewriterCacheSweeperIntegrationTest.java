@@ -161,7 +161,7 @@ public class RewriterCacheSweeperIntegrationTest extends OpenSearchSingleNodeTes
     }
 
     /**
-     * Nothing in {@code .opensearch-querqy} prevents a {@code term_corpus} dictionary document from being written
+     * Nothing in {@code opensearch-querqy-store} prevents a {@code term_corpus} dictionary document from being written
      * to the same id as an existing rewriter. Before this was fixed, the sweep's rebuild attempt in this situation
      * threw {@code InvalidTypeNameException}, caught by a generic catch that only logged and kept the stale cache
      * entry in place - repeating every sweep cycle forever. Proves the cache entry is evicted instead.
