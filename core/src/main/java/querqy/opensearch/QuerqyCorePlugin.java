@@ -114,6 +114,7 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, SearchPipe
         dictionaryCorpusLoader.setClient(client);
         dictionaryCorpusLoader.setThreadPool(threadPool);
         rewriterCacheSweeper.start(environment.settings(), threadPool, client);
+        LegacyQuerqyIndexWarner.register(clusterService);
         return Arrays.asList(rewriterShardContexts, querqyProcessor, dictionaryCorpusLoader,
                 pipelineRewriterCacheHandle);
     }

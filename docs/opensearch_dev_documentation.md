@@ -29,15 +29,15 @@ NOTE: More details on caching in section 1.5
 
 ### 1.4 Index
 
-Querqy index →  `.opensearch-querqy`
+Querqy index →  `opensearch-querqy-store`
 
-All the Querqy configurations like rules, synonyms, word breaks, etc will be stored in a new plugin index called `.opensearch-querqy.` For each rewriter a separate doc is formed inside the index. Below is a sample of `common_rules` stored in the plugin.
+All the Querqy configurations like rules, synonyms, word breaks, etc will be stored in a new plugin index called `opensearch-querqy-store.` For each rewriter a separate doc is formed inside the index. Below is a sample of `common_rules` stored in the plugin.
 
 ```
-GET /.opensearch-querqy/_doc/common_rules
+GET /opensearch-querqy-store/_doc/common_rules
 
 {
-  "_index" : ".opensearch-querqy",
+  "_index" : "opensearch-querqy-store",
   "_type" : "_doc",
   "_id" : "common_rules",
   "_version" : 3,
@@ -70,7 +70,7 @@ Admin User : creating rules read/update/delete [All CRUD]
 Search User:  searches with querqy, not to view the rules but use it. [Only Read]
 
 
-* **Querqy Index:** This stores all the rules `.opensearch-querqy`
+* **Querqy Index:** This stores all the rules `opensearch-querqy-store`
 * **Querqy Query Component:** This is responsible for using rules and applying it to index search queries made by the user
 * **Approach 1**:
     * Only the users having read access to the Querqy index, can use the plugin with the search API.

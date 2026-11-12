@@ -14,6 +14,9 @@ which broke uninstalling/updating the plugin on Amazon OpenSearch Service (blue/
 client-side (REST API, config CLI) and, for dictionaries, again when `DictionaryCorpusLoader` builds
 them (including the checksum check).
 
+**Update (querqy-opensearch#208):** the index `.opensearch-querqy` named below was renamed to
+`opensearch-querqy-store` in version 2.0.
+
 ## Context
 
 Amazon OpenSearch Service only supports a fixed set of custom-plugin extension points:

@@ -18,6 +18,9 @@ which broke uninstalling/updating the plugin on Amazon OpenSearch Service (blue/
 client-side (REST API, config CLI) and, for dictionaries, again when `DictionaryCorpusLoader` builds
 them (including the checksum check).
 
+**Update (querqy-opensearch#208):** the index `.opensearch-querqy` named below was renamed to
+`opensearch-querqy-store` in version 2.0.
+
 ## Context
 
 The `querqy_rewrite` search pipeline request processor (ADR 0002) runs the rewrite chain once, on

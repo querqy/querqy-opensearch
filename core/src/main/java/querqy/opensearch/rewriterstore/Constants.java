@@ -20,8 +20,18 @@ package querqy.opensearch.rewriterstore;
 
 public interface Constants {
 
-    // TODO: configurable?
-    String QUERQY_INDEX_NAME = ".opensearch-querqy";
+    /**
+     * The index holding rewriter configurations and dictionaries. An ordinary index owned by the user - neither a
+     * system nor a hidden index. Renamed from {@link #LEGACY_QUERQY_INDEX_NAME} in version 2.0 (see
+     * querqy-opensearch#208), whose dot prefix made it look like a system index.
+     */
+    String QUERQY_INDEX_NAME = "opensearch-querqy-store";
+
+    /**
+     * The name of the rewriter index before version 2.0. Never read or written anymore - only checked for, to warn
+     * users that rewriters stored there must be saved again into {@link #QUERQY_INDEX_NAME}.
+     */
+    String LEGACY_QUERQY_INDEX_NAME = ".opensearch-querqy";
 
     String QUERQY_REWRITER_BASE_ROUTE = "/_plugins/_querqy/rewriter";
 

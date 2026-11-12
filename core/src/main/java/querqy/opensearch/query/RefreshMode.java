@@ -28,7 +28,7 @@ import java.util.Locale;
  *
  * <p><b>Cost:</b> {@code doToQuery}/the rewrite chain runs once per shard of the searched index, each shard with its
  * own independent cache - so {@code CHECK}/{@code FORCE} cost scales with shard count: N shards means N independent
- * blocking round trips to the {@code .opensearch-querqy} index per query, not one. This is fine for interactively
+ * blocking round trips to the {@code opensearch-querqy-store} index per query, not one. This is fine for interactively
  * trying out a config change at low QPS (the motivating use case), but these modes should not be set as a blanket
  * default for production query traffic.</p>
  */

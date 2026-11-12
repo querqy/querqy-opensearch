@@ -15,6 +15,10 @@ Not yet implemented/verified: AWS spike 1 (needs an AWS account; tracked separat
 `HybridQueryBuilder` validation (neural-search isn't available as a build/test dependency - see
 "Testing" below). Spike 2 (FGAC identity question) no longer needs an AWS account - see finding 7.
 
+**Update (querqy-opensearch#208):** the rewriter index was renamed from `.opensearch-querqy` to
+`opensearch-querqy-store` in version 2.0. Where this ADR says to grant (read) access to
+`.opensearch-querqy`, grant it on `opensearch-querqy-store` instead.
+
 ## Context
 
 ADR 0001 made `querqy-opensearch` installable on Amazon OpenSearch Service by moving rewriter
