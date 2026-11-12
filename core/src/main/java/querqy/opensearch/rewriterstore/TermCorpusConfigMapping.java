@@ -59,10 +59,12 @@ import java.util.zip.GZIPOutputStream;
  *   "corpus": "{\"format\":\"tsv_df\",\"gzip\":true,\"numDocs\":409000,\"checksum\":\"sha256:...\",\"data\":\"&lt;base64&gt;\"}"
  * }
  * </pre>
- * {@code corpus} is a single JSON-string-valued field (like {@code config_v_005} on a rewriter document), so a
- * write-time field mapper ({@code QuerqyTermCorpusFieldMapper}) can see {@code format}/{@code gzip}/
- * {@code numDocs}/{@code hashFunctions}/{@code checksum}/{@code data} together, actually build the corpus to
- * validate it, and verify {@code checksum} matches the content. Unlike {@code config_v_005}, whose version suffix
+ * {@code corpus} is a single JSON-string-valued field (like {@code config_v_005} on a rewriter document), mapped as
+ * a disabled ({@code "enabled": false}) object, i.e. kept in {@code _source} only, never parsed or indexed by
+ * OpenSearch. There is no write-time validation on the server: the writer (e.g. the {@code config-cli} tool) is
+ * expected to validate a dictionary before saving it, using {@link #buildVerifiedTermCorpus(Map)}, and the reader
+ * ({@code DictionaryCorpusLoader}) runs the same check again whenever it builds a dictionary it hasn't cached yet.
+ * Unlike {@code config_v_005}, whose version suffix
  * exists because of real migration history (it started as plain {@code config} and only got a version baked into
  * the field name once a later, incompatible format needed to coexist with documents already written under the old
  * one - an OpenSearch mapping can't change a field's type in place), this is a brand-new document type with no such
@@ -131,8 +133,8 @@ public final class TermCorpusConfigMapping {
     /**
      * SHA-256 over the raw, uncompressed TSV bytes, formatted {@code "sha256:<lowercase-hex>"}. Called identically
      * by whoever writes a dictionary (before any gzip compression, so compression settings never affect it) and by
-     * {@code QuerqyTermCorpusFieldMapper} (to verify the written checksum matches the actual content) - the one
-     * shared source of truth for both, so the two can never disagree on algorithm or encoding.
+     * {@link #verifyChecksum} (to verify the written checksum matches the actual content) - the one shared source
+     * of truth for both, so the two can never disagree on algorithm or encoding.
      */
     public static String computeChecksum(final byte[] rawData) {
         final MessageDigest digest;
@@ -203,8 +205,7 @@ public final class TermCorpusConfigMapping {
     }
 
     /**
-     * @param source The stored {@code term_corpus} document (or the combined value parsed from the field mapper's
-     *               own input while a document is being written - same shape either way)
+     * @param corpusJson The value of the {@link #PROP_CORPUS} field of a {@code term_corpus} document
      * @return The parsed {@code {"format": ..., "gzip": ..., ...}} map
      */
     @SuppressWarnings("unchecked")
@@ -288,9 +289,7 @@ public final class TermCorpusConfigMapping {
 
     /**
      * Builds the {@link TermCorpus} described by a parsed {@code corpus} map, dispatching on {@link
-     * #FIELD_FORMAT}. Used both to actually load a dictionary ({@code DictionaryCorpusLoader}) and to validate one
-     * at write time ({@code QuerqyTermCorpusFieldMapper}) - the latter discards the result, it only cares whether
-     * this throws.
+     * #FIELD_FORMAT}. Does not verify {@link #FIELD_CHECKSUM} - see {@link #buildVerifiedTermCorpus(Map)} for that.
      *
      * @throws IOException if {@code data} isn't valid base64/gzip (when claimed), the TSV is malformed, {@code
      * format} is unknown, or {@code format} is {@link #FORMAT_TSV_DF_COOC} with no {@link #FIELD_HASH_FUNCTIONS}
@@ -300,8 +299,25 @@ public final class TermCorpusConfigMapping {
     }
 
     /**
+     * The full validation of a {@code corpus} value: decodes {@link #FIELD_DATA}, verifies {@link #FIELD_CHECKSUM}
+     * matches the decoded content (see {@link #verifyChecksum}), and builds the {@link TermCorpus}. Used by the
+     * writer to validate a dictionary before saving it (e.g. the {@code config-cli} tool) and by {@code
+     * DictionaryCorpusLoader} whenever it builds a dictionary - the index itself doesn't validate anything at write
+     * time, so a document written by some other means (a raw {@code PUT}, bulk indexing, reindexing, restoring a
+     * snapshot) is only ever checked here.
+     *
+     * @throws IOException if any of {@link #readData}, {@link #verifyChecksum} or {@link #buildTermCorpus(Map,
+     * byte[])} fails
+     */
+    public static TermCorpus buildVerifiedTermCorpus(final Map<String, Object> corpus) throws IOException {
+        final byte[] rawData = readData(corpus);
+        verifyChecksum(corpus, rawData);
+        return buildTermCorpus(corpus, rawData);
+    }
+
+    /**
      * Like {@link #buildTermCorpus(Map)}, but takes already-decoded raw bytes - avoids decoding {@link #FIELD_DATA}
-     * twice when the caller ({@code QuerqyTermCorpusFieldMapper}) already has them in hand from {@link
+     * twice when the caller (e.g. {@link #buildVerifiedTermCorpus(Map)}) already has them in hand from {@link
      * #verifyChecksum}.
      */
     public static TermCorpus buildTermCorpus(final Map<String, Object> corpus, final byte[] rawData)

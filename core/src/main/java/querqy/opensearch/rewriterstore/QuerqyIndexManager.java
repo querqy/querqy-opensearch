@@ -34,6 +34,13 @@ import java.util.Map;
  */
 public final class QuerqyIndexManager {
 
+    /**
+     * The mapping of the fields that hold a whole rewriter config or dictionary as a JSON string ({@code
+     * config_v_005}, {@code corpus}): kept in {@code _source} only, never parsed or indexed - must match {@code
+     * querqy-mapping.json}.
+     */
+    static final String DISABLED_OBJECT_MAPPING = "{\"type\" : \"object\", \"enabled\" : false}";
+
     private QuerqyIndexManager() {
     }
 
@@ -87,12 +94,12 @@ public final class QuerqyIndexManager {
         }
 
         // mapping.getConfigStringProperty() is "config_v_005" (RewriterConfigMapping.CURRENT, mapping version 5):
-        // the combined class+config field, validated at write time by the querqy_rewriter_config field mapper.
+        // the combined class+config field. Mapped as a disabled object: _source-only, never parsed or indexed, so
+        // there's no size limit beyond the request size, and no plugin-provided field type that would make the
+        // index unreadable on a cluster without this plugin.
         if (!existingProperties.containsKey(mapping.getConfigStringProperty())) {
             missingProperties.put(mapping.getConfigStringProperty(),
-                    "      \"" + mapping.getConfigStringProperty() + "\": {\n" +
-                    "        \"type\" : \"querqy_rewriter_config\"\n" +
-                    "      }");
+                    "      \"" + mapping.getConfigStringProperty() + "\": " + DISABLED_OBJECT_MAPPING);
         }
 
         if (!existingProperties.containsKey(TermCorpusConfigMapping.PROP_NAME)) {
@@ -100,14 +107,11 @@ public final class QuerqyIndexManager {
                     "      \"" + TermCorpusConfigMapping.PROP_NAME + "\": {\"type\" : \"keyword\" }");
         }
 
-        // the combined format+gzip+numDocs+hashFunctions+data field of a term_corpus document (dictionary for a
-        // coordinator-safe rewriter, e.g. word-break-compound), validated at write time by the
-        // querqy_term_corpus field mapper.
+        // the combined format+gzip+numDocs+hashFunctions+checksum+data field of a term_corpus document (dictionary
+        // for a coordinator-safe rewriter, e.g. word-break-compound) - a disabled object, same as config_v_005.
         if (!existingProperties.containsKey(TermCorpusConfigMapping.PROP_CORPUS)) {
             missingProperties.put(TermCorpusConfigMapping.PROP_CORPUS,
-                    "      \"" + TermCorpusConfigMapping.PROP_CORPUS + "\": {\n" +
-                    "        \"type\" : \"querqy_term_corpus\"\n" +
-                    "      }");
+                    "      \"" + TermCorpusConfigMapping.PROP_CORPUS + "\": " + DISABLED_OBJECT_MAPPING);
         }
 
         return missingProperties;

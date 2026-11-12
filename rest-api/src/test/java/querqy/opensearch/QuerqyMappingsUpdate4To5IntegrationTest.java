@@ -122,7 +122,11 @@ public class QuerqyMappingsUpdate4To5IntegrationTest extends OpenSearchSingleNod
 
         final Map<String, Object> config_v_005_mapping = (Map<String, Object>) properties.get("config_v_005");
         assertNotNull(config_v_005_mapping);
-        assertEquals("querqy_rewriter_config", config_v_005_mapping.get("type"));
+        assertEquals(Boolean.FALSE, config_v_005_mapping.get("enabled")); // disabled object, _source-only
+
+        final Map<String, Object> corpus_mapping = (Map<String, Object>) properties.get("corpus");
+        assertNotNull(corpus_mapping);
+        assertEquals(Boolean.FALSE, corpus_mapping.get("enabled"));
 
         assertThat((Map<String, Object>) properties.get("revision"), hasEntry("type", "keyword"));
         assertThat((Map<String, Object>) properties.get("saved_at"), hasEntry("type", "date"));

@@ -30,9 +30,7 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.index.IndexModule;
-import org.opensearch.index.mapper.Mapper;
 import org.opensearch.index.query.QueryBuilder;
-import org.opensearch.plugins.MapperPlugin;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.plugins.SearchPipelinePlugin;
 import org.opensearch.plugins.SearchPlugin;
@@ -49,13 +47,10 @@ import querqy.opensearch.pipeline.QuerqyExtBuilder;
 import querqy.opensearch.pipeline.QuerqyRewriteRequestProcessor;
 import querqy.opensearch.pipeline.QuerqyRewriteResponseProcessor;
 import querqy.opensearch.query.QuerqyQueryBuilder;
-import querqy.opensearch.rewriterstore.mapper.QuerqyRewriterConfigFieldMapper;
-import querqy.opensearch.rewriterstore.mapper.QuerqyTermCorpusFieldMapper;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -67,7 +62,7 @@ import java.util.function.Supplier;
  * {@code opensearchplugin} block). {@code querqy.opensearch.QuerqyPlugin} (the full plugin module) extends this
  * class and adds the REST/transport API back for self-managed deployments.
  */
-public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlugin, SearchPipelinePlugin {
+public class QuerqyCorePlugin extends Plugin implements SearchPlugin, SearchPipelinePlugin {
 
     protected final QuerqyProcessor querqyProcessor;
     protected final RewriterShardContexts rewriterShardContexts;
@@ -132,14 +127,6 @@ public class QuerqyCorePlugin extends Plugin implements SearchPlugin, MapperPlug
                 RewriterShardContext.CACHE_REFRESH_AFTER_WRITE,
                 RewriterCacheSweeper.SWEEP_INTERVAL);
 
-    }
-
-    @Override
-    public Map<String, Mapper.TypeParser> getMappers() {
-        final Map<String, Mapper.TypeParser> mappers = new HashMap<>();
-        mappers.put(QuerqyRewriterConfigFieldMapper.CONTENT_TYPE, new QuerqyRewriterConfigFieldMapper.TypeParser());
-        mappers.put(QuerqyTermCorpusFieldMapper.CONTENT_TYPE, new QuerqyTermCorpusFieldMapper.TypeParser());
-        return mappers;
     }
 
     @Override

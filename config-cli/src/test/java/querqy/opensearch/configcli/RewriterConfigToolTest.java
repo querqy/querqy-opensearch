@@ -18,10 +18,15 @@
 
 package querqy.opensearch.configcli;
 
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory;
 import querqy.opensearch.rewriterstore.RewriterInfo;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,13 +41,54 @@ import static org.mockito.Mockito.when;
 /**
  * Covers the local (no-network) validation path - the same
  * {@code OpenSearchRewriterFactory.loadInstance(...).validateConfiguration(...)} check used by
- * {@code PutRewriterRequest.validate()} and the write-time field mapper - plus {@link
+ * {@code PutRewriterRequest.validate()} - plus local dictionary validation, plus {@link
  * RewriterConfigTool#findRewritersReferencingDictionary} against a mocked {@link HttpQuerqyIndexManager} (wire-level
  * request/response shapes for {@link HttpQuerqyIndexManager} itself are covered in {@code
  * HttpQuerqyIndexManagerTest}, not here). The rest of {@code RewriterConfigTool}'s HTTP interaction is exercised
  * manually/in integration.
  */
 public class RewriterConfigToolTest {
+
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
+
+    @Test
+    public void testBuildDictionarySourceAcceptsValidTsv() throws Exception {
+
+        final File tsv = folder.newFile("dict.tsv");
+        Files.write(tsv.toPath(), "haus\t10\nboot\t5\n".getBytes(StandardCharsets.UTF_8));
+
+        final Map<String, Object> source = RewriterConfigTool.buildDictionarySource("d", tsv.getPath(), "tsv_df",
+                null, 1000);
+        assertThat(source).containsKey("corpus");
+    }
+
+    /**
+     * The index doesn't validate a dictionary at write time, so the CLI must reject a malformed one locally, before
+     * it ever connects to the cluster.
+     */
+    @Test
+    public void testBuildDictionarySourceRejectsMalformedTsv() throws Exception {
+
+        final File tsv = folder.newFile("broken.tsv");
+        Files.write(tsv.toPath(), "no-tab-here\n".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> RewriterConfigTool.buildDictionarySource("d", tsv.getPath(), "tsv_df", null, 1000))
+                .isInstanceOf(RewriterConfigTool.ValidationFailedException.class)
+                .hasMessageContaining("dictionary 'd'");
+    }
+
+    @Test
+    public void testBuildDictionarySourceRejectsCoocFormatWithoutHashFunctions() throws Exception {
+
+        final File tsv = folder.newFile("cooc.tsv");
+        Files.write(tsv.toPath(), "a\t1\t0000000000000000\n".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> RewriterConfigTool.buildDictionarySource("d", tsv.getPath(), "tsv_df_cooc", null,
+                1000))
+                .isInstanceOf(RewriterConfigTool.ValidationFailedException.class)
+                .hasMessageContaining("hashFunctions");
+    }
 
     @Test
     public void testValidateRejectsUnresolvableClass() {
