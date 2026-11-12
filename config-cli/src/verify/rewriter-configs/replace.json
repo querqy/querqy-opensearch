@@ -1,0 +1,6 @@
+{
+  "class": "querqy.opensearch.rewriter.ReplaceRewriterFactory",
+  "config": {
+    "rules": "a => b"
+  }
+}

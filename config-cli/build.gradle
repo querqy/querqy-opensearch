@@ -18,6 +18,9 @@
 
 apply plugin: 'java'
 apply plugin: 'application'
+// Shadow is already on the build's classpath: org.opensearch.gradle:build-tools depends on it, so its version
+// follows whatever OpenSearch pins (no separate plugin version to maintain here).
+apply plugin: 'com.gradleup.shadow'
 
 base {
     archivesName = 'opensearch-querqy-config-cli'
@@ -49,14 +52,28 @@ dependencies {
     // OpenSearchRewriterFactory.loadInstance(...) calls AccessController.doPrivileged(...) from this small
     // (<10 KB) separate artifact - it's not part of opensearch-core/opensearch-x-content.
     implementation "org.opensearch:opensearch-secure-sm:${rootProject.ext.opensearch_version}"
-    implementation "org.opensearch.client:opensearch-rest-client:${rootProject.ext.opensearch_version}"
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.4'
+    // opensearch-rest-client declares reactor-core (~1.9 MB) and httpcore5-reactive for its streaming-response API
+    // (RestClient#streamRequest), which this CLI never calls - plain performRequest is all it uses. Both are
+    // excluded. org.reactivestreams:reactive-streams must stay, though: RestClient references
+    // org.reactivestreams.Publisher in its method signatures and fails class verification without it (the AWS SDK
+    // needs it as well).
+    implementation("org.opensearch.client:opensearch-rest-client:${rootProject.ext.opensearch_version}") {
+        exclude group: 'io.projectreactor', module: 'reactor-core'
+        exclude group: 'org.apache.httpcomponents.core5', module: 'httpcore5-reactive'
+    }
+    // No jackson-databind: JSON is read/written via OpenSearch's own X-Content (see Json.java), which brings
+    // jackson-core and the smile/cbor/yaml dataformats it needs anyway.
     // AWS SigV4 request signing for IAM-authenticated Amazon OpenSearch Service domains / OpenSearch
     // Serverless collections (--sigv4). Only the auth+regions modules are needed for Aws4Signer plus the
     // standard credentials/region provider chains - not the full AWS SDK, and no per-service client.
     implementation platform('software.amazon.awssdk:bom:2.55.6')
     implementation 'software.amazon.awssdk:auth'
     implementation 'software.amazon.awssdk:regions'
+    // Tests only: Mockito introspects every method signature of the mocked RestClient - including the streaming
+    // API, which mentions reactor's Mono - so the reactive jars excluded above are needed to *mock* it, even though
+    // nothing at runtime ever loads them. A second declaration without the excludes keeps them on the test runtime
+    // classpath (at the version OpenSearch pins) and, since it isn't on runtimeClasspath, out of the fat jar.
+    testRuntimeOnly "org.opensearch.client:opensearch-rest-client:${rootProject.ext.opensearch_version}"
     testImplementation('junit:junit:4.13.2')
     testImplementation('org.mockito:mockito-core:5.24.0')
     testImplementation('org.assertj:assertj-core:3.27.7')
@@ -64,4 +81,209 @@ dependencies {
 
 test {
     useJUnit()
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Distribution: one self-contained jar, run as `java -jar opensearch-querqy-config-cli-<version>.jar <action> ...`.
+// (The `application` plugin stays only for `./gradlew :config-cli:run`; its zip/tar distributions are disabled.)
+// ---------------------------------------------------------------------------------------------------------------
+
+// The plain jar only holds this module's own classes (it is what `run` puts first on the classpath). Give it a
+// classifier so it can't be mistaken for - or collide with - the fat jar.
+tasks.named('jar') {
+    archiveClassifier.set('thin')
+}
+
+tasks.matching { it.name in ['distZip', 'distTar', 'shadowDistZip', 'shadowDistTar', 'startShadowScripts'] }
+        .configureEach { enabled = false }
+
+// Third-party LICENSE/NOTICE files: every dependency jar ships its own, and they all live at the same paths
+// (META-INF/LICENSE, META-INF/NOTICE.txt, ...), so a fat jar would keep one arbitrary copy and silently drop the
+// rest - including attribution that Apache-2.0 (NOTICE) and MIT/BSD (license text) require when redistributing.
+// Instead, copy each jar's legal files into META-INF/third-party/<jar>/ so all of them survive, and exclude the
+// colliding root-level ones from the merge (see shadowJar below).
+def thirdPartyLegalDir = layout.buildDirectory.dir('generated/third-party-legal')
+
+tasks.register('collectThirdPartyLegal') {
+    def runtimeJars = configurations.named('runtimeClasspath')
+    def outDir = thirdPartyLegalDir
+    inputs.files(runtimeJars)
+    outputs.dir(outDir)
+    doLast {
+        def out = outDir.get().asFile
+        out.deleteDir()
+        out.mkdirs()
+        runtimeJars.get().files.findAll { it.name.endsWith('.jar') }.each { jar ->
+            new java.util.zip.ZipFile(jar).withCloseable { zip ->
+                zip.entries().each { entry ->
+                    // a legal file at the jar root or directly/under licenses/ in META-INF, never a class
+                    if (!entry.directory && !entry.name.endsWith('.class')
+                            && entry.name ==~ /(?i)^(META-INF\/)?(licenses\/)?[^\/]*(licen[cs]e|notice)[^\/]*$/) {
+                        def target = new File(out, jar.name.replaceFirst(/\.jar$/, '')
+                                + '/' + entry.name.replaceFirst(/^META-INF\//, ''))
+                        target.parentFile.mkdirs()
+                        zip.getInputStream(entry).withCloseable { target.bytes = it.bytes }
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.named('shadowJar') {
+    // -> opensearch-querqy-config-cli-<version>.jar (no "-all" classifier)
+    archiveClassifier.set('')
+
+    // The root build.gradle forces EXCLUDE on every Jar task. With Shadow 9.x (the os3.7.x line) that silently defeats
+    // mergeServiceFiles(): only the first copy of each META-INF/services file survived (verifyShadowJar caught it -
+    // Jackson's smile/cbor/yaml providers were missing). Shadow 8.x (os3.5.x) merges fine either way; INCLUDE is
+    // harmless there, so it is set on both branches to keep them identical. Side effect of INCLUDE: any other
+    // colliding path would be written twice, which verifyShadowJar also fails on (see the legal-file excludes below).
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
+    // Mandatory: many jars provide the same META-INF/services/<spi> file (e.g. Jackson's TokenStreamFactory for
+    // core/smile/cbor/yaml, which OpenSearch's X-Content needs). Without merging, the first jar wins and the
+    // other providers silently disappear. verifyShadowJar checks this for every service file.
+    mergeServiceFiles()
+
+    manifest {
+        attributes(
+                'Main-Class': application.mainClass.get(),
+                // log4j-api, Jackson, Lucene, snakeyaml, ... are multi-release jars
+                'Multi-Release': 'true')
+    }
+
+    // Per-jar manifests and (JPMS) module descriptors don't apply to a merged jar, and signatures wouldn't be valid.
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/*.EC',
+            'module-info.class', 'META-INF/versions/*/module-info.class', 'META-INF/DEPENDENCIES'
+    // Root-level legal files of the dependencies (META-INF/LICENSE, NOTICE.txt, FastDoubleParser-LICENSE, ...) -
+    // many collide, and with duplicatesStrategy INCLUDE the colliding ones would even end up as duplicate zip
+    // entries. They're preserved per jar under META-INF/third-party instead. (`*` doesn't cross a `/`, so this
+    // doesn't touch META-INF/third-party/** or META-INF/opensearch-querqy-config-cli/**.)
+    exclude 'META-INF/*LICENSE*', 'META-INF/*LICENCE*', 'META-INF/*NOTICE*'
+    // Deliberately kept: META-INF/maven/**/pom.properties (unique per artifact) - jar-level CVE/SBOM scanners use it
+    // to identify the bundled dependencies. No minimize(): SPI/reflection loading makes it unsafe.
+
+    dependsOn('collectThirdPartyLegal')
+    from(thirdPartyLegalDir) { into 'META-INF/third-party' }
+    from(rootProject.file('LICENSE.txt')) { into 'META-INF/opensearch-querqy-config-cli' }
+    from(rootProject.file('NOTICE.txt')) { into 'META-INF/opensearch-querqy-config-cli' }
+}
+
+// Smoke test of the real artifact: `java -jar <fat jar> put --validate-only` on one config per allow-listed
+// rewriter class. This exercises, from inside the merged jar, the SPI-based allow-list, class loading of every
+// rewriter factory and the manifest's Main-Class - exactly what a user's `java -jar` does.
+def smokeTasks = fileTree('src/verify/rewriter-configs') { include '*.json' }.files.sort().collect { fixture ->
+    tasks.register("smokeShadowJar_${fixture.name - '.json'}", Exec) {
+        description = "java -jar <fat jar> put --validate-only --config-file ${fixture.name}"
+        def jarFile = tasks.named('shadowJar').flatMap { it.archiveFile }
+        def stdout = new ByteArrayOutputStream()
+        def stderr = new ByteArrayOutputStream()
+        dependsOn('shadowJar')
+        inputs.file(fixture)
+        // no outputs: always re-run, it is cheap
+        outputs.upToDateWhen { false }
+        standardOutput = stdout
+        errorOutput = stderr
+        ignoreExitValue = true
+        executable = "${System.getProperty('java.home')}/bin/java"
+        doFirst {
+            commandLine executable, '-jar', jarFile.get().asFile.absolutePath,
+                    'put', '--url', 'http://127.0.0.1:1', '--id', 'smoke', '--config-file', fixture.absolutePath,
+                    '--validate-only'
+        }
+        doLast {
+            if (!stdout.toString().contains('Configuration is valid.')) {
+                throw new GradleException("java -jar smoke test failed for ${fixture.name} (exit code "
+                        + "${executionResult.get().exitValue}):\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}")
+            }
+        }
+    }
+}
+
+// Structural checks on the fat jar. Silent resource collisions are the main way a fat jar goes wrong - e.g. only one
+// of several providers of the same SPI surviving, which breaks only the code path that uses the lost provider.
+tasks.register('verifyShadowJar') {
+    group = 'verification'
+    description = 'Checks the fat jar: merged service files, manifest, pruned entries, retained dependency metadata, ' +
+            'and a java -jar smoke test per rewriter class'
+    def shadowArchive = tasks.named('shadowJar').flatMap { it.archiveFile }
+    def runtimeJars = configurations.named('runtimeClasspath')
+    def expectedMainClass = application.mainClass
+    dependsOn('shadowJar')
+    dependsOn(smokeTasks)
+    inputs.files(shadowArchive)
+    inputs.files(runtimeJars)
+    doLast {
+        def providers = { String text ->
+            text.readLines().collect { it.replaceAll(/#.*/, '').trim() }.findAll { it }
+        }
+        def problems = []
+
+        def fatEntries = new HashSet<String>()
+        def duplicateEntries = new TreeSet<String>()
+        def fatServices = [:]
+        new java.util.jar.JarFile(shadowArchive.get().asFile).withCloseable { fat ->
+            def attrs = fat.manifest.mainAttributes
+            if (attrs.getValue('Main-Class') != expectedMainClass.get()) {
+                problems << "manifest Main-Class is '${attrs.getValue('Main-Class')}', expected '${expectedMainClass.get()}'"
+            }
+            if (attrs.getValue('Multi-Release') != 'true') {
+                problems << "manifest lacks 'Multi-Release: true' (log4j-api, Jackson, Lucene, ... are multi-release jars)"
+            }
+            fat.entries().each { e ->
+                if (!fatEntries.add(e.name)) {
+                    duplicateEntries << e.name
+                }
+                if (e.name.startsWith('META-INF/services/') && !e.directory) {
+                    fatServices[e.name] = providers(fat.getInputStream(e).getText('UTF-8'))
+                }
+            }
+        }
+
+        // duplicatesStrategy INCLUDE (needed so service files get merged) lets any other colliding path through twice
+        duplicateEntries.each { problems << "duplicate zip entry in fat jar: ${it} (exclude it, or merge it)" }
+
+        fatEntries.findAll {
+            it == 'module-info.class' ||
+                    it ==~ /META-INF\/versions\/\d+\/module-info\.class/ ||
+                    it ==~ /META-INF\/[^\/]+\.(SF|DSA|RSA|EC)/
+        }.each {
+            problems << "unexpected entry in fat jar: ${it}"
+        }
+
+        def checkedServices = 0
+        runtimeJars.get().files.findAll { it.name.endsWith('.jar') }.each { jarFile ->
+            new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+                zip.entries().each { e ->
+                    if (e.directory) return
+                    if (e.name.startsWith('META-INF/services/')) {
+                        checkedServices++
+                        def expected = providers(zip.getInputStream(e).getText('UTF-8'))
+                        def actual = fatServices[e.name]
+                        if (actual == null) {
+                            problems << "service file ${e.name} (from ${jarFile.name}) is missing from the fat jar"
+                        } else if (!actual.containsAll(expected)) {
+                            problems << "service file ${e.name} lost providers from ${jarFile.name}: ${expected - actual}"
+                        }
+                    } else if (e.name ==~ /META-INF\/maven\/.+\/pom\.properties/ && !fatEntries.contains(e.name)) {
+                        problems << "${e.name} (from ${jarFile.name}) is missing - needed by jar-level CVE/SBOM scanners"
+                    }
+                }
+            }
+        }
+
+        if (!fatEntries.any { it.startsWith('META-INF/third-party/') }) {
+            problems << 'no third-party LICENSE/NOTICE files under META-INF/third-party/'
+        }
+        if (problems) {
+            throw new GradleException("Fat jar ${shadowArchive.get().asFile.name} is not sound:\n  - "
+                    + problems.join('\n  - '))
+        }
+        logger.lifecycle("Fat jar OK: ${checkedServices} service file(s) verified, ${fatEntries.size()} entries.")
+    }
+}
+
+tasks.named('check') {
+    dependsOn('verifyShadowJar')
 }
