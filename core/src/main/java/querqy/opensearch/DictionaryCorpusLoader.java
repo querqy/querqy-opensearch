@@ -49,9 +49,14 @@ import static querqy.opensearch.rewriterstore.Constants.QUERQY_INDEX_NAME;
  *
  * <p>A dictionary document is intentionally mutable - updating it in place (same id, new content, a new checksum)
  * is the supported way to change it. {@link #load(String)} therefore always checks the live document's checksum
- * (verified server-side at write time, see {@code QuerqyTermCorpusFieldMapper}) against what's cached: if they
- * match, the cached {@link TermCorpus} is returned (skipping the gunzip/parse cost); if not, the new content is
- * fetched, parsed, and cached, replacing the old entry. This check is cheap relative to how often it runs - {@code
+ * against what's cached: if they match, the cached {@link TermCorpus} is returned (skipping the gunzip/parse cost);
+ * if not, the new content is fetched, verified against its checksum, parsed, and cached, replacing the old entry
+ * (see {@link TermCorpusConfigMapping#buildVerifiedTermCorpus}). The index doesn't validate a {@code term_corpus}
+ * document at write time, so this load-time verification is what rejects a document whose {@code checksum} doesn't
+ * match its {@code data}. A cache hit only compares checksums, though: it trusts the writer's contract that the
+ * same checksum means the same content - a writer that changes {@code data} but keeps the old {@code checksum}
+ * won't be noticed until the cached instance is evicted. Writers should always compute the checksum with
+ * {@link TermCorpusConfigMapping#computeChecksum(byte[])}, as the {@code config-cli} tool does. This check is cheap relative to how often it runs - {@code
  * load} is only ever called once per rewriter-factory rebuild (by {@code WordBreakCompoundRewriterFactory
  * #createRewriterFactory}, itself only called from {@code RewriterFactoryLoader#buildFactoryAndLogging}), never once
  * per query.</p>
@@ -195,7 +200,7 @@ public final class DictionaryCorpusLoader {
         }
 
         try {
-            final TermCorpus built = TermCorpusConfigMapping.buildTermCorpus(corpus);
+            final TermCorpus built = TermCorpusConfigMapping.buildVerifiedTermCorpus(corpus);
             cache.put(docId, new CachedCorpus(checksum, built));
             future.complete(built);
             return built;
