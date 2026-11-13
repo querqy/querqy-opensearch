@@ -229,10 +229,9 @@ public class TransportPutRewriterAction extends HandledTransportAction<PutRewrit
      * (shard-side {@code dictionaryField}, or any other rewriter class entirely).
      *
      * <p>Only available on this action - the self-managed, {@code ActionPlugin} REST API - since it needs a
-     * blocking {@code Client} round trip; the AWS/core-only write path (a raw {@code PUT} to {@code
-     * .opensearch-querqy}, validated only by {@code QuerqyTermCorpusFieldMapper}/{@code
-     * QuerqyRewriterConfigFieldMapper}) cannot do this at write time, since those field mappers run during
-     * document parsing/translog replay, where blocking network I/O is unsafe. See {@link
+     * blocking {@code Client} round trip and has a server-side write path to hook into; on the AWS/core-only write
+     * path (a raw {@code PUT} to {@value Constants#QUERQY_INDEX_NAME}, usually via the {@code config-cli} tool),
+     * it's the {@code config-cli} tool that checks the referenced dictionary exists before saving. See {@link
      * #dispatchTrySaveRewriter} for why this blocking call must never run directly on a {@code Client} callback
      * thread either.</p>
      */

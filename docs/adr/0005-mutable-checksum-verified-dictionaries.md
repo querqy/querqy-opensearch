@@ -9,6 +9,14 @@ Accepted and implemented. Supersedes the document-format and immutability sectio
 `DictionaryCorpusLoader` singleton, weak-reference sharing) and the rest of ADR 0003 are unaffected
 and still apply.
 
+**Update (querqy-opensearch#209):** the write-time validation via plugin-provided field types
+(`querqy_rewriter_config`/`querqy_term_corpus`, registered through `MapperPlugin`) has been removed,
+because an index using a plugin-provided field type can't be opened on a cluster without the plugin,
+which broke uninstalling/updating the plugin on Amazon OpenSearch Service (blue/green deployment).
+`config_v_005` and `corpus` are now mapped as disabled objects (`_source` only). Validation happens
+client-side (REST API, config CLI) and, for dictionaries, again when `DictionaryCorpusLoader` builds
+them (including the checksum check).
+
 ## Context
 
 ADR 0003 introduced `term_corpus` documents addressed by `(name, revision)`, designed around an

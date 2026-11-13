@@ -27,7 +27,6 @@ import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.support.WriteRequest;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.index.IndexNotFoundException;
-import org.opensearch.index.mapper.MapperParsingException;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
@@ -51,8 +50,8 @@ import java.util.Map;
  * things not exercised by the other rewriter-store integration tests (which all go through the REST
  * {@code PutRewriterAction}, only available in the full plugin module):
  * <ul>
- *     <li>write-time validation of the combined class+config field ({@code config_v_005}), enforced even for a raw
- *     document write;</li>
+ *     <li>that a raw document write is stored as-is (the index does no write-time validation) and an invalid config
+ *     only fails once a query uses it;</li>
  *     <li>that documents written in an older format (mapping version 4: separate {@code class}/{@code config_v_003}
  *     fields) are still read correctly alongside documents in the new (version 5) combined-field format.</li>
  * </ul>
@@ -94,28 +93,35 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
                 .setMapping(QuerqyIndexManager.readMappingResource()).get();
     }
 
-    public void testThatRawWriteWithInvalidConfigIsRejected() throws Exception {
+    /**
+     * The index no longer validates a rewriter config at write time (there's no plugin-provided field type, so that
+     * the index stays readable on a cluster without this plugin - see querqy-opensearch#209): a raw write of an
+     * invalid config is stored as-is, and only fails once a query actually tries to use the rewriter. Validating
+     * before writing is the writer's job (the REST API and the config CLI both do).
+     */
+    public void testThatRawWriteWithInvalidConfigIsStoredButFailsOnUse() throws Exception {
 
         ensureRewriterIndexExists();
+        indexTestDocs();
 
         final Map<String, Object> content = new HashMap<>();
-        content.put("class", DummyOpenSearchRewriterFactory.class.getName());
-        content.put("config", Collections.singletonMap("error", "this config is deliberately invalid"));
+        content.put("class", "not.a.real.RewriterFactory");
+        content.put("config", Collections.emptyMap());
 
         final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
 
-        final Exception e = expectThrows(Exception.class, () ->
-                client().prepareIndex(QUERQY_INDEX_NAME).setId("invalid")
-                        .setSource(source)
-                        .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
-                        .get());
+        client().prepareIndex(QUERQY_INDEX_NAME).setId("invalid")
+                .setSource(source)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
 
-        Throwable cause = e;
-        while (cause.getCause() != null && !(cause instanceof MapperParsingException)) {
-            cause = cause.getCause();
-        }
-        assertTrue("Expected a MapperParsingException in the cause chain but got: " + e,
-                cause instanceof MapperParsingException || e.getMessage().contains("invalid"));
+        assertTrue(client().prepareGet(QUERQY_INDEX_NAME, "invalid").get().isExists());
+
+        final Exception e = expectThrows(Exception.class, () -> searchUsingRewriter("invalid"));
+        assertTrue("Expected the failure to name the bad class, but got: " + e,
+                e.toString().contains("not.a.real.RewriterFactory")
+                        || String.valueOf(e.getCause()).contains("not.a.real.RewriterFactory")
+                        || org.opensearch.ExceptionsHelper.stackTrace(e).contains("not.a.real.RewriterFactory"));
     }
 
     public void testThatRawWriteWithValidConfigIsAccepted() throws Exception {
@@ -316,8 +322,7 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
     }
 
     /**
-     * The config_v_005 field type never creates a Lucene field (it's validated at write time, otherwise
-     * {@code _source}-only), so unlike the old config_v_003 keyword field, it has no 32766-byte term-length limit to
+     * The config_v_005 field is a disabled object, which never creates a Lucene field ({@code _source}-only), so unlike the old config_v_003 keyword field, it has no 32766-byte term-length limit to
      * respect - {@code RewriterConfigMapping.toLuceneSource} stores even a large combined class+config JSON as a
      * single string (see its javadoc). A raw-HTTP writer (or the CLI tool) therefore never needs to chunk a large
      * config itself.
@@ -342,8 +347,8 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
 
     /**
      * A document that was split into a {@code String[]} by an older version of this code (or that a third party
-     * wrote that way for whatever reason) must still be accepted and read correctly - the write-time field mapper
-     * and the config loader both reconstruct the full value from the array before using it.
+     * wrote that way for whatever reason) must still be accepted and read correctly - the config loader
+     * reconstructs the full value from the array before using it.
      */
     public void testThatAnAlreadySplitLargeConfigStillRoundTripsCorrectly() throws Exception {
 
@@ -357,7 +362,6 @@ public class RewriterConfigFormatIntegrationTest extends OpenSearchSingleNodeTes
             throw new IllegalStateException("Test assumptions are wrong: config was not split up");
         }
 
-        // the write-time field mapper must reconstruct the full array value before it can validate it
         client().prepareIndex(QUERQY_INDEX_NAME).setId("large_split_rewriter")
                 .setSource(source)
                 .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)

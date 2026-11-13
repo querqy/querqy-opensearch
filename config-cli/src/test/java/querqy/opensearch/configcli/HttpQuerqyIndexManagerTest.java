@@ -19,6 +19,7 @@
 package querqy.opensearch.configcli;
 
 import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.apache.hc.core5.http.message.StatusLine;
 import org.junit.Test;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
@@ -61,7 +62,7 @@ public class HttpQuerqyIndexManagerTest {
     public void testGetRewriterReturnsNullWhenNotFound() throws Exception {
 
         final RestClient client = clientReturning(
-                "{\"_index\":\".opensearch-querqy\",\"_id\":\"r1\",\"found\":false}");
+                "{\"_index\":\"opensearch-querqy-store\",\"_id\":\"r1\",\"found\":false}");
 
         final RewriterInfo info = new HttpQuerqyIndexManager(client).getRewriter("r1");
 
@@ -72,7 +73,7 @@ public class HttpQuerqyIndexManagerTest {
     public void testGetRewriterReturnsInfoWhenFound() throws Exception {
 
         final RestClient client = clientReturning(
-                "{\"_index\":\".opensearch-querqy\",\"_id\":\"r1\",\"found\":true,\"_source\":{"
+                "{\"_index\":\"opensearch-querqy-store\",\"_id\":\"r1\",\"found\":true,\"_source\":{"
                         + "\"type\":\"rewriter\",\"version\":5,"
                         + "\"config_v_005\":\"{\\\"class\\\":\\\"querqy.opensearch.rewriter."
                         + "SimpleCommonRulesRewriterFactory\\\",\\\"config\\\":{\\\"rules\\\":\\\"a =>\\\\nSYNONYM: "
@@ -96,7 +97,7 @@ public class HttpQuerqyIndexManagerTest {
 
         verify(client).performRequest(argThat(request ->
                 "GET".equals(request.getMethod())
-                        && "/.opensearch-querqy/_doc/r1".equals(request.getEndpoint())
+                        && "/opensearch-querqy-store/_doc/r1".equals(request.getEndpoint())
                         && "404".equals(request.getParameters().get("ignore"))));
     }
 
@@ -141,7 +142,7 @@ public class HttpQuerqyIndexManagerTest {
 
         verify(client).performRequest(argThat(request ->
                 "POST".equals(request.getMethod())
-                        && "/.opensearch-querqy/_search".equals(request.getEndpoint())
+                        && "/opensearch-querqy-store/_search".equals(request.getEndpoint())
                         && "404".equals(request.getParameters().get("ignore"))));
     }
 
@@ -170,7 +171,7 @@ public class HttpQuerqyIndexManagerTest {
 
         verify(client).performRequest(argThat(request ->
                 "DELETE".equals(request.getMethod())
-                        && "/.opensearch-querqy/_doc/r1".equals(request.getEndpoint())
+                        && "/opensearch-querqy-store/_doc/r1".equals(request.getEndpoint())
                         && "404".equals(request.getParameters().get("ignore"))
                         && "true".equals(request.getParameters().get("refresh"))));
     }
@@ -200,7 +201,7 @@ public class HttpQuerqyIndexManagerTest {
 
         verify(client).performRequest(argThat(request ->
                 "DELETE".equals(request.getMethod())
-                        && "/.opensearch-querqy/_doc/d-r1".equals(request.getEndpoint())
+                        && "/opensearch-querqy-store/_doc/d-r1".equals(request.getEndpoint())
                         && "404".equals(request.getParameters().get("ignore"))
                         && "true".equals(request.getParameters().get("refresh"))));
     }
@@ -214,5 +215,42 @@ public class HttpQuerqyIndexManagerTest {
         new HttpQuerqyIndexManager(client, signer).getRewriter("r1");
 
         verify(signer).sign(any(Request.class));
+    }
+    @Test
+    public void testLegacyIndexExistsChecksLegacyIndexWithHead() throws Exception {
+
+        final RestClient client = clientReturningStatus(200);
+
+        assertThat(new HttpQuerqyIndexManager(client).legacyIndexExists()).isTrue();
+        verify(client).performRequest(argThat(request ->
+                "HEAD".equals(request.getMethod()) && "/.opensearch-querqy".equals(request.getEndpoint())));
+    }
+
+    @Test
+    public void testLegacyIndexExistsIsFalseOn404() throws Exception {
+        assertThat(new HttpQuerqyIndexManager(clientReturningStatus(404)).legacyIndexExists()).isFalse();
+    }
+
+    /**
+     * Best effort: e.g. a user without permissions on the legacy index must not have their command fail.
+     */
+    @Test
+    public void testLegacyIndexExistsIsFalseOnError() throws Exception {
+
+        final RestClient client = mock(RestClient.class);
+        when(client.performRequest(any(Request.class))).thenThrow(new java.io.IOException("forbidden"));
+
+        assertThat(new HttpQuerqyIndexManager(client).legacyIndexExists()).isFalse();
+    }
+
+    private static RestClient clientReturningStatus(final int status) throws Exception {
+        final StatusLine statusLine = mock(StatusLine.class);
+        when(statusLine.getStatusCode()).thenReturn(status);
+        final Response response = mock(Response.class);
+        when(response.getStatusLine()).thenReturn(statusLine);
+
+        final RestClient client = mock(RestClient.class);
+        when(client.performRequest(any(Request.class))).thenReturn(response);
+        return client;
     }
 }

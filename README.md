@@ -19,12 +19,26 @@ ever be installed on a cluster at a time):
   self-managed OpenSearch cluster, where you can install plugins using `ActionPlugin` (custom REST endpoints).
 * **`opensearch-querqy-core`** (module `core`) - the `querqy` query and the rewriters, but **no REST API**. Amazon
   OpenSearch Service's custom-plugin support doesn't allow `ActionPlugin`, so this is the artifact to install there.
-  Without the REST API, rewriter configurations are managed by writing documents directly to the `.opensearch-querqy`
-  index - see [Managing rewriters without the REST API](#managing-rewriters-without-the-rest-api-core-only) below.
+  Without the REST API, rewriter configurations are managed by writing documents directly to the
+  `opensearch-querqy-store` index - see
+  [Managing rewriters without the REST API](#managing-rewriters-without-the-rest-api-core-only) below.
 
 If you're not on Amazon OpenSearch Service (or another environment that blocks `ActionPlugin`), install the full
 `opensearch-querqy` plugin - everything below about the REST API (`PUT /_plugins/_querqy/rewriter/...`) applies to it
 unchanged.
+
+## Upgrading to 2.0: rewriters must be saved again
+
+Since version 2.0, rewriter configurations and dictionaries are stored in the index `opensearch-querqy-store`. Before
+2.0, they were stored in `.opensearch-querqy` - the leading dot made it look like a system index, which it never was.
+**Nothing is migrated automatically**: after upgrading, save all your rewriters (and word-break dictionaries) again,
+via the REST API or the config CLI, then delete the old `.opensearch-querqy` index. Until you do, the plugin logs a
+warning on the elected cluster manager, and the config CLI prints one too.
+
+Pre-release 2.0 builds of `opensearch-querqy-core` used plugin-provided field types (`querqy_rewriter_config`,
+`querqy_term_corpus`) in that index. If you ran such a build on Amazon OpenSearch Service, delete its
+`.opensearch-querqy` index *before* updating or removing the plugin - otherwise the blue/green deployment can't
+copy that index to a cluster that no longer has the field types.
 
 ## Installation with released zip-packages
 * Released zip-packages can be found here: [release tags](https://github.com/querqy/querqy-opensearch/tags) and on [Maven Central](https://repo1.maven.org/maven2/org/querqy/opensearch-querqy/). 
@@ -99,7 +113,7 @@ references it fails clearly rather than the rewriter silently doing the wrong th
 
 `word_break_compound`'s usual `dictionaryField` derives term frequencies straight from a shard's live index -
 which needs direct shard access the pipeline above doesn't have. As an alternative, a standalone word-frequency
-dictionary can be stored as its own document in `.opensearch-querqy` and referenced by `dictionaryId` instead
+dictionary can be stored as its own document in `opensearch-querqy-store` and referenced by `dictionaryId` instead
 (mutually exclusive with `dictionaryField`); unlike `dictionaryField`, this also works from the classic per-shard
 `querqy` query, not just the pipeline.
 
@@ -119,7 +133,10 @@ java -jar opensearch-querqy-config-cli-<version>.jar put-dictionary --url https:
 
 `--num-docs` is optional - the total document count the frequencies were computed over, used to normalize
 suggestion scoring; omitted, it falls back to an estimate. `delete-dictionary` refuses to delete a dictionary
-still referenced by any stored `word_break_compound` rewriter's `dictionaryId`, unless `--force`.
+still referenced by any stored `word_break_compound` rewriter's `dictionaryId`, unless `--force`. The CLI parses
+and validates the dictionary file locally before uploading it - the index itself doesn't validate a dictionary
+document at write time, so a hand-written one is only checked (format, content, and that its `checksum` matches its
+`data`) when the plugin first loads it.
 
 Reference it from the rewriter config:
 
@@ -140,7 +157,7 @@ version addressable means saving it under a different id and repointing the rewr
 ## Managing rewriters without the REST API (core-only)
 
 On an install of `opensearch-querqy-core` (no `ActionPlugin`, no REST API), a rewriter configuration is just a
-document in the `.opensearch-querqy` index, and there are two ways to write it:
+document in the `opensearch-querqy-store` index, and there are two ways to write it:
 
 * **The `opensearch-querqy-config-cli` CLI** (module `config-cli`). It is a single, self-contained jar (needs Java
   21 or later): download `opensearch-querqy-config-cli-<version>.jar` from the GitHub release, or build it with
@@ -188,9 +205,10 @@ document in the `.opensearch-querqy` index, and there are two ways to write it:
   **`delete` note:** unlike the REST API's `DELETE`, this cannot clear the deleted rewriter from every node's
   in-memory cache (that's an `ActionPlugin`-only transport action, unavailable over plain HTTP) - each node notices
   the deletion on its own within the same freshness window described below.
-* **A raw document write**, e.g. `PUT .opensearch-querqy/_doc/common_rules` with a hand-built document - the index
-  mapping validates the configuration at write time and rejects an invalid one, but building the document body
-  correctly (the combined `class`+`config` field) is easier via the CLI tool above than by hand. See the full worked
+* **A raw document write**, e.g. `PUT opensearch-querqy-store/_doc/common_rules` with a hand-built document. The index
+  does **not** validate the configuration at write time - an invalid one is stored as-is and only fails once a query
+  uses the rewriter - so validate it first (e.g. `put --validate-only` with the CLI tool above). Building the document
+  body correctly (the combined `class`+`config` field) is also easier via the CLI tool than by hand. See the full worked
   example below.
 
 **Freshness note**: without the REST API's push-based reload, a config change becomes visible on each node within
@@ -236,11 +254,11 @@ object form of a `rewriters` entry instead of a bare string:
 Here, `common_rules` always reloads while `other_rewriter` falls back to the query-level `refresh_config` (or `no`
 if that's absent too).
 
-**Cost caveat**: `check` and `force` each cost one blocking read against the `.opensearch-querqy` index *per shard*
-of the index being searched, on every query that uses them (`check` only saves the cost of re-parsing the config
-when nothing changed - it still pays the same round trip as `force`). This is fine for a human trying out config
-changes at low query volume, but `check`/`force` should not be used as a blanket default for production search
-traffic - leave `refresh_config` at its default (`no`) there and let the existing async refresh handle it.
+**Cost caveat**: `check` and `force` each cost one blocking read against the `opensearch-querqy-store` index *per shard*
+of the index being searched, on every query that uses them (`check` only saves the cost of re-parsing the config when
+nothing changed - it still pays the same round trip as `force`). This is fine for a human trying out config changes at
+low query volume, but `check`/`force` should not be used as a blanket default for production search traffic - leave
+`refresh_config` at its default (`no`) there and let the existing async refresh handle it.
 
 ### Example: writing a rewriter config document directly
 
@@ -248,27 +266,27 @@ traffic - leave `refresh_config` at its default (`no`) there and let the existin
 `querqy` query's `rewriters` list (just as `common_rules` is both the document ID and the rewriter name in the REST
 API examples elsewhere in this README). There is no separate "name" field.
 
-**The `.opensearch-querqy` index must already exist with the correct mapping before you do a raw write.** If the
+**The `opensearch-querqy-store` index must already exist with the correct mapping before you do a raw write.** If the
 index doesn't exist yet, OpenSearch creates it automatically on the first write - but with a *dynamically guessed*
-mapping (`config_v_005` would become a plain `text`/`keyword` field), not the mapping that enables write-time
-validation. An invalid configuration would then be silently accepted instead of rejected. The CLI tool creates the
-index with the correct mapping (and the settings below) automatically; to create it by hand instead, `PUT` both the
+mapping (`config_v_005` would become an analyzed `text` field with a `keyword` sub-field), not the bundled mapping,
+which keeps `config_v_005` (and a dictionary's `corpus`) in `_source` only, without indexing it. The CLI tool creates
+the index with the correct mapping (and the settings below) automatically; to create it by hand instead, `PUT` both the
 mapping bundled in the `core` module (`core/src/main/resources/querqy-mapping.json`) *and* explicit settings onto the
 index first. The file holds only the mapping (`{"properties": ...}`), while the create-index API expects it under a
-`mappings` key alongside a `settings` key, so wrap it (here with [jq](https://jqlang.github.io/jq/)) rather than
-sending the file as is - the create request would otherwise fail with `unknown key [properties] for create index`.
+`mappings` key alongside a `settings` key, so wrap it (here with [jq](https://jqlang.github.io/jq/)) rather than sending
+the file as is - the create request would otherwise fail with `unknown key [properties] for create index`.
 
-Always set `number_of_shards` explicitly rather than relying on the cluster's default: `.opensearch-querqy` holds at
-most a few hundred small documents, and a `GET`/`PUT` by rewriter ID always routes to exactly one shard regardless of
-count, so more than one shard buys nothing here - only allocation overhead. This especially matters on managed
-offerings like Amazon OpenSearch Service, whose default differs from self-managed OpenSearch's default of 1. Also set
+Always set `number_of_shards` explicitly rather than relying on the cluster's default: `opensearch-querqy-store` holds
+at most a few hundred small documents, and a `GET`/`PUT` by rewriter ID always routes to exactly one shard regardless of
+count, so more than one shard buys nothing here - only allocation overhead. This especially matters on managed offerings
+like Amazon OpenSearch Service, whose default differs from self-managed OpenSearch's default of 1. Also set
 `number_of_replicas` to at least 1 so the index is replicated and survives the loss of a single node (assuming your
 cluster has 2 or more nodes - OpenSearch never places a primary and its replica on the same node):
 
 ```shell
 jq '{settings: {number_of_shards: 1, number_of_replicas: 1}, mappings: .}' \
     core/src/main/resources/querqy-mapping.json | \
-curl -X PUT "https://<host>:9200/.opensearch-querqy" \
+curl -X PUT "https://<host>:9200/opensearch-querqy-store" \
     -H "Content-Type: application/json" \
     -u admin:'<password>' \
     -d @-
@@ -281,7 +299,7 @@ With the index in place, here is a complete `common_rules` configuration with a 
 also match documents containing `macbook`), written directly as a document:
 
 ```shell
-curl -X PUT "https://<host>:9200/.opensearch-querqy/_doc/common_rules?refresh=true" \
+curl -X PUT "https://<host>:9200/opensearch-querqy-store/_doc/common_rules?refresh=true" \
     -H "Content-Type: application/json" \
     -u admin:'<password>' \
     -d '{
@@ -294,17 +312,20 @@ curl -X PUT "https://<host>:9200/.opensearch-querqy/_doc/common_rules?refresh=tr
 A few things worth noting about this document:
 * `type` and `version` are always `"rewriter"` and `5` (the current rewriter-config mapping version) respectively.
 * `config_v_005` holds the rewriter's `class` and `config` combined into **one JSON string** (not a nested JSON
-  object) - this is what the write-time validator reads to resolve and validate the rewriter. The rules text itself
+  object) - this is what the plugin reads to resolve and configure the rewriter. The rules text itself
   uses a literal newline between the match and the instruction (`laptop =>` then `SYNONYM: macbook` on the next
   line), which is why it appears as `\\n` here: once for the inner JSON string, once more because that whole inner
   JSON document is itself embedded as a string value in the outer document.
 * `refresh=true` makes the write visible to search immediately, which is convenient when trying this out manually;
   omit it in a script that writes many rewriters back to back.
 
-If `config_v_005` doesn't parse as `{"class": ..., "config": {...}}`, if `class` isn't an allow-listed rewriter
-class, or if `validateConfiguration` rejects the `config`, the `PUT` above fails with a mapping/parsing error
-instead of silently storing a broken rewriter - that only holds once the index has the correct mapping, as described
-above.
+The index does not check this document: if `config_v_005` doesn't parse as `{"class": ..., "config": {...}}`, if
+`class` isn't an allow-listed rewriter class, or if the `config` is invalid, the `PUT` above still succeeds, and the
+error only shows up once a query uses the rewriter. Validate the configuration before writing it - the CLI tool's
+`put --validate-only` runs the same check as the REST API, without touching the cluster. (The plugin deliberately
+doesn't register a custom field type for write-time validation: an index using a plugin-provided field type can't
+be opened on a cluster without the plugin, which breaks e.g. uninstalling or updating the plugin on Amazon
+OpenSearch Service.)
 
 ## Additional resources
 A comprehensive documentation can be found here: [Querqy documentation](https://docs.querqy.org/querqy/index.html)
