@@ -99,6 +99,49 @@ public class RewriterFactoryLoaderTest extends OpenSearchSingleNodeTestCase {
                 .get();
     }
 
+    private void writeNumberUnitRewriter(final String rewriterId, final String numberUnitConfig) throws Exception {
+
+        final Map<String, Object> content = new HashMap<>();
+        content.put("class", querqy.opensearch.rewriter.NumberUnitRewriterFactory.class.getName());
+        content.put("config", Collections.singletonMap("config", numberUnitConfig));
+
+        client().prepareIndex(QUERQY_INDEX_NAME).setId(rewriterId)
+                .setSource(RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis()))
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
+    }
+
+    /**
+     * The index doesn't validate rewriter documents at write time, so a valid, cached rewriter can be overwritten
+     * with an invalid config. A refresh (here: the periodic sweep) must then keep serving the previous version
+     * instead of replacing it with a broken one - which requires the factory's {@code configure} to actually fail
+     * for the invalid config (NumberUnitRewriterFactory used to swallow invalid JSON and leave itself unconfigured,
+     * so the "successful" rebuild replaced the cached rewriter with a null RewriterFactory).
+     */
+    public void testRefreshKeepsPreviousVersionWhenStoredConfigBecomesInvalid() throws Exception {
+
+        ensureRewriterIndexExists();
+        writeNumberUnitRewriter("nu", "{\"numberUnitDefinitions\": [{"
+                + "\"units\": [{\"term\": \"zoll\"}], \"fields\": [{\"fieldName\": \"screen_size\"}]}]}");
+
+        final RewriterFactoryLoader loader = RewriterFactoryLoader.nodeLevel(Settings.EMPTY, client(), false,
+                newDictionaryCorpusLoader());
+        final RewriterFactory valid = loader.loadFactory("nu", false).rewriterFactory;
+        assertNotNull(valid);
+
+        writeNumberUnitRewriter("nu", "{ this is not json");
+
+        loader.applySweepResponses(Collections.singletonMap("nu",
+                client().prepareGet(QUERQY_INDEX_NAME, "nu").get()), true);
+
+        assertSame(valid, loader.loadFactory("nu", false).rewriterFactory);
+
+        // an explicit reload of the invalid config fails clearly instead
+        final IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
+                () -> loader.loadFactory("nu", true));
+        assertTrue(e.getMessage(), e.getMessage().contains("'nu'"));
+    }
+
     /**
      * No index named in this test ever has any document indexed into it (other than {@code opensearch-querqy-store}
      * itself, which the loader only ever accesses via plain document GETs, never via a shard reference) - so

@@ -18,6 +18,7 @@
 
 package querqy.opensearch.rewriter;
 
+import org.opensearch.OpenSearchException;
 import org.opensearch.index.shard.IndexShard;
 import querqy.json.JsonProvider;
 import querqy.opensearch.OpenSearchRewriterFactory;
@@ -47,15 +48,32 @@ public class NumberUnitRewriterFactory extends OpenSearchRewriterFactory {
         return delegate;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Throws for any configuration that {@link #validateConfiguration(Map)} rejects - including duplicate unit
+     * definitions, which querqy-core's constructor alone would accept. The index doesn't validate a rewriter
+     * document at write time, so this is what keeps an invalid stored config from being loaded: a failed {@code
+     * configure} makes {@code RewriterFactoryLoader} keep a previously cached, valid version on refresh, and fail
+     * clearly on a first load.</p>
+     *
+     * @throws IllegalArgumentException if the configuration is invalid
+     */
     @Override
-    public void configure(Map<String, Object> config) {
-        final Object numberUnitConfig = config.get(KEY_CONFIG_PROPERTY);
+    public void configure(final Map<String, Object> config) {
+
+        final List<String> errors = validateConfiguration(config);
+        if (errors != null && !errors.isEmpty()) {
+            throw new IllegalArgumentException("Invalid number-unit configuration for rewriter '" + rewriterId
+                    + "': " + String.join("; ", errors));
+        }
 
         try {
             this.delegate = new querqy.rewriter.numberunit.NumberUnitRewriterFactory(
-                    rewriterId, (String) numberUnitConfig, NumberUnitQueryCreatorOpenSearch::new, JSON_PROVIDER);
-        } catch (IOException e) {
-            // checked in this::validateConfiguration
+                    rewriterId, (String) config.get(KEY_CONFIG_PROPERTY), NumberUnitQueryCreatorOpenSearch::new,
+                    JSON_PROVIDER);
+        } catch (final IOException e) {
+            throw new OpenSearchException("Could not configure number-unit rewriter '" + rewriterId + "'", e);
         }
     }
 
