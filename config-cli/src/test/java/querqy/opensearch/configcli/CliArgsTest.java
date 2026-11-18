@@ -225,8 +225,8 @@ public class CliArgsTest {
         assertThat(args.dictionaryId).isEqualTo("dutch-compounds");
         assertThat(args.dictionaryFile).isEqualTo("./dutch-compounds.tsv");
         assertThat(args.dictionaryFormat).isEqualTo("tsv_df");
-        assertThat(args.hashFunctions).isNull();
-        assertThat(args.numDocs).isNull();
+        assertThat(args.dictionaryHashFunctions).isNull();
+        assertThat(args.dictionaryNumDocs).isNull();
     }
 
     @Test
@@ -262,38 +262,38 @@ public class CliArgsTest {
     public void testPutDictionaryRejectsUnknownFormat() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
                 "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
-                "--dictionary-file", "d.tsv", "--format", "nonsense"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--format");
+                "--dictionary-file", "d.tsv", "--dictionary-format", "nonsense"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-format");
     }
 
     @Test
     public void testPutDictionaryCoocFormatRequiresHashFunctions() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
                 "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
-                "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--hash-functions");
+                "--dictionary-file", "d.tsv", "--dictionary-format", "tsv_df_cooc"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-hash-functions");
     }
 
     @Test
     public void testPutDictionaryParsesCoocFormatWithHashFunctions() {
         final CliArgs args = CliArgs.parse(new String[] {
                 "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
-                "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc",
-                "--hash-functions", "7"
+                "--dictionary-file", "d.tsv", "--dictionary-format", "tsv_df_cooc",
+                "--dictionary-hash-functions", "7"
         });
 
         assertThat(args.dictionaryFormat).isEqualTo("tsv_df_cooc");
-        assertThat(args.hashFunctions).isEqualTo(7);
+        assertThat(args.dictionaryHashFunctions).isEqualTo(7);
     }
 
     @Test
     public void testPutDictionaryParsesNumDocs() {
         final CliArgs args = CliArgs.parse(new String[] {
                 "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
-                "--dictionary-file", "d.tsv", "--num-docs", "5083917"
+                "--dictionary-file", "d.tsv", "--dictionary-num-docs", "5083917"
         });
 
-        assertThat(args.numDocs).isEqualTo(5083917);
+        assertThat(args.dictionaryNumDocs).isEqualTo(5083917);
     }
 
     @Test
@@ -311,27 +311,27 @@ public class CliArgsTest {
     public void testPutWithDictionaryFileParsesNumDocs() {
         final CliArgs args = CliArgs.parse(new String[] {
                 "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
-                "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc", "--hash-functions", "5",
-                "--num-docs", "5083917"
+                "--dictionary-file", "d.tsv", "--dictionary-format", "tsv_df_cooc", "--dictionary-hash-functions", "5",
+                "--dictionary-num-docs", "5083917"
         });
 
-        assertThat(args.numDocs).isEqualTo(5083917);
+        assertThat(args.dictionaryNumDocs).isEqualTo(5083917);
     }
 
     @Test
     public void testPutWithDictionaryFileRejectsUnknownFormat() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
                 "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
-                "--dictionary-file", "d.tsv", "--format", "nonsense"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--format");
+                "--dictionary-file", "d.tsv", "--dictionary-format", "nonsense"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-format");
     }
 
     @Test
     public void testPutWithDictionaryFileCoocFormatRequiresHashFunctions() {
         assertThatThrownBy(() -> CliArgs.parse(new String[] {
                 "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
-                "--dictionary-file", "d.tsv", "--format", "tsv_df_cooc"
-        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--hash-functions");
+                "--dictionary-file", "d.tsv", "--dictionary-format", "tsv_df_cooc"
+        })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("--dictionary-hash-functions");
     }
 
     @Test
@@ -344,12 +344,22 @@ public class CliArgsTest {
 
     @Test
     public void testPutWithoutDictionaryFileDoesNotRequireFormatValidation() {
-        // --format defaults to tsv_df but is irrelevant/unvalidated when no --dictionary-file is given at all
+        // --dictionary-format defaults to tsv_df but is irrelevant/unvalidated when no --dictionary-file is given
         final CliArgs args = CliArgs.parse(new String[] {
                 "put", "--url", "https://localhost:9200", "--id", "word_break", "--config-file", "r1.json",
-                "--format", "nonsense"
+                "--dictionary-format", "nonsense"
         });
         assertThat(args.dictionaryFile).isNull();
+    }
+
+    @Test
+    public void testUnprefixedDictionaryFlagsAreRejected() {
+        for (final String flag : new String[] {"--format", "--hash-functions", "--num-docs"}) {
+            assertThatThrownBy(() -> CliArgs.parse(new String[] {
+                    "put-dictionary", "--url", "https://localhost:9200", "--dictionary-id", "d",
+                    "--dictionary-file", "d.tsv", flag, "1"
+            })).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Unknown argument: " + flag);
+        }
     }
 
     @Test
