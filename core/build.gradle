@@ -55,7 +55,7 @@ dependencies {
     // pass AWS OpenSearch Service's plugin-upload CVE scanner, which previously kept flagging the Jackson version
     // pinned below.
     api('org.querqy:querqy-lucene:5.13.lucene1050.1')
-    api('org.querqy:querqy-core:4.3.0')
+    api('org.querqy:querqy-core:4.3.1')
     // querqy-core's PropertyParser/InstructionsProperties configure json-path with their own
     // querqy.json.jsonpath.QuerqyJsonPathProvider/QuerqyJsonPathMappingProvider (not json-smart, not
     // Jackson) for the pluggable JsonProvider/MappingProvider SPI - but json-path 3.0.0 ALSO has a hard,
