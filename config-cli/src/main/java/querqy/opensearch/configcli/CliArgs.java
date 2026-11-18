@@ -56,8 +56,8 @@ public final class CliArgs {
     public final String dictionaryId;
     public final String dictionaryFile;
     public final String dictionaryFormat;
-    public final Integer hashFunctions;
-    public final Integer numDocs;
+    public final Integer dictionaryHashFunctions;
+    public final Integer dictionaryNumDocs;
     public final boolean force;
 
     private CliArgs(final Action action, final String url, final String id, final String configFile,
@@ -65,7 +65,7 @@ public final class CliArgs {
                     final boolean insecure, final boolean validateOnly, final boolean sigv4, final String awsRegion,
                     final String awsService, final String awsProfile, final String dictionaryId,
                     final String dictionaryFile, final String dictionaryFormat,
-                    final Integer hashFunctions, final Integer numDocs, final boolean force) {
+                    final Integer dictionaryHashFunctions, final Integer dictionaryNumDocs, final boolean force) {
         this.action = action;
         this.url = url;
         this.id = id;
@@ -83,8 +83,8 @@ public final class CliArgs {
         this.dictionaryId = dictionaryId;
         this.dictionaryFile = dictionaryFile;
         this.dictionaryFormat = dictionaryFormat;
-        this.hashFunctions = hashFunctions;
-        this.numDocs = numDocs;
+        this.dictionaryHashFunctions = dictionaryHashFunctions;
+        this.dictionaryNumDocs = dictionaryNumDocs;
         this.force = force;
     }
 
@@ -112,8 +112,8 @@ public final class CliArgs {
         String dictionaryId = null;
         String dictionaryFile = null;
         String dictionaryFormat = "tsv_df";
-        Integer hashFunctions = null;
-        Integer numDocs = null;
+        Integer dictionaryHashFunctions = null;
+        Integer dictionaryNumDocs = null;
         boolean force = false;
 
         for (int i = 1; i < args.length; i++) {
@@ -127,14 +127,14 @@ public final class CliArgs {
                 case "--dictionary-file":
                     dictionaryFile = requireValue(args, i++, "--dictionary-file");
                     break;
-                case "--format":
-                    dictionaryFormat = requireValue(args, i++, "--format");
+                case "--dictionary-format":
+                    dictionaryFormat = requireValue(args, i++, "--dictionary-format");
                     break;
-                case "--hash-functions":
-                    hashFunctions = Integer.parseInt(requireValue(args, i++, "--hash-functions"));
+                case "--dictionary-hash-functions":
+                    dictionaryHashFunctions = Integer.parseInt(requireValue(args, i++, "--dictionary-hash-functions"));
                     break;
-                case "--num-docs":
-                    numDocs = Integer.parseInt(requireValue(args, i++, "--num-docs"));
+                case "--dictionary-num-docs":
+                    dictionaryNumDocs = Integer.parseInt(requireValue(args, i++, "--dictionary-num-docs"));
                     break;
                 case "--url":
                     url = requireValue(args, i++, "--url");
@@ -216,9 +216,10 @@ public final class CliArgs {
                 }
                 // --dictionary-file is only meaningful for a WordBreakCompoundRewriterFactory config with a
                 // "dictionaryId" reference - RewriterConfigTool checks that once it has parsed --config-file: this
-                // only validates --format/--hash-functions together, the same way put-dictionary does below.
+                // only validates --dictionary-format/--dictionary-hash-functions together, the same way put-dictionary
+                // does below.
                 if (dictionaryFile != null) {
-                    validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
+                    validateDictionaryFormatArgs(dictionaryFormat, dictionaryHashFunctions);
                 }
                 break;
             case GET:
@@ -245,7 +246,7 @@ public final class CliArgs {
                 if (url == null) {
                     throw new IllegalArgumentException("--url is required");
                 }
-                validateDictionaryFormatArgs(dictionaryFormat, hashFunctions);
+                validateDictionaryFormatArgs(dictionaryFormat, dictionaryHashFunctions);
                 break;
             case DELETE_DICTIONARY:
                 if (dictionaryId == null) {
@@ -261,16 +262,18 @@ public final class CliArgs {
 
         return new CliArgs(action, url, id, configFile, revision, username, password, replicas, insecure,
                 validateOnly, sigv4, awsRegion, awsService, awsProfile, dictionaryId,
-                dictionaryFile, dictionaryFormat, hashFunctions, numDocs, force);
+                dictionaryFile, dictionaryFormat, dictionaryHashFunctions, dictionaryNumDocs, force);
     }
 
-    private static void validateDictionaryFormatArgs(final String dictionaryFormat, final Integer hashFunctions) {
+    private static void validateDictionaryFormatArgs(final String dictionaryFormat,
+                                                     final Integer dictionaryHashFunctions) {
         if (!dictionaryFormat.equals("tsv_df") && !dictionaryFormat.equals("tsv_df_cooc")) {
             throw new IllegalArgumentException(
-                    "--format must be 'tsv_df' or 'tsv_df_cooc', got '" + dictionaryFormat + "'");
+                    "--dictionary-format must be 'tsv_df' or 'tsv_df_cooc', got '" + dictionaryFormat + "'");
         }
-        if (dictionaryFormat.equals("tsv_df_cooc") && hashFunctions == null) {
-            throw new IllegalArgumentException("--hash-functions is required for --format tsv_df_cooc");
+        if (dictionaryFormat.equals("tsv_df_cooc") && dictionaryHashFunctions == null) {
+            throw new IllegalArgumentException(
+                    "--dictionary-hash-functions is required for --dictionary-format tsv_df_cooc");
         }
     }
 

@@ -119,7 +119,7 @@ dictionary can be stored as its own document in `opensearch-querqy-store` and re
 
 A dictionary is a TSV file, in one of two formats:
 * `tsv_df` (the default) - two columns, `term<TAB>docFreq`, no co-occurrence/collation support.
-* `tsv_df_cooc` - three columns, `term<TAB>docFreq<TAB>bloomHex`, plus `--hash-functions <n>` (the number of hash
+* `tsv_df_cooc` - three columns, `term<TAB>docFreq<TAB>bloomHex`, plus `--dictionary-hash-functions <n>` (the number of hash
   functions the Bloom filter was built with) - needed when the rewriter is configured with `verifyCollation: true`.
 
 Upload it with the CLI (`put-dictionary`, or `put --dictionary-file` to upload the dictionary and the rewriter
@@ -127,11 +127,11 @@ config together in one command):
 
 ```shell
 java -jar opensearch-querqy-config-cli-<version>.jar put-dictionary --url https://<host>:9200 --dictionary-id dutch-compounds \
-    --dictionary-file ./dutch-compounds.tsv [--format tsv_df|tsv_df_cooc] [--hash-functions <n>] \
-    [--num-docs <n>] [--username ... --password ...]
+    --dictionary-file ./dutch-compounds.tsv [--dictionary-format tsv_df|tsv_df_cooc] [--dictionary-hash-functions <n>] \
+    [--dictionary-num-docs <n>] [--username ... --password ...]
 ```
 
-`--num-docs` is optional - the total document count the frequencies were computed over, used to normalize
+`--dictionary-num-docs` is optional - the total document count the frequencies were computed over, used to normalize
 suggestion scoring; omitted, it falls back to an estimate. `delete-dictionary` refuses to delete a dictionary
 still referenced by any stored `word_break_compound` rewriter's `dictionaryId`, unless `--force`. The CLI parses
 and validates the dictionary file locally before uploading it - the index itself doesn't validate a dictionary
