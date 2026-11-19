@@ -115,6 +115,97 @@ tasks.named('bundlePlugin') {
     from(tasks.named('jsonPathWithoutUnusedProviders'))
 }
 
+// AWS OpenSearch Service's plugin validation must not see Maven metadata inside the plugin's bundled jars. Several of
+// them (json-smart, accessors-smart, slf4j-api, ...) ship META-INF/maven/<group>/<artifact>/pom.xml and pom.properties.
+// For every third-party jar on the runtime classpath that carries such entries, write a copy without them (every other
+// entry - manifest, services files, classes - is copied unchanged, under the original file name) and bundle that copy
+// instead of the original. verifyPluginZipHasNoPom below fails the build should any such entry still make it into
+// the zip, e.g. after a dependency bump.
+def strippedJarsDir = layout.buildDirectory.dir('filtered-deps/no-maven-metadata').get().asFile
+
+def isMavenMetadata = { String entryName ->
+    entryName.startsWith('META-INF/maven/') || entryName.endsWith('/pom.xml') || entryName.endsWith('/pom.properties') ||
+            entryName == 'pom.xml' || entryName == 'pom.properties'
+}
+
+tasks.register('stripMavenMetadataFromBundledJars') {
+    def runtimeJars = configurations.runtimeClasspath.filter { it.name.endsWith('.jar') }
+    inputs.files(runtimeJars)
+    outputs.dir(strippedJarsDir)
+    doLast {
+        project.delete(strippedJarsDir)
+        strippedJarsDir.mkdirs()
+        runtimeJars.files.each { File jar ->
+            def source = new java.util.zip.ZipFile(jar)
+            try {
+                if (!source.entries().toList().any { isMavenMetadata(it.name) }) {
+                    return
+                }
+                def target = new File(strippedJarsDir, jar.name)
+                target.withOutputStream { out ->
+                    def zip = new java.util.zip.ZipOutputStream(out)
+                    source.entries().each { java.util.zip.ZipEntry entry ->
+                        if (isMavenMetadata(entry.name)) {
+                            return
+                        }
+                        def copy = new java.util.zip.ZipEntry(entry.name)
+                        copy.time = entry.time
+                        zip.putNextEntry(copy)
+                        if (!entry.directory) {
+                            source.getInputStream(entry).withCloseable { zip << it }
+                        }
+                        zip.closeEntry()
+                    }
+                    zip.finish()
+                }
+            } finally {
+                source.close()
+            }
+        }
+    }
+}
+
+tasks.named('bundlePlugin') {
+    dependsOn('stripMavenMetadataFromBundledJars')
+    // Drop the original jars that have a stripped replacement, but keep the replacements themselves (same file name).
+    exclude { FileTreeElement e ->
+        e.file.parentFile != strippedJarsDir && new File(strippedJarsDir, e.name).exists()
+    }
+    from(strippedJarsDir)
+    finalizedBy('verifyPluginZipHasNoPom')
+}
+
+tasks.register('verifyPluginZipHasNoPom') {
+    def pluginZip = tasks.named('bundlePlugin').flatMap { it.archiveFile }
+    inputs.file(pluginZip)
+    doLast {
+        def offenders = []
+        def scan
+        scan = { String where, InputStream stream ->
+            def zip = new java.util.zip.ZipInputStream(stream)
+            def entry
+            while ((entry = zip.nextEntry) != null) {
+                def name = entry.name
+                if (isMavenMetadata(name)) {
+                    offenders << "${where}!/${name}"
+                } else if (name.endsWith('.jar')) {
+                    scan("${where}!/${name}", zip)
+                }
+            }
+        }
+        def zipFile = pluginZip.get().asFile
+        zipFile.withInputStream { scan(zipFile.name, it) }
+        if (!offenders.isEmpty()) {
+            throw new GradleException("${zipFile.name} contains Maven metadata that AWS's plugin validation may reject:\n  - " +
+                    offenders.join('\n  - '))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn('verifyPluginZipHasNoPom')
+}
+
 configurations.all {
     resolutionStrategy.force 'junit:junit:4.13.2'
     resolutionStrategy.force 'org.mockito:mockito-core:5.24.0'
