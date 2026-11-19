@@ -66,7 +66,7 @@ dependencies {
     // AWS SigV4 request signing for IAM-authenticated Amazon OpenSearch Service domains / OpenSearch
     // Serverless collections (--sigv4). Only the auth+regions modules are needed for Aws4Signer plus the
     // standard credentials/region provider chains - not the full AWS SDK, and no per-service client.
-    implementation platform('software.amazon.awssdk:bom:2.55.6')
+    implementation platform('software.amazon.awssdk:bom:2.59.4')
     implementation 'software.amazon.awssdk:auth'
     implementation 'software.amazon.awssdk:regions'
     // Tests only: Mockito introspects every method signature of the mocked RestClient - including the streaming

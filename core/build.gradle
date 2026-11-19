@@ -70,8 +70,8 @@ dependencies {
     // specific classes are still stripped from the bundled json-path jar below - that part is safe, since
     // nothing loads them; only the json-smart/accessors-smart *library* itself is genuinely required).
     implementation('com.jayway.jsonpath:json-path:3.0.0')
-    runtimeOnly('net.minidev:json-smart:2.6.0')
-    runtimeOnly('net.minidev:accessors-smart:2.6.0')
+    runtimeOnly('net.minidev:json-smart:2.6.1')
+    runtimeOnly('net.minidev:accessors-smart:2.6.1')
     runtimeOnly('org.slf4j:slf4j-api:2.0.17')
     implementation('org.ow2.asm:asm:9.10.1')
     testImplementation('junit:junit:4.13.2')
