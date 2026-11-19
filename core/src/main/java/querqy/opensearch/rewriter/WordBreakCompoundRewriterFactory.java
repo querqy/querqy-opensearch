@@ -1,0 +1,350 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Copyright 2021 Querqy for OpenSearch Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package querqy.opensearch.rewriter;
+
+import querqy.lucene.LuceneTermCorpus;
+import querqy.opensearch.DictionaryCorpusLoader;
+import querqy.opensearch.DismaxSearchEngineRequestAdapter;
+import org.opensearch.index.shard.IndexShard;
+import querqy.opensearch.ConfigUtils;
+import querqy.opensearch.OpenSearchRewriterFactory;
+import querqy.model.Term;
+import querqy.rewrite.QueryRewriter;
+import querqy.rewrite.RewriterFactory;
+import querqy.rewriter.wordbreak.MorphologicalCompounder;
+import querqy.rewriter.wordbreak.MorphologicalWordBreaker;
+import querqy.rewriter.wordbreak.Morphology;
+import querqy.rewriter.wordbreak.MorphologyProvider;
+import querqy.rewriter.wordbreak.OptionalModifierConfig;
+import querqy.rewriter.wordbreak.OptionalModifierPosition;
+import querqy.rewriter.wordbreak.TermCorpus;
+import querqy.rewriter.wordbreak.WordBreakCompoundRewriter;
+import querqy.rewrite.SearchEngineRequestAdapter;
+import querqy.trie.TrieMap;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+public class WordBreakCompoundRewriterFactory extends OpenSearchRewriterFactory {
+
+    static final int MAX_EVALUATIONS = 100;
+
+    static final int DEFAULT_MIN_SUGGESTION_FREQ = 1;
+    static final int DEFAULT_MIN_BREAK_LENGTH = 3;
+    static final int DEFAULT_MAX_DECOMPOUND_EXPANSIONS = 3;
+    static final int DEFAULT_MAX_COMPOUND_EXPANSIONS = 3;
+    static final boolean DEFAULT_LOWER_CASE_INPUT = false;
+    static final boolean DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS = false;
+    static final boolean DEFAULT_VERIFY_DECOMPOUND_COLLATION = false;
+    static final String DEFAULT_MORPHOLOGY_NAME = "DEFAULT";
+    static final String DEFAULT_OPTIONAL_MODIFIER_POSITION = OptionalModifierPosition.NONE.name();
+    static final float DEFAULT_OPTIONAL_MODIFIER_BOOST = 1.0f;
+    private static final MorphologyProvider MORPHOLOGY_PROVIDER = new MorphologyProvider();
+
+    private String dictionaryField;
+    private boolean lowerCaseInput = DEFAULT_LOWER_CASE_INPUT;
+    private boolean alwaysAddReverseCompounds = DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS;
+    private MorphologicalCompounder compounder;
+    private MorphologicalWordBreaker wordBreaker;
+    private TrieMap<Boolean> reverseCompoundTriggerWords;
+    private TrieMap<Boolean> protectedWords;
+    private int maxDecompoundExpansions = DEFAULT_MAX_DECOMPOUND_EXPANSIONS;
+    private int maxCompoundExpansions = DEFAULT_MAX_COMPOUND_EXPANSIONS;
+    private boolean verifyDecompoundCollation = DEFAULT_VERIFY_DECOMPOUND_COLLATION;
+    private int minSuggestionFreq = DEFAULT_MIN_SUGGESTION_FREQ;
+    private OptionalModifierConfig optionalModifierConfig = OptionalModifierConfig.DISABLED;
+    private String dictionaryId;
+    private volatile Map<String, String> dictionaryDependencyChecksums = Collections.emptyMap();
+
+    public WordBreakCompoundRewriterFactory(final String rewriterId) {
+        super(rewriterId);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void configure(final Map<String, Object> config) {
+
+        minSuggestionFreq = ConfigUtils.getArg(config, "minSuggestionFreq", DEFAULT_MIN_SUGGESTION_FREQ);
+        final int minBreakLength = ConfigUtils.getArg(config, "minBreakLength", DEFAULT_MIN_BREAK_LENGTH);
+
+        final Optional<String> dictionaryFieldOpt = ConfigUtils.getStringArg(config, "dictionaryField")
+                .map(String::trim)
+                .filter(s -> !s.isEmpty());
+        final Optional<String> dictionaryIdOpt = ConfigUtils.getStringArg(config, "dictionaryId")
+                .map(String::trim)
+                .filter(s -> !s.isEmpty());
+
+        if (dictionaryFieldOpt.isPresent() && dictionaryIdOpt.isPresent()) {
+            throw new IllegalArgumentException("Specify exactly one of 'dictionaryField' or 'dictionaryId', not both");
+        }
+        if (!dictionaryFieldOpt.isPresent() && !dictionaryIdOpt.isPresent()) {
+            throw new IllegalArgumentException(
+                    "Missing config: exactly one of 'dictionaryField' or 'dictionaryId' is required");
+        }
+
+        if (dictionaryIdOpt.isPresent()) {
+            dictionaryId = dictionaryIdOpt.get();
+            dictionaryField = null;
+        } else {
+            dictionaryField = dictionaryFieldOpt.get();
+            dictionaryId = null;
+        }
+
+        lowerCaseInput = ConfigUtils.getArg(config, "lowerCaseInput", DEFAULT_LOWER_CASE_INPUT);
+        alwaysAddReverseCompounds = ConfigUtils.getArg(config, "alwaysAddReverseCompounds",
+                DEFAULT_ALWAYS_ADD_REVERSE_COMPOUNDS);
+
+        final String defaultMorphologyName = ConfigUtils.getStringArg(config, "morphology", DEFAULT_MORPHOLOGY_NAME);
+
+        Map<String, Object> compoundConf = (Map<String, Object>) config.get("compound");
+        if (compoundConf == null) {
+            compoundConf = Collections.emptyMap();
+        }
+        final String compoundMorphologyName = ConfigUtils.getStringArg(compoundConf, "morphology",
+                defaultMorphologyName);
+        final Optional<Morphology> compoundMorphology = MORPHOLOGY_PROVIDER.get(compoundMorphologyName);
+        maxCompoundExpansions = ConfigUtils.getArg(compoundConf, "maxExpansions", DEFAULT_MAX_COMPOUND_EXPANSIONS);
+        compounder = new MorphologicalCompounder(
+                compoundMorphology.orElse(MorphologyProvider.DEFAULT), lowerCaseInput, minSuggestionFreq,
+                maxCompoundExpansions);
+
+        Map<String, Object> decompoundConf = (Map<String, Object>) config.get("decompound");
+        if (decompoundConf == null) {
+            decompoundConf = Collections.emptyMap();
+        }
+        final String decompoundMorphologyName = ConfigUtils.getStringArg(decompoundConf, "morphology",
+                defaultMorphologyName);
+        final Optional<Morphology> decompoundMorphology = MORPHOLOGY_PROVIDER.get(decompoundMorphologyName);
+        wordBreaker = new MorphologicalWordBreaker(
+                decompoundMorphology.orElse(MorphologyProvider.DEFAULT), lowerCaseInput,
+                minSuggestionFreq, minBreakLength, MAX_EVALUATIONS);
+
+        reverseCompoundTriggerWords = ConfigUtils.getTrieSetArg(config, "reverseCompoundTriggerWords");
+        protectedWords = ConfigUtils.getTrieSetArg(config, "protectedWords");
+        maxDecompoundExpansions = ConfigUtils.getArg(decompoundConf, "maxExpansions",
+                DEFAULT_MAX_DECOMPOUND_EXPANSIONS);
+        verifyDecompoundCollation = ConfigUtils.getArg(decompoundConf, "verifyCollation",
+                DEFAULT_VERIFY_DECOMPOUND_COLLATION);
+
+        final String optionalModifierPositionName = ConfigUtils.getStringArg(decompoundConf,
+                "optionalModifierPosition", DEFAULT_OPTIONAL_MODIFIER_POSITION);
+        final float optionalModifierBoost = ((Number) decompoundConf.getOrDefault(
+                "optionalModifierBoost", DEFAULT_OPTIONAL_MODIFIER_BOOST)).floatValue();
+        optionalModifierConfig = new OptionalModifierConfig(
+                parseOptionalModifierPosition(optionalModifierPositionName), optionalModifierBoost);
+    }
+
+    private static OptionalModifierPosition parseOptionalModifierPosition(final String name) {
+        try {
+            return OptionalModifierPosition.valueOf(name.trim().toUpperCase(Locale.ROOT));
+        } catch (final IllegalArgumentException e) {
+            throw new IllegalArgumentException("No such optionalModifierPosition " + name + ". Valid values: "
+                    + Arrays.toString(OptionalModifierPosition.values()));
+        }
+    }
+
+    @Override
+    public List<String> validateConfiguration(final Map<String, Object> config) {
+
+        final List<String> errors = new LinkedList<>();
+
+        final Optional<String> dictionaryFieldOpt = ConfigUtils.getStringArg(config, "dictionaryField")
+                .map(String::trim).filter(s -> !s.isEmpty());
+        final Optional<String> dictionaryIdOpt = ConfigUtils.getStringArg(config, "dictionaryId")
+                .map(String::trim).filter(s -> !s.isEmpty());
+
+        if (dictionaryFieldOpt.isPresent() && dictionaryIdOpt.isPresent()) {
+            errors.add("Specify exactly one of 'dictionaryField' or 'dictionaryId', not both");
+        } else if (!dictionaryFieldOpt.isPresent() && !dictionaryIdOpt.isPresent()) {
+            errors.add("Missing config: exactly one of 'dictionaryField' or 'dictionaryId' is required");
+        }
+
+        ConfigUtils.getStringArg(config, "morphology").ifPresent(morphologyName -> {
+            if (!MORPHOLOGY_PROVIDER.exists(morphologyName)) {
+                errors.add("Unknown morphology: " + morphologyName);
+            }
+        });
+
+        final Map<String, Object> decompoundConf = (Map<String, Object>) config.get("decompound");
+        if (decompoundConf != null) {
+            ConfigUtils.getStringArg(decompoundConf, "morphology").ifPresent(morphologyName -> {
+                if (!MORPHOLOGY_PROVIDER.exists(morphologyName)) {
+                    errors.add("Unknown decompound morphology: " + morphologyName);
+                }
+            });
+
+            final String optionalModifierPositionName = ConfigUtils.getStringArg(decompoundConf,
+                    "optionalModifierPosition", DEFAULT_OPTIONAL_MODIFIER_POSITION);
+            final float optionalModifierBoost = ((Number) decompoundConf.getOrDefault(
+                    "optionalModifierBoost", DEFAULT_OPTIONAL_MODIFIER_BOOST)).floatValue();
+            try {
+                new OptionalModifierConfig(
+                        parseOptionalModifierPosition(optionalModifierPositionName), optionalModifierBoost);
+            } catch (final IllegalArgumentException e) {
+                errors.add(e.getMessage());
+            }
+        }
+        final Map<String, Object> compoundConf = (Map<String, Object>) config.get("compound");
+        if (compoundConf != null) {
+            ConfigUtils.getStringArg(compoundConf, "morphology").ifPresent(morphologyName -> {
+                if (!MORPHOLOGY_PROVIDER.exists(morphologyName)) {
+                    errors.add("Unknown compound morphology: " + morphologyName);
+                }
+            });
+        }
+
+        return errors;
+    }
+
+    /**
+     * When configured with a shard-side {@code dictionaryField} (not {@code dictionaryId}), {@code createRewriter(...)}
+     * (below) needs a real shard-backed {@code IndexSearcher} (via {@code
+     * adapter.getSearchExecutionContext().searcher()}) to build its {@link LuceneTermCorpus} - unlike every other
+     * built-in rewriter, this one genuinely cannot run on a coordinating node with no shard access at all in that
+     * mode. Configured with a {@code dictionaryId} instead, it needs no shard access at all (see {@link
+     * #createRewriterFactory(IndexShard, DictionaryCorpusLoader)}), so it is coordinator-safe.
+     */
+    @Override
+    public boolean isSupportedOnCoordinator() {
+        return dictionaryId != null;
+    }
+
+    @Override
+    public RewriterFactory createRewriterFactory(final IndexShard indexShard) {
+
+        return new RewriterFactory(getRewriterId()) {
+            @Override
+            public QueryRewriter createRewriter(final SearchEngineRequestAdapter searchEngineRequestAdapter) {
+
+                final DismaxSearchEngineRequestAdapter adapter =
+                        (DismaxSearchEngineRequestAdapter) searchEngineRequestAdapter;
+                final LuceneTermCorpus corpus = new LuceneTermCorpus(
+                        () -> adapter.getSearchExecutionContext().searcher().getTopReaderContext().reader(),
+                        dictionaryField);
+
+                return new WordBreakCompoundRewriter(wordBreaker, compounder, corpus,
+                        lowerCaseInput, alwaysAddReverseCompounds, reverseCompoundTriggerWords,
+                        maxDecompoundExpansions, verifyDecompoundCollation, protectedWords,
+                        optionalModifierConfig);
+            }
+
+            @Override
+            public Set<Term> getGenerableTerms() {
+                return QueryRewriter.EMPTY_GENERABLE_TERMS;
+            }
+        };
+    }
+
+    /**
+     * Configured with a {@code dictionaryId}, resolves that {@code term_corpus} document via {@code
+     * dictionaryCorpusLoader} - once here, not per rewrite - and builds the rewriter directly from it, ignoring
+     * {@code indexShard} entirely (so this also works in the classic per-shard {@code querqy} query, not only in the
+     * {@code querqy_rewrite} search pipeline). Records the checksum the dictionary was resolved at (see {@link
+     * #getDictionaryDependencyChecksums()}) so {@code RewriterFactoryLoader} can later notice a dictionary-only
+     * content change. Configured with {@code dictionaryField} instead, falls back to {@link
+     * #createRewriterFactory(IndexShard)} unchanged.
+     */
+    @Override
+    public RewriterFactory createRewriterFactory(final IndexShard indexShard,
+                                                 final DictionaryCorpusLoader dictionaryCorpusLoader) {
+
+        if (dictionaryId == null) {
+            dictionaryDependencyChecksums = Collections.emptyMap();
+            return createRewriterFactory(indexShard);
+        }
+
+        final DictionaryCorpusLoader.LoadedTermCorpus loaded = dictionaryCorpusLoader.load(dictionaryId);
+        dictionaryDependencyChecksums = Collections.singletonMap(dictionaryId, loaded.checksum);
+        final TermCorpus corpus = loaded.termCorpus;
+
+        return new RewriterFactory(getRewriterId()) {
+            @Override
+            public QueryRewriter createRewriter(final SearchEngineRequestAdapter searchEngineRequestAdapter) {
+                return new WordBreakCompoundRewriter(wordBreaker, compounder, corpus,
+                        lowerCaseInput, alwaysAddReverseCompounds, reverseCompoundTriggerWords,
+                        maxDecompoundExpansions, verifyDecompoundCollation, protectedWords,
+                        optionalModifierConfig);
+            }
+
+            @Override
+            public Set<Term> getGenerableTerms() {
+                return QueryRewriter.EMPTY_GENERABLE_TERMS;
+            }
+        };
+    }
+
+    @Override
+    public Map<String, String> getDictionaryDependencyChecksums() {
+        return dictionaryDependencyChecksums;
+    }
+
+    public String getDictionaryField() {
+        return dictionaryField;
+    }
+
+    public String getDictionaryId() {
+        return dictionaryId;
+    }
+
+    public boolean isLowerCaseInput() {
+        return lowerCaseInput;
+    }
+
+    public boolean isAlwaysAddReverseCompounds() {
+        return alwaysAddReverseCompounds;
+    }
+
+    public TrieMap<Boolean> getReverseCompoundTriggerWords() {
+        return reverseCompoundTriggerWords;
+    }
+
+    public TrieMap<Boolean> getProtectedWords() {
+        return protectedWords;
+    }
+
+    public int getMaxDecompoundExpansions() {
+        return maxDecompoundExpansions;
+    }
+
+    public int getMaxCompoundExpansions() {
+        return maxCompoundExpansions;
+    }
+
+    public boolean isVerifyDecompoundCollation() {
+        return verifyDecompoundCollation;
+    }
+
+    public OptionalModifierConfig getOptionalModifierConfig() {
+        return optionalModifierConfig;
+    }
+
+    public MorphologicalCompounder getCompounder() {
+        return compounder;
+    }
+
+    public MorphologicalWordBreaker getWordBreaker() {
+        return wordBreaker;
+    }
+}
