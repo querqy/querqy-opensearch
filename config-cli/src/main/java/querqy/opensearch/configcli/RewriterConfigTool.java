@@ -1,0 +1,610 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Copyright 2026 Querqy for OpenSearch Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package querqy.opensearch.configcli;
+
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.impl.async.HttpAsyncClientBuilder;
+import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.apache.hc.client5.http.ssl.TrustAllStrategy;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.http.nio.ssl.TlsStrategy;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
+import org.opensearch.client.ResponseException;
+import org.opensearch.client.RestClient;
+import org.opensearch.client.RestClientBuilder;
+import org.opensearch.common.xcontent.json.JsonXContent;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
+import querqy.opensearch.OpenSearchRewriterFactory;
+import querqy.opensearch.rewriter.WordBreakCompoundRewriterFactory;
+import querqy.opensearch.rewriterstore.Constants;
+import querqy.opensearch.rewriterstore.RewriterConfigMapping;
+import querqy.opensearch.rewriterstore.RewriterInfo;
+import querqy.opensearch.rewriterstore.TermCorpusConfigMapping;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Validates, lists, fetches, or deletes a rewriter configuration directly against the {@code opensearch-querqy-store}
+ * index over HTTP - the AWS-compatible replacement for the REST rewriter API
+ * ({@code PUT}/{@code GET}/{@code DELETE /_plugins/_querqy/rewriter/{id}}), since an install without
+ * {@code ActionPlugin} (e.g. opensearch-querqy-core on Amazon OpenSearch Service) has no REST action to do this.
+ *
+ * <pre>
+ * java -jar opensearch-querqy-config-cli.jar put --url https://host:9200 --id my_rewriter \
+ *     --config-file ./my-rewriter.json [--revision r42] \
+ *     [--dictionary-file ./dict.tsv [--dictionary-format tsv_df|tsv_df_cooc] [--dictionary-hash-functions N] \
+ *     [--dictionary-num-docs N]] [--username admin --password '***'] [--replicas 1] [--insecure] [--validate-only]
+ * java -jar opensearch-querqy-config-cli.jar get --url https://host:9200 --id my_rewriter \
+ *     [--username ... --password ...]
+ * java -jar opensearch-querqy-config-cli.jar list --url https://host:9200 [--username ... --password ...]
+ * java -jar opensearch-querqy-config-cli.jar delete --url https://host:9200 --id my_rewriter \
+ *     [--username ... --password ...]
+ * java -jar opensearch-querqy-config-cli.jar put-dictionary --url https://host:9200 --dictionary-id dutch-compounds \
+ *     --dictionary-file ./dutch-compounds.tsv [--dictionary-format tsv_df|tsv_df_cooc] \
+ *     [--dictionary-hash-functions N] [--dictionary-num-docs N] [--username ... --password ...] [--replicas 1]
+ * java -jar opensearch-querqy-config-cli.jar delete-dictionary --url https://host:9200 \
+ *     --dictionary-id dutch-compounds [--force] [--username ... --password ...]
+ * </pre>
+ *
+ * {@code --config-file} (for {@code put}) holds the same JSON shape as the REST PUT request body: {@code class},
+ * {@code config}, and optionally {@code info_logging}/{@code revision}. {@code --revision} (for {@code put} only)
+ * sets the rewriter document's own optional revision tag - unrelated to a dictionary's id, which is always
+ * {@code --dictionary-id}, to avoid exactly that confusion.
+ *
+ * <p><b>{@code put-dictionary}:</b> computes a checksum of, then gzips, {@code --dictionary-file} (a two-column
+ * {@code term\tdocFreq} TSV for {@code --dictionary-format tsv_df}, the default; a three-column {@code
+ * term\tdocFreq\tbloomHex} TSV plus {@code --dictionary-hash-functions} for {@code tsv_df_cooc}, which also enables
+ * collation) and writes it as a {@code term_corpus} document, id {@code <dictionary-id>}.
+ * {@code --dictionary-num-docs} is optional on either format - the total document count the dictionary's
+ * frequencies were computed over, used by {@code TsvDfTermCorpus}/{@code TsvDfCoocTermCorpus} to normalize
+ * suggestion scoring (must be {@code > 0} if given); omitted, it falls back to an estimate (100x the number of
+ * distinct terms). A {@code WordBreakCompoundRewriterFactory} rewriter config references it via
+ * {@code "dictionaryId": "..."} instead of a shard-side {@code dictionaryField}; that makes it usable from the
+ * {@code querqy_rewrite} search pipeline, which
+ * has no shard/index access. The document is intentionally mutable: writing a new {@code put-dictionary} with the
+ * same id updates its content in place - the server verifies the new checksum matches the new content, and any
+ * node that re-resolves the dictionary (synchronously via {@code RefreshMode#CHECK}/{@code FORCE}, or eventually via
+ * the periodic cache sweep) picks up the change. Save under a different id instead if an old version needs to stay
+ * addressable.</p>
+ *
+ * <p><b>{@code put} with a {@code dictionaryId} reference:</b> if {@code --config-file}'s rewriter is a {@code
+ * WordBreakCompoundRewriterFactory} configured with {@code "dictionaryId": "..."}, {@code put} checks that document
+ * already exists before saving the rewriter - rejecting the command instead of saving a rewriter config that would
+ * only fail later, the first time a query tries to use it. Pass {@code --dictionary-file} (plus
+ * {@code --dictionary-format}/{@code --dictionary-hash-functions} as needed, same as {@code put-dictionary}) to
+ * upload the dictionary as part of the same command instead of requiring a separate {@code put-dictionary} call
+ * first. {@code --dictionary-id} is rejected on {@code put}: that reference always comes from {@code --config-file}
+ * itself, never from a flag.</p>
+ *
+ * <p><b>{@code delete-dictionary}:</b> refuses to delete a dictionary still referenced by any stored {@code
+ * word_break_compound} rewriter's {@code dictionaryId}, listing which rewriter(s) reference it, unless
+ * {@code --force} is given. This matters because deleting the document doesn't affect an already-cached {@code
+ * TermCorpus} - it keeps being served from memory - so the danger is silent and deferred: the rewriter looks fine
+ * until its cache entry is next rebuilt for any reason (a reload, a restart, an unrelated config change), at which
+ * point it fails outright because the dictionary it still points to is gone.</p>
+ *
+ * <p><b>AWS IAM auth:</b> pass {@code --sigv4} instead of {@code --username}/{@code --password} to sign every
+ * request with AWS SigV4, for an Amazon OpenSearch Service domain or OpenSearch Serverless collection whose
+ * access policy requires IAM rather than (or in addition to) an internal user database. Credentials come from
+ * the standard AWS provider chain (env vars, shared config/credentials file, EC2/ECS/EKS instance role) or, with
+ * {@code --aws-profile}, a specific named profile. {@code --aws-region} defaults to whatever the AWS SDK's
+ * region provider chain resolves; {@code --aws-service} defaults to {@code es} (managed domains) and should be
+ * set to {@code aoss} for OpenSearch Serverless, the only auth mode Serverless supports:
+ * <pre>
+ * java -jar opensearch-querqy-config-cli.jar list --url https://host.region.es.amazonaws.com --sigv4 \
+ *     [--aws-region us-east-1] [--aws-service es|aoss] [--aws-profile my-profile]
+ * </pre>
+ *
+ * <p><b>Delete note:</b> unlike the REST API's {@code DELETE}, this cannot clear the deleted rewriter from every
+ * node's in-memory cache (that's an {@code ActionPlugin}-only transport action, unavailable over plain HTTP) - each
+ * node notices the deletion on its own, within roughly {@code querqy.caches.rewriter.refresh_after_write} (default
+ * 30s), the same freshness caveat that already applies to a {@code put}.</p>
+ */
+public final class RewriterConfigTool {
+
+    public static void main(final String[] args) {
+        try {
+            run(CliArgs.parse(args));
+        } catch (final ValidationFailedException e) {
+            System.err.println("Invalid " + e.subject + ":");
+            for (final String error : e.errors) {
+                System.err.println("  - " + error);
+            }
+            System.exit(1);
+        } catch (final RewriterNotFoundException e) {
+            System.err.println(e.getMessage());
+            System.exit(1);
+        } catch (final ResponseException e) {
+            System.err.println("The cluster rejected the request:");
+            try {
+                System.err.println(EntityUtils.toString(e.getResponse().getEntity()));
+            } catch (final Exception ignored) {
+                System.err.println(e.getMessage());
+            }
+            System.exit(1);
+        } catch (final IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            System.err.println();
+            printUsage();
+            System.exit(2);
+        } catch (final SdkClientException e) {
+            System.err.println("Could not resolve AWS credentials/region for --sigv4: " + e.getMessage());
+            System.err.println("Check --aws-region/--aws-profile and your AWS credentials (env vars, shared "
+                    + "config/credentials file, or an EC2/ECS/EKS instance role).");
+            System.exit(1);
+        } catch (final Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            System.exit(1);
+        }
+    }
+
+    static void run(final CliArgs args) throws IOException {
+        switch (args.action) {
+            case PUT:
+                runPut(args);
+                break;
+            case GET:
+                runGet(args);
+                break;
+            case LIST:
+                runList(args);
+                break;
+            case DELETE:
+                runDelete(args);
+                break;
+            case PUT_DICTIONARY:
+                runPutDictionary(args);
+                break;
+            case DELETE_DICTIONARY:
+                runDeleteDictionary(args);
+                break;
+            default:
+                throw new IllegalStateException("Unhandled action: " + args.action);
+        }
+    }
+
+    private static void runPut(final CliArgs args) throws IOException {
+
+        final Map<String, Object> content = Json.parseMap(Path.of(args.configFile));
+
+        if (args.revision != null) {
+            content.put(RewriterConfigMapping.PROP_REVISION, args.revision);
+        }
+
+        validate(args.id, content);
+        System.out.println("Configuration is valid.");
+
+        if (args.validateOnly) {
+            return;
+        }
+
+        final String dictionaryId = findWordBreakDictionaryReference(content);
+        // built (and validated) before connecting, so an invalid --dictionary-file fails without touching the index
+        final Map<String, Object> dictionarySource = (dictionaryId != null && args.dictionaryFile != null)
+                ? buildDictionarySource(dictionaryId, args.dictionaryFile, args.dictionaryFormat,
+                        args.dictionaryHashFunctions, args.dictionaryNumDocs)
+                : null;
+        final Map<String, Object> source = RewriterConfigMapping.toLuceneSource(content, System.currentTimeMillis());
+
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
+            warnIfLegacyIndexExists(indexManager);
+            indexManager.ensureIndexExists(args.replicas);
+
+            if (dictionaryId != null) {
+                ensureDictionaryExists(indexManager, dictionaryId, dictionarySource, args);
+            }
+
+            indexManager.putRewriter(args.id, source);
+        }
+
+        System.out.println("Saved rewriter '" + args.id + "'.");
+        printFreshnessNote();
+    }
+
+    /**
+     * @return The {@code dictionaryId} a {@code WordBreakCompoundRewriterFactory} config refers to, or {@code null}
+     * if {@code content} isn't that class, or is configured with a shard-side {@code dictionaryField} instead
+     * (nothing to check in either case).
+     */
+    @SuppressWarnings("unchecked")
+    private static String findWordBreakDictionaryReference(final Map<String, Object> content) {
+
+        if (!WordBreakCompoundRewriterFactory.class.getName().equals(content.get("class"))) {
+            return null;
+        }
+
+        final Map<String, Object> config = (Map<String, Object>) content.get("config");
+        final Object dictionaryId = config == null ? null : config.get("dictionaryId");
+        // malformed (missing dictionaryId) is already rejected by validate() above - nothing to check here
+        return dictionaryId == null ? null : dictionaryId.toString();
+    }
+
+    /**
+     * For a {@code word_break_compound} rewriter configured with a {@code dictionaryId} reference: if {@code
+     * --dictionary-file} was given ({@code dictionarySource} is its already-validated document), writes it as that
+     * dictionary's {@code term_corpus} document (same as {@code put-dictionary}); otherwise checks the referenced document already exists, failing clearly - before the
+     * rewriter config is saved - if it doesn't, rather than letting the rewriter save successfully only to fail
+     * later, confusingly, the first time a live query tries to use it.
+     */
+    private static void ensureDictionaryExists(final HttpQuerqyIndexManager indexManager,
+                                               final String dictionaryId,
+                                               final Map<String, Object> dictionarySource,
+                                               final CliArgs args) throws IOException {
+
+        final String docId = TermCorpusConfigMapping.docId(dictionaryId);
+
+        if (dictionarySource != null) {
+            indexManager.putDictionary(docId, dictionarySource);
+            System.out.println("Saved dictionary '" + dictionaryId + "'.");
+            return;
+        }
+
+        if (!indexManager.documentExists(docId)) {
+            throw new IllegalArgumentException("Rewriter '" + args.id + "' references dictionary '" + dictionaryId
+                    + "', which does not exist in the index. Either run 'put-dictionary' first, or pass "
+                    + "--dictionary-file to upload it as part of this command.");
+        }
+    }
+
+    /**
+     * Computes a checksum of, then gzips, {@code --dictionary-file} and writes it as a {@code term_corpus}
+     * document (see {@link TermCorpusConfigMapping}) - the dictionary a coordinator-safe {@code word_break}
+     * rewriter can reference by {@code dictionaryId} instead of a shard-side {@code dictionaryField}. Always
+     * writes {@code gzip: true}; someone hand-writing a small, uncompressed dictionary directly via a raw
+     * {@code PUT} (not through this tool) can set {@code gzip: false} instead.
+     */
+    private static void runPutDictionary(final CliArgs args) throws IOException {
+
+        final Map<String, Object> source = buildDictionarySource(args.dictionaryId, args.dictionaryFile,
+                args.dictionaryFormat, args.dictionaryHashFunctions, args.dictionaryNumDocs);
+
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
+            warnIfLegacyIndexExists(indexManager);
+            indexManager.ensureIndexExists(args.replicas);
+            indexManager.putDictionary(TermCorpusConfigMapping.docId(args.dictionaryId), source);
+        }
+
+        System.out.println("Saved dictionary '" + args.dictionaryId + "'.");
+        printFreshnessNote();
+    }
+
+    /**
+     * Builds the {@code term_corpus} document for {@code file} and validates it locally (see {@link
+     * #validateDictionarySource}) - the index doesn't validate a dictionary at write time, so this is the check that
+     * keeps a malformed dictionary out of it.
+     *
+     * @throws ValidationFailedException if the dictionary is invalid
+     */
+    static Map<String, Object> buildDictionarySource(final String id, final String file, final String format,
+                                                     final Integer hashFunctions, final Integer numDocs)
+            throws IOException {
+        final byte[] tsvBytes = Files.readAllBytes(Path.of(file));
+        final Map<String, Object> source = TermCorpusConfigMapping.toLuceneSource(id, format, true, numDocs,
+                hashFunctions, tsvBytes, System.currentTimeMillis());
+        validateDictionarySource(id, source);
+        return source;
+    }
+
+    /**
+     * Local, no-network validation of a {@code term_corpus} document: decodes it, verifies its checksum and builds
+     * the {@code TermCorpus} it describes - the same {@link TermCorpusConfigMapping#buildVerifiedTermCorpus} check
+     * {@code DictionaryCorpusLoader} runs when it loads the dictionary.
+     *
+     * @throws ValidationFailedException if the dictionary is invalid
+     */
+    static void validateDictionarySource(final String id, final Map<String, Object> source) {
+        try {
+            TermCorpusConfigMapping.buildVerifiedTermCorpus(
+                    TermCorpusConfigMapping.getCorpus(TermCorpusConfigMapping.docId(id), source));
+        } catch (final Exception e) {
+            throw new ValidationFailedException("dictionary '" + id + "'",
+                    Collections.singletonList(String.valueOf(e.getMessage())));
+        }
+    }
+
+    private static void runGet(final CliArgs args) throws IOException {
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
+            warnIfLegacyIndexExists(indexManager);
+            final RewriterInfo info = indexManager.getRewriter(args.id);
+            if (info == null) {
+                throw new RewriterNotFoundException("Rewriter '" + args.id + "' not found.");
+            }
+            System.out.println(toJson(info));
+        }
+    }
+
+    private static void runList(final CliArgs args) throws IOException {
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
+            warnIfLegacyIndexExists(indexManager);
+            final List<RewriterInfo> rewriters = indexManager.listRewriters();
+            System.out.println(toJson(rewriters));
+        }
+    }
+
+    static final String LEGACY_INDEX_WARNING = "WARNING: found the index '" + Constants.LEGACY_QUERQY_INDEX_NAME
+            + "', which held rewriter configurations before Querqy for OpenSearch 2.0. It is no longer read - "
+            + "rewriters and dictionaries are now stored in '" + Constants.QUERQY_INDEX_NAME + "'. Save your "
+            + "rewriters (and dictionaries) again, then delete '" + Constants.LEGACY_QUERQY_INDEX_NAME + "'.";
+
+    /**
+     * Prints {@link #LEGACY_INDEX_WARNING} to stderr if the pre-2.0 rewriter index still exists - stderr, so that
+     * the JSON printed to stdout by {@code get}/{@code list} stays machine-readable.
+     */
+    private static void warnIfLegacyIndexExists(final HttpQuerqyIndexManager indexManager) {
+        if (indexManager.legacyIndexExists()) {
+            System.err.println(LEGACY_INDEX_WARNING);
+        }
+    }
+
+    private static void runDelete(final CliArgs args) throws IOException {
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final boolean deleted = new HttpQuerqyIndexManager(client, buildSigner(args, host))
+                    .deleteRewriter(args.id);
+            System.out.println(deleted
+                    ? "Deleted rewriter '" + args.id + "'."
+                    : "Rewriter '" + args.id + "' was already absent.");
+        }
+        printFreshnessNote();
+    }
+
+    /**
+     * Unless {@code --force} is given, refuses to delete a dictionary that's still referenced by any stored
+     * {@code word_break_compound} rewriter's {@code dictionaryId} - deleting a dictionary document doesn't
+     * affect an already-cached {@code TermCorpus} (it keeps being served from memory until that rewriter's cache
+     * entry is next rebuilt for some unrelated reason), so the danger is silent and deferred: the rewriter looks
+     * fine until the next reload/restart, at which point it fails outright because the dictionary it still points
+     * to is gone.
+     */
+    private static void runDeleteDictionary(final CliArgs args) throws IOException {
+
+        final String docId = TermCorpusConfigMapping.docId(args.dictionaryId);
+
+        final HttpHost host = parseHost(args);
+        try (RestClient client = buildClient(args, host)) {
+            final HttpQuerqyIndexManager indexManager = new HttpQuerqyIndexManager(client, buildSigner(args, host));
+
+            if (!args.force) {
+                final List<String> referencingRewriters = findRewritersReferencingDictionary(indexManager,
+                        args.dictionaryId);
+                if (!referencingRewriters.isEmpty()) {
+                    throw new IllegalArgumentException("Dictionary '" + args.dictionaryId + "' is still referenced "
+                            + "by rewriter(s) " + referencingRewriters + " - update or delete them first, or pass "
+                            + "--force to delete the dictionary anyway (any rewriter still referencing it will fail "
+                            + "the next time its cache is reloaded).");
+                }
+            }
+
+            final boolean deleted = indexManager.deleteDictionary(docId);
+            System.out.println(deleted
+                    ? "Deleted dictionary '" + args.dictionaryId + "'."
+                    : "Dictionary '" + args.dictionaryId + "' was already absent.");
+        }
+        printFreshnessNote();
+    }
+
+    /**
+     * @return The ids of every stored {@code word_break_compound} rewriter whose {@code dictionaryId} matches
+     * {@code dictionaryId}. {@link HttpQuerqyIndexManager#listRewriters()} omits config (configs can be large), so
+     * each word-break candidate's full config is fetched individually to check - acceptable since the rewriter
+     * index holds at most a few hundred small documents.
+     */
+    @SuppressWarnings("unchecked")
+    static List<String> findRewritersReferencingDictionary(final HttpQuerqyIndexManager indexManager,
+                                                            final String dictionaryId) throws IOException {
+
+        final List<String> referencing = new ArrayList<>();
+        for (final RewriterInfo listed : indexManager.listRewriters()) {
+            if (!WordBreakCompoundRewriterFactory.class.getName().equals(listed.getRewriterClassName())) {
+                continue;
+            }
+            final RewriterInfo full = indexManager.getRewriter(listed.getRewriterId());
+            if (full == null) {
+                continue; // deleted concurrently between list and get - no longer a reference either way
+            }
+            final Map<String, Object> config = full.getConfig();
+            final Object referencedId = config == null ? null : config.get("dictionaryId");
+            if (dictionaryId.equals(referencedId)) {
+                referencing.add(listed.getRewriterId());
+            }
+        }
+        return referencing;
+    }
+
+    private static void printFreshnessNote() {
+        System.out.println("Note: on an install without the full plugin's REST API (e.g. core-only/AWS), this "
+                + "change can take up to querqy.caches.rewriter.refresh_after_write (default 30s) to take effect on "
+                + "each node - there is no push-based reload/cache-clear without ActionPlugin.");
+    }
+
+    private static String toJson(final RewriterInfo info) throws IOException {
+        final XContentBuilder builder = JsonXContent.contentBuilder();
+        info.toXContent(builder, ToXContent.EMPTY_PARAMS);
+        return builder.toString();
+    }
+
+    private static String toJson(final List<RewriterInfo> infos) throws IOException {
+        final XContentBuilder builder = JsonXContent.contentBuilder();
+        builder.startArray();
+        for (final RewriterInfo info : infos) {
+            info.toXContent(builder, ToXContent.EMPTY_PARAMS);
+        }
+        builder.endArray();
+        return builder.toString();
+    }
+
+    /**
+     * Local, no-network validation: the same check {@code PutRewriterRequest.validate()} runs for the REST API -
+     * class allow-list plus {@code validateConfiguration}. The index itself doesn't validate anything at write
+     * time, so this is the only check a config gets on an install without the REST API.
+     */
+    @SuppressWarnings("unchecked")
+    static void validate(final String rewriterId, final Map<String, Object> content) {
+
+        final OpenSearchRewriterFactory factory;
+        try {
+            factory = OpenSearchRewriterFactory.loadInstance(rewriterId, content, "class");
+        } catch (final Exception e) {
+            throw new ValidationFailedException(
+                    Collections.singletonList("Invalid definition of rewriter 'class': " + e.getMessage()));
+        }
+
+        final Map<String, Object> config = (Map<String, Object>) content.getOrDefault("config",
+                Collections.emptyMap());
+        final List<String> errors = factory.validateConfiguration(config);
+
+        if (errors != null && !errors.isEmpty()) {
+            throw new ValidationFailedException(errors);
+        }
+    }
+
+    private static HttpHost parseHost(final CliArgs args) {
+        try {
+            return HttpHost.create(args.url);
+        } catch (final java.net.URISyntaxException e) {
+            throw new IllegalArgumentException("Invalid --url '" + args.url + "': " + e.getMessage());
+        }
+    }
+
+    private static RestClient buildClient(final CliArgs args, final HttpHost host) {
+
+        final RestClientBuilder builder = RestClient.builder(host);
+
+        if (args.username != null || args.insecure) {
+            builder.setHttpClientConfigCallback(httpClientBuilder -> {
+                if (args.username != null) {
+                    final BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+                    credentialsProvider.setCredentials(new AuthScope(host),
+                            new UsernamePasswordCredentials(args.username,
+                                    args.password == null ? new char[0] : args.password.toCharArray()));
+                    httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
+                }
+                if (args.insecure) {
+                    configureInsecureSsl(httpClientBuilder);
+                }
+                return httpClientBuilder;
+            });
+        }
+
+        return builder.build();
+    }
+
+    private static RequestSigner buildSigner(final CliArgs args, final HttpHost host) {
+
+        if (!args.sigv4) {
+            return RequestSigner.NONE;
+        }
+
+        final Region region = args.awsRegion != null
+                ? Region.of(args.awsRegion)
+                : DefaultAwsRegionProviderChain.builder().build().getRegion();
+
+        final AwsCredentialsProvider credentialsProvider = args.awsProfile != null
+                ? ProfileCredentialsProvider.builder().profileName(args.awsProfile).build()
+                : DefaultCredentialsProvider.create();
+
+        return new Sigv4RequestSigner(host, region, args.awsService, credentialsProvider);
+    }
+
+    private static void configureInsecureSsl(final HttpAsyncClientBuilder httpClientBuilder) {
+        try {
+            final javax.net.ssl.SSLContext sslContext = SSLContextBuilder.create()
+                    .loadTrustMaterial(TrustAllStrategy.INSTANCE)
+                    .build();
+            final TlsStrategy tlsStrategy = ClientTlsStrategyBuilder.create()
+                    .setSslContext(sslContext)
+                    .setHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                    .build();
+            httpClientBuilder.setConnectionManager(
+                    PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build());
+        } catch (final Exception e) {
+            throw new IllegalStateException("Could not configure insecure SSL context", e);
+        }
+    }
+
+    private static void printUsage() {
+        final String authOptions = "[--username <user> --password <password> | --sigv4 [--aws-region <region>] "
+                + "[--aws-service es|aoss] [--aws-profile <profile>]] [--insecure]";
+        System.err.println("Usage:");
+        System.err.println("  java -jar opensearch-querqy-config-cli.jar put --url <url> --id <rewriterId> "
+                + "--config-file <file> [--revision <revision>] "
+                + "[--dictionary-file <tsvFile> [--dictionary-format tsv_df|tsv_df_cooc] "
+                + "[--dictionary-hash-functions <n>] [--dictionary-num-docs <n>]] "
+                + authOptions + " [--replicas <n>] [--validate-only]");
+        System.err.println("  java -jar opensearch-querqy-config-cli.jar get --url <url> --id <rewriterId> "
+                + authOptions);
+        System.err.println("  java -jar opensearch-querqy-config-cli.jar list --url <url> " + authOptions);
+        System.err.println("  java -jar opensearch-querqy-config-cli.jar delete --url <url> --id <rewriterId> "
+                + authOptions);
+        System.err.println("  java -jar opensearch-querqy-config-cli.jar put-dictionary --url <url> "
+                + "--dictionary-id <id> --dictionary-file <tsvFile> "
+                + "[--dictionary-format tsv_df|tsv_df_cooc] [--dictionary-hash-functions <n>] "
+                + "[--dictionary-num-docs <n>] " + authOptions
+                + " [--replicas <n>]");
+        System.err.println("  java -jar opensearch-querqy-config-cli.jar delete-dictionary --url <url> "
+                + "--dictionary-id <id> [--force] " + authOptions);
+    }
+
+    static final class ValidationFailedException extends RuntimeException {
+        final String subject;
+        final List<String> errors;
+
+        ValidationFailedException(final List<String> errors) {
+            this("rewriter configuration", errors);
+        }
+
+        ValidationFailedException(final String subject, final List<String> errors) {
+            super("Invalid " + subject + ": " + errors);
+            this.subject = subject;
+            this.errors = errors;
+        }
+    }
+
+    static final class RewriterNotFoundException extends RuntimeException {
+        RewriterNotFoundException(final String message) {
+            super(message);
+        }
+    }
+}

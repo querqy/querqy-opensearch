@@ -1,0 +1,6 @@
+{
+  "class": "querqy.opensearch.rewriter.RegexReplaceRewriterFactory",
+  "config": {
+    "rules": "a(.*) => b$1"
+  }
+}

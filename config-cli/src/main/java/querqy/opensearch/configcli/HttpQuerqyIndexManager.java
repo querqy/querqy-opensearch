@@ -1,0 +1,233 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Copyright 2026 Querqy for OpenSearch Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package querqy.opensearch.configcli;
+
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.opensearch.client.Request;
+import org.opensearch.client.Response;
+import org.opensearch.client.RestClient;
+import querqy.opensearch.rewriterstore.Constants;
+import querqy.opensearch.rewriterstore.QuerqyIndexManager;
+import querqy.opensearch.rewriterstore.RewriterInfo;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * The HTTP equivalent of the node-local index management {@code TransportPutRewriterAction} does via
+ * {@code IndicesAdminClient} - needed here because this tool has no such client, only a REST connection to the
+ * cluster. Reuses {@code QuerqyIndexManager}'s pure computation (the mapping resource, the missing-properties
+ * check) so both paths stay consistent with the same field names and mapping shape.
+ */
+final class HttpQuerqyIndexManager {
+
+    private static final String INDEX_PATH = "/" + Constants.QUERQY_INDEX_NAME;
+    private static final String LEGACY_INDEX_PATH = "/" + Constants.LEGACY_QUERQY_INDEX_NAME;
+
+    private final RestClient client;
+    private final RequestSigner signer;
+
+    HttpQuerqyIndexManager(final RestClient client) {
+        this(client, RequestSigner.NONE);
+    }
+
+    HttpQuerqyIndexManager(final RestClient client, final RequestSigner signer) {
+        this.client = client;
+        this.signer = signer;
+    }
+
+    void ensureIndexExists(final int numReplicas) throws IOException {
+        if (indexExists()) {
+            migrateMappingIfNeeded();
+        } else {
+            createIndex(numReplicas);
+        }
+    }
+
+    private boolean indexExists() throws IOException {
+        // the client never turns a 404 into a ResponseException for a HEAD request - just check the status code
+        final Response response = performRequest(new Request("HEAD", INDEX_PATH));
+        return response.getStatusLine().getStatusCode() == 200;
+    }
+
+    /**
+     * Best effort: checks whether the pre-2.0 rewriter index ({@value Constants#LEGACY_QUERQY_INDEX_NAME}) still
+     * exists, so the tool can warn that rewriters stored there are no longer read. Never fails the command: any
+     * error (e.g. the user has no permission on that index) is reported as {@code false}.
+     *
+     * @return true iff the legacy index exists
+     */
+    boolean legacyIndexExists() {
+        try {
+            // same reasoning as indexExists(): HEAD never turns a 404 into a ResponseException
+            final Response response = performRequest(new Request("HEAD", LEGACY_INDEX_PATH));
+            return response.getStatusLine().getStatusCode() == 200;
+        } catch (final IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * @return true iff a document with this id exists in {@value Constants#QUERQY_INDEX_NAME} - used to check a
+     * {@code word_break_compound} rewriter's referenced {@code term_corpus} dictionary exists before saving the
+     * rewriter (see {@code RewriterConfigTool#runPut}).
+     */
+    boolean documentExists(final String docId) throws IOException {
+        // same reasoning as indexExists(): HEAD never turns a 404 into a ResponseException
+        final Response response = performRequest(new Request("HEAD", INDEX_PATH + "/_doc/" + docId));
+        return response.getStatusLine().getStatusCode() == 200;
+    }
+
+    private void createIndex(final int numReplicas) throws IOException {
+        final String body = "{\"settings\":{\"number_of_shards\":" + Constants.QUERQY_INDEX_NUM_SHARDS
+                + ",\"number_of_replicas\":" + numReplicas + "},\"mappings\":"
+                + QuerqyIndexManager.readMappingResource() + "}";
+        final Request request = new Request("PUT", INDEX_PATH);
+        request.setJsonEntity(body);
+        performRequest(request);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void migrateMappingIfNeeded() throws IOException {
+
+        final Request getMapping = new Request("GET", INDEX_PATH + "/_mapping");
+        final Map<String, Object> body = Json.parseMap(readBody(performRequest(getMapping)));
+        final Map<String, Object> indexBody = (Map<String, Object>) body.get(Constants.QUERQY_INDEX_NAME);
+        final Map<String, Object> mappings = (Map<String, Object>) indexBody.get("mappings");
+        final Map<String, Object> properties = (Map<String, Object>) mappings.getOrDefault("properties",
+                Collections.emptyMap());
+
+        final Map<String, String> missingProperties = QuerqyIndexManager.computeMissingProperties(properties);
+        if (missingProperties.isEmpty()) {
+            return;
+        }
+
+        final Request putMapping = new Request("PUT", INDEX_PATH + "/_mapping");
+        putMapping.setJsonEntity(QuerqyIndexManager.buildPutMappingBody(missingProperties));
+        performRequest(putMapping);
+    }
+
+    void putRewriter(final String rewriterId, final Map<String, Object> source) throws IOException {
+        putDocument(rewriterId, source);
+    }
+
+    /**
+     * Writes a {@code term_corpus} document (a word-break-compound dictionary, see {@code
+     * querqy.opensearch.rewriterstore.TermCorpusConfigMapping}) - same mechanism as {@link #putRewriter}, just a
+     * different document shape/id convention (the dictionary's own id, unchanged). Writing to an id that already
+     * exists updates its content in place - dictionaries are intentionally mutable.
+     */
+    void putDictionary(final String docId, final Map<String, Object> source) throws IOException {
+        putDocument(docId, source);
+    }
+
+    private void putDocument(final String docId, final Map<String, Object> source) throws IOException {
+        final Request request = new Request("PUT", INDEX_PATH + "/_doc/" + docId);
+        request.addParameter("refresh", "true");
+        request.setJsonEntity(Json.toJson(source));
+        performRequest(request);
+    }
+
+    /**
+     * @return The {@link RewriterInfo} for the given rewriter, or {@code null} if it doesn't exist.
+     */
+    @SuppressWarnings("unchecked")
+    RewriterInfo getRewriter(final String rewriterId) throws IOException {
+
+        final Request request = new Request("GET", INDEX_PATH + "/_doc/" + rewriterId);
+        request.addParameter("ignore", "404"); // a missing document is a normal outcome here, not an error
+
+        final Map<String, Object> doc = Json.parseMap(readBody(performRequest(request)));
+        if (!Boolean.TRUE.equals(doc.get("found"))) {
+            return null;
+        }
+
+        final Map<String, Object> source = (Map<String, Object>) doc.get("_source");
+        return RewriterInfo.fromSource(rewriterId, source, true);
+    }
+
+    /**
+     * @return Every stored rewriter, sorted by ID, without their config (matching the REST API's listing
+     * behavior - configs can be large). An empty list if the index doesn't exist yet.
+     */
+    @SuppressWarnings("unchecked")
+    List<RewriterInfo> listRewriters() throws IOException {
+
+        final Request request = new Request("POST", INDEX_PATH + "/_search");
+        request.addParameter("ignore", "404"); // a missing index means "no rewriters yet", not an error
+        request.setJsonEntity("{\"query\":{\"term\":{\"type\":\"rewriter\"}},\"size\":10000}");
+
+        final Map<String, Object> body = Json.parseMap(readBody(performRequest(request)));
+        final Map<String, Object> hitsWrapper = (Map<String, Object>) body.get("hits");
+        if (hitsWrapper == null) {
+            return Collections.emptyList(); // missing-index response body has no "hits" wrapper at all
+        }
+
+        final List<Map<String, Object>> hits = (List<Map<String, Object>>) hitsWrapper.get("hits");
+        final List<RewriterInfo> rewriters = new ArrayList<>(hits.size());
+        for (final Map<String, Object> hit : hits) {
+            rewriters.add(RewriterInfo.fromSource((String) hit.get("_id"),
+                    (Map<String, Object>) hit.get("_source"), false));
+        }
+        rewriters.sort(Comparator.comparing(RewriterInfo::getRewriterId));
+        return rewriters;
+    }
+
+    /**
+     * @return {@code true} if a rewriter document existed and was deleted, {@code false} if it was already absent.
+     */
+    boolean deleteRewriter(final String rewriterId) throws IOException {
+        return deleteDocument(rewriterId);
+    }
+
+    /**
+     * @return {@code true} if a {@code term_corpus} document existed and was deleted, {@code false} if it was
+     * already absent.
+     */
+    boolean deleteDictionary(final String docId) throws IOException {
+        return deleteDocument(docId);
+    }
+
+    private boolean deleteDocument(final String docId) throws IOException {
+
+        final Request request = new Request("DELETE", INDEX_PATH + "/_doc/" + docId);
+        request.addParameter("refresh", "true");
+        request.addParameter("ignore", "404"); // deleting an already-absent document is not an error
+
+        final Map<String, Object> body = Json.parseMap(readBody(performRequest(request)));
+        return "deleted".equals(body.get("result"));
+    }
+
+    private Response performRequest(final Request request) throws IOException {
+        signer.sign(request);
+        return client.performRequest(request);
+    }
+
+    private static String readBody(final Response response) throws IOException {
+        try {
+            return EntityUtils.toString(response.getEntity());
+        } catch (final org.apache.hc.core5.http.ParseException e) {
+            throw new IOException("Could not read response body", e);
+        }
+    }
+}
