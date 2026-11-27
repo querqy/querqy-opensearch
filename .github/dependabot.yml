@@ -1,10 +1,22 @@
 version: 2
 updates:
+  # The multi-module build declares its dependencies in the subprojects, not in the root build.gradle.
   - package-ecosystem: "gradle"
-    directory: "/"
+    directories:
+      - "/"
+      - "/core"
+      - "/rest-api"
+      - "/config-cli"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 20
+    labels:
+      - "dependabot"
+      - "automation"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
     labels:
       - "dependabot"
       - "automation"
